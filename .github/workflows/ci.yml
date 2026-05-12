@@ -86,6 +86,12 @@ jobs:
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug
 
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: src/build/app/outputs/flutter-apk/app-debug.apk
+
   # ── Linux ─────────────────────────────────────────────
   build-linux:
     name: Build Linux
@@ -116,6 +122,12 @@ jobs:
       - name: Build Linux
         run: flutter build linux --release
 
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundle
+          path: src/build/linux/x64/release/bundle/
+
   # ── Windows ────────────────────────────────────────────
   build-windows:
     name: Build Windows
@@ -141,6 +153,12 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: src/build/windows/x64/runner/Release/
+
   # ── macOS ────────────────────────────────────────────
   build-macos:
     name: Build macOS
@@ -165,3 +183,9 @@ jobs:
 
       - name: Build macOS
         run: flutter build macos --release
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: src/build/macos/Build/Products/Release/stock_manager.app
