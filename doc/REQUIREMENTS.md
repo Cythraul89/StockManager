@@ -142,20 +142,23 @@ StockManager is a cross-platform portfolio tracking application for managing sto
   - A stock price rising or falling by a user-defined percentage threshold
 - Notifications are optional and individually configurable per stock.
 
-### 8.2 Push Notifications
-- The app receives **push notifications** for stock-related events even when the app is not open, including:
+### 8.2 Push Notifications (Android only)
+- **Android only**: the app receives **push notifications** via Firebase Cloud Messaging (FCM) for stock-related events even when the app is not open, including:
   - Significant price movements (user-defined threshold per stock)
   - Dividend payment confirmations
   - Expected dividend dates approaching
-- Push notifications require an active Internet connection and a notification delivery service (e.g. Firebase Cloud Messaging for Android).
+- Push notifications require an active Internet connection.
 - The user can enable or disable push notifications globally and per stock.
+- Desktop platforms (macOS, Windows, Ubuntu) use local notifications only (Section 8.1); no background push service is required on desktop.
 
 ---
 
 ## 9. Non-Functional Requirements
 
 - **Privacy**: all data remains on the user's own device and their own Nextcloud; no third-party cloud storage.
-- **Usability**: the UI must be usable on both small mobile screens (Android) and large desktop displays.
+- **Responsive / adaptive UI**: the app uses a single adaptive layout that adjusts to screen size:
+  - **Android**: single-column navigation, bottom navigation bar, touch-optimised controls.
+  - **Desktop** (macOS, Windows, Ubuntu): multi-column layout making use of the available screen space — e.g. a persistent sidebar for navigation, a master-detail split for stock lists and detail views, and wider dashboard panels showing more data at once without scrolling.
 - **Dark mode**: the app supports light and dark themes on all platforms, following the system preference by default.
 - **Performance**: the app must load the portfolio overview within 2 seconds on a modern device (offline data only).
 - **Data integrity**: transactions and portfolio data must not be lost during sync or app updates.
