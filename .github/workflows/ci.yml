@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+defaults:
+  run:
+    working-directory: src
+
 jobs:
   # ── Analyse & test (runs first, gates all build jobs) ──────────────────────
   analyze:
@@ -28,7 +32,7 @@ jobs:
       - name: Test
         run: flutter test
 
-  # ── Android ──────────────────────────────────────────────────────────────────
+  # ── Android ──────────────────────────────────────────────────
   build-android:
     name: Build Android
     runs-on: ubuntu-latest
@@ -52,7 +56,7 @@ jobs:
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug
 
-  # ── Linux ───────────────────────────────────────────────────────────────────
+  # ── Linux ─────────────────────────────────────────────────────
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
@@ -76,7 +80,7 @@ jobs:
       - name: Build Linux
         run: flutter build linux --release
 
-  # ── Windows ──────────────────────────────────────────────────────────────────
+  # ── Windows ──────────────────────────────────────────────────
   build-windows:
     name: Build Windows
     runs-on: windows-latest
@@ -95,7 +99,7 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
 
-  # ── macOS ──────────────────────────────────────────────────────────────────
+  # ── macOS ──────────────────────────────────────────────────
   build-macos:
     name: Build macOS
     runs-on: macos-latest

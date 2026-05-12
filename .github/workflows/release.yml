@@ -9,8 +9,12 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    working-directory: src
+
 jobs:
-  # ── Android (signed AAB) ───────────────────────────────────────────────────
+  # ── Android (signed AAB) ───────────────────────────────────────────────
   release-android:
     name: Release Android
     runs-on: ubuntu-latest
@@ -48,9 +52,9 @@ jobs:
       - name: Upload AAB to release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/app/outputs/bundle/release/app-release.aab
+          files: src/build/app/outputs/bundle/release/app-release.aab
 
-  # ── Linux ───────────────────────────────────────────────────────────────────
+  # ── Linux ─────────────────────────────────────────────────────
   release-linux:
     name: Release Linux
     runs-on: ubuntu-latest
@@ -81,9 +85,9 @@ jobs:
       - name: Upload Linux archive to release
         uses: softprops/action-gh-release@v2
         with:
-          files: stockmanager-linux-x64.zip
+          files: src/stockmanager-linux-x64.zip
 
-  # ── Windows ──────────────────────────────────────────────────────────────────
+  # ── Windows ──────────────────────────────────────────────────
   release-windows:
     name: Release Windows
     runs-on: windows-latest
@@ -107,9 +111,9 @@ jobs:
       - name: Upload Windows archive to release
         uses: softprops/action-gh-release@v2
         with:
-          files: stockmanager-windows-x64.zip
+          files: src/stockmanager-windows-x64.zip
 
-  # ── macOS ──────────────────────────────────────────────────────────────────
+  # ── macOS ──────────────────────────────────────────────────
   # Note: distributing outside the Mac App Store requires a Developer ID
   # certificate added as secrets (MACOS_CERTIFICATE + MACOS_CERTIFICATE_PWD).
   # Without it the .app runs on the build machine but is unsigned for end users.
@@ -153,4 +157,4 @@ jobs:
       - name: Upload macOS archive to release
         uses: softprops/action-gh-release@v2
         with:
-          files: stockmanager-macos.zip
+          files: src/stockmanager-macos.zip
