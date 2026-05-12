@@ -1,0 +1,69 @@
+import 'dart:io';
+
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import 'daos/brokers_dao.dart';
+import 'daos/dividends_dao.dart';
+import 'daos/settings_dao.dart';
+import 'daos/stocks_dao.dart';
+import 'daos/transactions_dao.dart';
+import 'tables/brokers_table.dart';
+import 'tables/dividends_table.dart';
+import 'tables/exchange_rate_cache_table.dart';
+import 'tables/price_cache_table.dart';
+import 'tables/settings_table.dart';
+import 'tables/stock_splits_table.dart';
+import 'tables/stocks_table.dart';
+import 'tables/transactions_table.dart';
+
+part 'app_database.g.dart';
+
+@DriftDatabase(
+  tables: [
+    Brokers,
+    Stocks,
+    Transactions,
+    StockSplits,
+    Dividends,
+    PriceCache,
+    ExchangeRateCache,
+    Settings,
+  ],
+  daos: [
+    BrokersDao,
+    StocksDao,
+    TransactionsDao,
+    DividendsDao,
+    SettingsDao,
+  ],
+)
+class AppDatabase extends _$AppDatabase {
+  AppDatabase() : super(_openConnection());
+
+  AppDatabase.forTesting(super.executor);
+
+  @override
+  int get schemaVersion => 1;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          // Future migrations go here
+        },
+        beforeOpen: (details) async {
+          await customStatement('PRAGMA foreign_keys = ON');
+        },
+      );
+}
+
+LazyDatabase _openConnection() {
+  return LazyDatabase(() async {
+    final dbFolder = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dbFolder.path, 'stock_manager.sqlite'));
+    return NativeDatabase.createInBackground(file);
+  });
+}
