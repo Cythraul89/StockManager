@@ -38,6 +38,8 @@ void main() {
     // check, causing a spurious failure.
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
-    await db.close();
+    // db.close() uses futures internally; run it outside FakeAsync so those
+    // futures resolve without needing additional pump() calls.
+    await tester.runAsync(db.close);
   });
 }
