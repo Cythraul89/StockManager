@@ -43,7 +43,7 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
         final broker = snapshot.data;
         if (broker == null) {
           return Scaffold(
-              appBar: const AppBar(),
+              appBar: AppBar(),
               body: const Center(child: Text('Broker not found')));
         }
         if (!_loaded) {

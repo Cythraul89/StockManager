@@ -143,7 +143,7 @@ class _CurrencySettingsScreenState
                           style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: settings.preferredCurrency,
+                        initialValue: settings.preferredCurrency,
                         items: _commonCurrencies
                             .map((c) => DropdownMenuItem(
                                 value: c, child: Text(c)))

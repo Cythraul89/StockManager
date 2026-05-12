@@ -199,7 +199,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
               loading: () => const CircularProgressIndicator(),
               error: (e, _) => Text('Error loading brokers: $e'),
               data: (brokers) => DropdownButtonFormField<String>(
-                value: _selectedBrokerId,
+                initialValue: _selectedBrokerId,
                 decoration: const InputDecoration(labelText: 'Broker'),
                 items: [
                   for (final b in brokers)

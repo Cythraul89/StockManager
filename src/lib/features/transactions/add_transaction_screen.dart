@@ -39,30 +39,28 @@ class _AddTransactionScreenState
   }
 
   Future<void> _pickDate() async {
-    final ctx = context;
     final picked = await showDatePicker(
-      context: ctx,
+      context: context,
       initialDate: _executedAt,
       firstDate: DateTime(1990),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (picked != null && mounted) {
-      final time = await showTimePicker(
-        context: ctx,
-        initialTime: TimeOfDay.fromDateTime(_executedAt),
+    if (picked == null) return;
+    if (!mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_executedAt),
+    );
+    if (!mounted) return;
+    setState(() {
+      _executedAt = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        time?.hour ?? _executedAt.hour,
+        time?.minute ?? _executedAt.minute,
       );
-      if (mounted) {
-        setState(() {
-          _executedAt = DateTime(
-            picked.year,
-            picked.month,
-            picked.day,
-            time?.hour ?? _executedAt.hour,
-            time?.minute ?? _executedAt.minute,
-          );
-        });
-      }
-    }
+    });
   }
 
   Decimal? _parseDecimal(String text) {

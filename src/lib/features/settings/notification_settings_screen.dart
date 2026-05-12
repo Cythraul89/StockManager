@@ -48,9 +48,9 @@ class NotificationSettingsScreen extends ConsumerWidget {
             ),
             // FCM push section — Android only
             if (Platform.isAndroid)
-              SettingsSection(
+              const SettingsSection(
                 title: 'Push notifications (Android)',
-                children: const [
+                children: [
                   ListTile(
                     title: Text('Background price alerts'),
                     subtitle: Text(
