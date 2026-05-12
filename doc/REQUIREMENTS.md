@@ -202,3 +202,11 @@ Features confirmed for a future version. Not in scope for the initial release.
 - News is fetched from a public financial news API (e.g. Finnhub free tier) using the stock's ticker symbol.
 - Articles open in the device's default browser.
 - News requires an Internet connection; a “no connection” placeholder is shown offline.
+
+### 10.6 Broker Import / Export
+- The app can **import transaction history** from spreadsheet files exported by supported brokers, automatically creating stocks and transactions from the imported data.
+- The app can **export the full transaction history** in a format compatible with supported brokers (e.g. for re-importing into a broker's portfolio tool).
+- Supported file formats: CSV and XLSX (the most common broker export formats).
+- Each supported broker has a named **import profile** that maps the broker's column layout to the app's data model (date, shares, price, fees, type, ISIN/ticker).
+- Unrecognised rows or mapping conflicts are flagged for manual review before import is confirmed; no data is written until the user approves.
+- Import profiles are bundled for common brokers (e.g. Scalable Capital, Trade Republic, comdirect, Degiro) and can be extended in future updates.
