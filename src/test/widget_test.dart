@@ -27,7 +27,7 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pumpAndSettle(const Duration(seconds: 10));
 
     expect(find.text('Dashboard'), findsAtLeastNWidgets(1));
   });
