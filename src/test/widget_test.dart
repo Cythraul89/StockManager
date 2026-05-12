@@ -10,8 +10,6 @@ import 'package:stock_manager/features/stocks/stocks_provider.dart';
 void main() {
   testWidgets('App renders dashboard', (tester) async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-
     final notificationService = NotificationService();
 
     await tester.pumpWidget(
@@ -27,8 +25,18 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle(const Duration(seconds: 10));
-
+    // One pump renders the first frame; the Dashboard AppBar title is
+    // visible immediately regardless of provider loading state.
+    await tester.pump();
     expect(find.text('Dashboard'), findsAtLeastNWidgets(1));
+
+    // Explicitly dispose the widget tree so Riverpod cancels its Drift
+    // stream subscriptions now, then pump once to drain the zero-duration
+    // cleanup timers Drift creates on cancellation. Without this, those
+    // timers are still pending when the test framework runs its invariant
+    // check, causing a spurious failure.
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await db.close();
   });
 }
