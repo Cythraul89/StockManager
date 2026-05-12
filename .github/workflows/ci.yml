@@ -62,6 +62,25 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android .
 
+      - name: Enable core library desugaring (flutter_local_notifications)
+        shell: python3 {0}
+        run: |
+          path = 'android/app/build.gradle'
+          with open(path) as f:
+              content = f.read()
+          content = content.replace(
+              'compileOptions {',
+              'compileOptions {\n        coreLibraryDesugaringEnabled true',
+              1,
+          )
+          dep = '    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"'
+          if 'dependencies {}' in content:
+              content = content.replace('dependencies {}', 'dependencies {\n' + dep + '\n}', 1)
+          else:
+              content = content.replace('dependencies {', 'dependencies {\n' + dep, 1)
+          with open(path, 'w') as f:
+              f.write(content)
+
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug
 
