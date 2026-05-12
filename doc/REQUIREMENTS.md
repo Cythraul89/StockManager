@@ -104,6 +104,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 - All portfolio data is **synchronised with a user-configured Nextcloud instance**.
 - Synchronisation is triggered manually and/or automatically when a network connection is available.
+- The app supports Nextcloud instances that use **self-signed TLS certificates**; the user can explicitly accept and pin a server certificate during initial setup.
 - The data file stored on Nextcloud is an **ODS (OpenDocument Spreadsheet)** file that is human-readable and can be opened in any ODS-compatible office suite (e.g. LibreOffice Calc, OnlyOffice Spreadsheets).
 - The ODS file contains structured sheets for: brokers, stocks, full transaction history, dividends (paid and expected), and a summary of current valuations.
 - Each export is **timestamped** (filename or internal metadata) so the user can see when the last sync occurred.
