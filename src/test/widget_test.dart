@@ -10,6 +10,7 @@ import 'package:stock_manager/features/stocks/stocks_provider.dart';
 void main() {
   testWidgets('App renders dashboard', (tester) async {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDownCallback(db.close);
 
     final notificationService = NotificationService();
 
