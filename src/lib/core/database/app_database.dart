@@ -12,6 +12,7 @@ import 'daos/settings_dao.dart';
 import 'daos/stocks_dao.dart';
 import 'daos/transactions_dao.dart';
 import 'tables/brokers_table.dart';
+import 'tables/decimal_converter.dart';
 import 'tables/dividends_table.dart';
 import 'tables/exchange_rate_cache_table.dart';
 import 'tables/price_cache_table.dart';
