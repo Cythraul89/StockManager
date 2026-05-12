@@ -1,10 +1,11 @@
+import 'package:decimal/decimal.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stock_manager/app.dart';
 import 'package:stock_manager/core/database/app_database.dart';
 import 'package:stock_manager/core/services/notification_service.dart';
+import 'package:stock_manager/features/dashboard/dashboard_provider.dart';
 import 'package:stock_manager/features/settings/settings_provider.dart';
 import 'package:stock_manager/features/stocks/stocks_provider.dart';
 
@@ -21,25 +22,30 @@ void main() {
           marketDataServiceProvider.overrideWith(
             (ref) => throw UnimplementedError(),
           ),
+          // Override portfolioSummaryProvider so no Drift stream providers
+          // are subscribed to. Without this, Drift's StreamQueryStore creates
+          // zero-duration cleanup timers on cancellation that the test
+          // framework detects as pending, causing the test to fail.
+          portfolioSummaryProvider.overrideWith(
+            (ref) async => PortfolioSummary(
+              totalValue: Decimal.zero,
+              totalInvested: Decimal.zero,
+              unrealisedPnl: Decimal.zero,
+              unrealisedPnlPct: Decimal.zero,
+              realisedPnl: Decimal.zero,
+              allTimeDividends: Decimal.zero,
+              currentYearDividends: Decimal.zero,
+              currency: 'EUR',
+              stockItems: const [],
+            ),
+          ),
         ],
         child: const StockManagerApp(),
       ),
     );
 
-    // One pump renders the first frame; the Dashboard AppBar title is
-    // visible immediately regardless of provider loading state.
     await tester.pump();
     expect(find.text('Dashboard'), findsAtLeastNWidgets(1));
-
-    // Explicitly dispose the widget tree so Riverpod cancels its Drift
-    // stream subscriptions now, then pump once to drain the zero-duration
-    // cleanup timers Drift creates on cancellation. Without this, those
-    // timers are still pending when the test framework runs its invariant
-    // check, causing a spurious failure.
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump();
-    // db.close() uses futures internally; run it outside FakeAsync so those
-    // futures resolve without needing additional pump() calls.
     await tester.runAsync(db.close);
   });
 }
