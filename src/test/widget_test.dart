@@ -30,6 +30,6 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('Dashboard'), findsAtLeastNWidget(1));
+    expect(find.text('Dashboard'), findsAtLeastNWidgets(1));
   });
 }

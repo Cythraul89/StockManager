@@ -31,18 +31,19 @@ class _AddBrokerScreenState extends ConsumerState<AddBrokerScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final db = ref.read(databaseProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
 
     // Enforce 10-broker limit
     final count = await db.brokersDao.count();
     if (count >= 10 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Maximum of 10 brokers reached')),
       );
       return;
     }
 
     setState(() => _isSaving = true);
-    final router = GoRouter.of(context);
     try {
       const uuid = Uuid();
       await db.brokersDao.upsert(

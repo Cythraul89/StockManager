@@ -1,4 +1,3 @@
-import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -6,7 +5,6 @@ import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/dividend.dart';
-import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';

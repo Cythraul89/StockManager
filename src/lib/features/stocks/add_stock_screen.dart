@@ -77,8 +77,12 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
     if (_selectedBrokerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
           const SnackBar(content: Text('Please select a broker')));
       return;
     }
@@ -87,7 +91,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
     final db = ref.read(databaseProvider);
     final count = await db.stocksDao.count();
     if (count >= 100 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
           const SnackBar(content: Text('Maximum of 100 stocks reached')));
       return;
     }
@@ -106,7 +110,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
         dripEnabled: _dripEnabled,
       );
       await ref.read(stockActionsProvider).addStock(stock);
-      if (mounted) context.pop();
+      if (mounted) router.pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

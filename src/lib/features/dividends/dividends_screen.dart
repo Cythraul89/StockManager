@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/date_helpers.dart';
-import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'widgets/dividend_tile.dart';
 import '../../core/models/dividend.dart';

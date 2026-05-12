@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/exchange_rate.dart';
-import '../../core/services/currency_service.dart';
-import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/date_helpers.dart';
 import 'settings_provider.dart';
 

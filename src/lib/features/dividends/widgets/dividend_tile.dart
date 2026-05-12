@@ -20,7 +20,7 @@ class DividendTile extends StatelessWidget {
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: (isPaid ? Colors.green : theme.colorScheme.primary)
-            .withOpacity(0.15),
+            .withValues(alpha: 0.15),
         child: Icon(
           isPaid ? Icons.payments : Icons.schedule,
           size: 20,

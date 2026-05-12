@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/services/market_data_service.dart';
 import '../stocks/stocks_provider.dart';
 import 'dashboard_provider.dart';
 import 'widgets/portfolio_summary_card.dart';

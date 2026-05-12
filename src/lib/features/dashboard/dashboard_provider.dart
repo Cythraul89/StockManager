@@ -10,8 +10,6 @@ import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
-import '../../core/models/stock_split.dart';
-import '../../core/models/transaction.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 

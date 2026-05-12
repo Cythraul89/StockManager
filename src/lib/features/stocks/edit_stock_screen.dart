@@ -98,6 +98,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
                           setState(() => _isSaving = true);
+                          final router = GoRouter.of(context);
                           try {
                             await ref.read(stockActionsProvider).updateStock(
                                   stock.copyWith(
@@ -107,7 +108,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                                     dripEnabled: _dripEnabled,
                                   ),
                                 );
-                            if (mounted) context.pop();
+                            if (mounted) router.pop();
                           } finally {
                             if (mounted) setState(() => _isSaving = false);
                           }
@@ -132,6 +133,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
   }
 
   Future<void> _confirmDelete(BuildContext context, String symbol) async {
+    final router = GoRouter.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -153,7 +155,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
     );
     if (confirmed == true && mounted) {
       await ref.read(stockActionsProvider).deleteStock(widget.id);
-      if (mounted) context.go('/stocks');
+      if (mounted) router.go('/stocks');
     }
   }
 }

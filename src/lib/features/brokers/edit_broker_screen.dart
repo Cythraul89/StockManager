@@ -43,7 +43,7 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
         final broker = snapshot.data;
         if (broker == null) {
           return Scaffold(
-              appBar: AppBar(),
+              appBar: const AppBar(),
               body: const Center(child: Text('Broker not found')));
         }
         if (!_loaded) {
@@ -53,7 +53,7 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
         }
 
         return Scaffold(
-          appBar: AppBar(title: Text('Edit \${broker.name}')),
+          appBar: AppBar(title: Text('Edit ${broker.name}')),
           body: Form(
             key: _formKey,
             child: ListView(
@@ -116,6 +116,8 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
   }
 
   Future<void> _confirmDelete(BuildContext context, String name) async {
+    final router = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -134,13 +136,12 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
       ),
     );
     if (confirmed == true && mounted) {
-      final router = GoRouter.of(context);
       try {
         await ref.read(databaseProvider).brokersDao.deleteById(widget.id);
         if (mounted) router.pop();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             const SnackBar(
                 content: Text('Cannot delete: stocks are assigned to this broker')),
           );

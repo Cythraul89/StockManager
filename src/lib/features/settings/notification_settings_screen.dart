@@ -19,7 +19,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Notification preferences')),
       body: settingsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: \$e')),
+        error: (e, _) => Center(child: Text('Error: $e')),
         data: (settings) => ListView(
           children: [
             SettingsSection(
@@ -28,7 +28,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 ListTile(
                   title: const Text('Alert threshold'),
                   subtitle: Text(
-                      '\${settings.priceAlertThresholdPct.toStringAsFixed(1)}% price change'),
+                      '${settings.priceAlertThresholdPct.toStringAsFixed(1)}% price change'),
                   trailing: const Icon(Icons.edit),
                   onTap: () => _editThreshold(context, ref, settings),
                 ),
@@ -40,7 +40,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 ListTile(
                   title: const Text('Lead time'),
                   subtitle: Text(
-                      '\${settings.dividendAlertDays} day(s) before payment'),
+                      '${settings.dividendAlertDays} day(s) before payment'),
                   trailing: const Icon(Icons.edit),
                   onTap: () => _editDividendDays(context, ref, settings),
                 ),
@@ -50,8 +50,8 @@ class NotificationSettingsScreen extends ConsumerWidget {
             if (Platform.isAndroid)
               SettingsSection(
                 title: 'Push notifications (Android)',
-                children: [
-                  const ListTile(
+                children: const [
+                  ListTile(
                     title: Text('Background price alerts'),
                     subtitle: Text(
                         'Uses WorkManager to check prices in the background '

@@ -39,26 +39,29 @@ class _AddTransactionScreenState
   }
 
   Future<void> _pickDate() async {
+    final ctx = context;
     final picked = await showDatePicker(
-      context: context,
+      context: ctx,
       initialDate: _executedAt,
       firstDate: DateTime(1990),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       final time = await showTimePicker(
-        context: context,
+        context: ctx,
         initialTime: TimeOfDay.fromDateTime(_executedAt),
       );
-      setState(() {
-        _executedAt = DateTime(
-          picked.year,
-          picked.month,
-          picked.day,
-          time?.hour ?? _executedAt.hour,
-          time?.minute ?? _executedAt.minute,
-        );
-      });
+      if (mounted) {
+        setState(() {
+          _executedAt = DateTime(
+            picked.year,
+            picked.month,
+            picked.day,
+            time?.hour ?? _executedAt.hour,
+            time?.minute ?? _executedAt.minute,
+          );
+        });
+      }
     }
   }
 
@@ -73,6 +76,7 @@ class _AddTransactionScreenState
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final router = GoRouter.of(context);
     final shares = _parseDecimal(_sharesCtrl.text)!;
     final price = _parseDecimal(_priceCtrl.text)!;
     final fees = _parseDecimal(_feesCtrl.text) ?? Decimal.zero;
@@ -97,7 +101,7 @@ class _AddTransactionScreenState
     setState(() => _isSaving = true);
     try {
       await ref.read(stockActionsProvider).addTransaction(tx);
-      if (mounted) context.pop();
+      if (mounted) router.pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

@@ -23,7 +23,7 @@ class TransactionTile extends StatelessWidget {
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: typeColor.withOpacity(0.15),
+        backgroundColor: typeColor.withValues(alpha: 0.15),
         child: Text(
           isBuy ? 'B' : 'S',
           style: TextStyle(
