@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/database/app_database.dart';
 import '../stocks/stocks_provider.dart';
 
 class EditBrokerScreen extends ConsumerStatefulWidget {
@@ -52,7 +53,7 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
         }
 
         return Scaffold(
-          appBar: AppBar(title: Text('Edit ${broker.name}')),
+          appBar: AppBar(title: Text('Edit \${broker.name}')),
           body: Form(
             key: _formKey,
             child: ListView(
@@ -78,6 +79,7 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
                           setState(() => _isSaving = true);
+                          final router = GoRouter.of(context);
                           try {
                             await db.brokersDao.upsert(
                               BrokersCompanion(
@@ -89,7 +91,7 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
                                         : _notesCtrl.text.trim()),
                               ),
                             );
-                            if (mounted) context.pop();
+                            if (mounted) router.pop();
                           } finally {
                             if (mounted) setState(() => _isSaving = false);
                           }
@@ -132,9 +134,10 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
       ),
     );
     if (confirmed == true && mounted) {
+      final router = GoRouter.of(context);
       try {
         await ref.read(databaseProvider).brokersDao.deleteById(widget.id);
-        if (mounted) context.pop();
+        if (mounted) router.pop();
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

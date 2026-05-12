@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/database/app_database.dart';
 import '../stocks/stocks_provider.dart';
 
 class AddBrokerScreen extends ConsumerStatefulWidget {
@@ -41,6 +42,7 @@ class _AddBrokerScreenState extends ConsumerState<AddBrokerScreen> {
     }
 
     setState(() => _isSaving = true);
+    final router = GoRouter.of(context);
     try {
       const uuid = Uuid();
       await db.brokersDao.upsert(
@@ -51,7 +53,7 @@ class _AddBrokerScreenState extends ConsumerState<AddBrokerScreen> {
               _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim()),
         ),
       );
-      if (mounted) context.pop();
+      if (mounted) router.pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
