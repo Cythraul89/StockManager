@@ -21,15 +21,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _refreshPrices() async {
-    final stocks = await ref.read(stocksProvider.future);
-    final service = ref.read(marketDataServiceProvider);
-    final symbolMap = {
-      for (final s in stocks) s.id: s.symbol,
-    };
-    final quotes = await service.fetchQuotes(symbolMap);
-    if (mounted) {
-      ref.read(priceQuotesProvider.notifier).state = quotes;
-    }
+    try {
+      final stocks = await ref.read(stocksProvider.future);
+      final service = ref.read(marketDataServiceProvider);
+      final symbolMap = {
+        for (final s in stocks) s.id: s.symbol,
+      };
+      final quotes = await service.fetchQuotes(symbolMap);
+      if (mounted) {
+        ref.read(priceQuotesProvider.notifier).state = quotes;
+      }
+    } catch (_) {}
   }
 
   @override
