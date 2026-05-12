@@ -11,7 +11,7 @@ defaults:
     working-directory: src
 
 jobs:
-  # ── Analyse & test (runs first, gates all build jobs) ──────────────────────
+  # ── Analyse & test (runs first, gates all build jobs) ──────────────────────────
   analyze:
     name: Analyze & Test
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
       - name: Test
         run: flutter test
 
-  # ── Android ──────────────────────────────────────────────────
+  # ── Android ────────────────────────────────────────────
   build-android:
     name: Build Android
     runs-on: ubuntu-latest
@@ -56,10 +56,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate Android platform files
+        run: flutter create --platforms=android .
+
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug
 
-  # ── Linux ─────────────────────────────────────────────────────
+  # ── Linux ─────────────────────────────────────────────
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
@@ -80,10 +83,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate Linux platform files
+        run: flutter create --platforms=linux .
+
       - name: Build Linux
         run: flutter build linux --release
 
-  # ── Windows ──────────────────────────────────────────────────
+  # ── Windows ────────────────────────────────────────────
   build-windows:
     name: Build Windows
     runs-on: windows-latest
@@ -99,10 +105,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate Windows platform files
+        run: flutter create --platforms=windows .
+
       - name: Build Windows
         run: flutter build windows --release
 
-  # ── macOS ──────────────────────────────────────────────────
+  # ── macOS ────────────────────────────────────────────
   build-macos:
     name: Build macOS
     runs-on: macos-latest
@@ -117,6 +126,9 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Generate macOS platform files
+        run: flutter create --platforms=macos .
 
       - name: Build macOS
         run: flutter build macos --release
