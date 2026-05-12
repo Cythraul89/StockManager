@@ -1,0 +1,92 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/services/market_data_service.dart';
+import '../stocks/stocks_provider.dart';
+import 'dashboard_provider.dart';
+import 'widgets/portfolio_summary_card.dart';
+import 'widgets/stock_list_tile.dart';
+
+class DashboardScreen extends ConsumerStatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _refreshPrices();
+  }
+
+  Future<void> _refreshPrices() async {
+    final stocks = await ref.read(stocksProvider.future);
+    final service = ref.read(marketDataServiceProvider);
+    final symbolMap = {
+      for (final s in stocks) s.id: s.symbol,
+    };
+    final quotes = await service.fetchQuotes(symbolMap);
+    if (mounted) {
+      ref.read(priceQuotesProvider.notifier).state = quotes;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summaryAsync = ref.watch(portfolioSummaryProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Dashboard'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh prices',
+            onPressed: _refreshPrices,
+          ),
+        ],
+      ),
+      body: summaryAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (summary) => RefreshIndicator(
+          onRefresh: _refreshPrices,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              PortfolioSummaryCard(summary: summary),
+              const SizedBox(height: 16),
+              if (summary.stockItems.isEmpty)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text('No stocks yet. Add one to get started.'),
+                  ),
+                )
+              else ...[
+                Text(
+                  'Holdings',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (int i = 0; i < summary.stockItems.length; i++) ...[
+                        if (i > 0) const Divider(height: 1),
+                        StockListTile(item: summary.stockItems[i]),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
