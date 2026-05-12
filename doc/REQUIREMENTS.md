@@ -166,3 +166,39 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - **Dark mode**: the app supports light and dark themes on all platforms, following the system preference by default.
 - **Performance**: the app must load the portfolio overview within 2 seconds on a modern device (offline data only).
 - **Data integrity**: transactions and portfolio data must not be lost during sync or app updates.
+
+---
+
+## 10. Planned Features
+
+Features confirmed for a future version. Not in scope for the initial release.
+
+### 10.1 Analyst Target Price and Rating
+- Each stock detail view displays the **consensus analyst target price** (fetched from market data) alongside the current price.
+- The **distance to target** is shown as a percentage (e.g. +18% upside).
+- The **analyst consensus rating** (Buy / Hold / Sell) is shown per stock, including the number of analysts contributing to the consensus.
+
+### 10.2 Trailing Stop-Loss Notification
+- The user can set a **trailing stop-loss threshold** per stock (e.g. −10%).
+- The threshold tracks the stock's highest recorded price since the alert was enabled.
+- A notification is triggered when the current price falls more than the threshold percentage below that peak.
+- The trailing high-water mark is updated automatically as the price rises.
+- Configurable per stock; displayed alongside the current price on the stock detail screen.
+
+### 10.3 Watchlist (Monitoring-Only Stocks)
+- Stocks can be added in **monitoring mode** — no broker assignment, no transactions required.
+- Watchlist stocks appear in a dedicated section separate from held positions.
+- All live price, target price, rating, and news features apply to watchlist stocks.
+- A watchlist stock can be promoted to a held position at any time by assigning a broker and adding a transaction.
+
+### 10.4 Price History Chart
+- Each stock detail view includes a **price history chart** showing closing prices over selectable time ranges (1W, 1M, 3M, 1Y, 5Y).
+- The chart highlights the user's buy and sell transactions as overlaid markers.
+- The dashboard shows a **mini sparkline** per stock in the stock list.
+- Charts are rendered from cached historical data and work offline for the last fetched range.
+
+### 10.5 Stock News
+- Each stock detail view includes a **news feed** of recent articles related to that stock.
+- News is fetched from a public financial news API (e.g. Finnhub free tier) using the stock's ticker symbol.
+- Articles open in the device's default browser.
+- News requires an Internet connection; a “no connection” placeholder is shown offline.
