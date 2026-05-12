@@ -55,7 +55,7 @@ class DividendCalculator {
     }
     final positionValue = sharesHeld * currentPrice;
     if (positionValue == Decimal.zero) return Decimal.zero;
-    return (annual / positionValue.toRational() * Decimal.fromInt(100).toRational())
+    return (annual.toRational() / positionValue.toRational() * Decimal.fromInt(100).toRational())
         .toDecimal(scaleOnInfinitePrecision: 4);
   }
 

@@ -73,7 +73,7 @@ class PnlCalculator {
       final multiplier = _splitMultiplierAfter(tx.executedAt, sortedSplits);
       final adjustedShares = tx.shares * multiplier;
       final adjustedPrice =
-          (tx.pricePerShare / multiplier.toRational())
+          (tx.pricePerShare.toRational() / multiplier.toRational())
               .toDecimal(scaleOnInfinitePrecision: 10);
 
       if (tx.type == TransactionType.buy) {
@@ -82,7 +82,7 @@ class PnlCalculator {
             runningCostBasis + adjustedShares * adjustedPrice + tx.fees;
       } else {
         if (runningShares.isZero) continue;
-        final avgCost = (runningCostBasis / runningShares.toRational())
+        final avgCost = (runningCostBasis.toRational() / runningShares.toRational())
             .toDecimal(scaleOnInfinitePrecision: 10);
         final proceeds = adjustedShares * adjustedPrice - tx.fees;
         realisedPnl =
@@ -101,20 +101,9 @@ class PnlCalculator {
     var multiplier = Decimal.one;
     for (final split in splits) {
       if (split.date.isAfter(txDate)) {
-        multiplier = (multiplier * split.ratio.toRational())
-            .toDecimal(scaleOnInfinitePrecision: 10);
+        multiplier = multiplier * split.ratio;
       }
     }
     return multiplier;
-  }
-}
-
-extension on Decimal {
-  bool get isZero => this == Decimal.zero;
-
-  Decimal percentChangeFrom(Decimal base) {
-    if (base == Decimal.zero) return Decimal.zero;
-    return ((this - base) / base.toRational() * Decimal.fromInt(100).toRational())
-        .toDecimal(scaleOnInfinitePrecision: 6);
   }
 }

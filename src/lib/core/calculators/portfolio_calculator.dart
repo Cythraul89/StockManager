@@ -44,7 +44,7 @@ class PortfolioCalculator {
       final multiplier = _splitMultiplierAfter(tx.executedAt, sortedSplits);
       final adjustedShares = tx.shares * multiplier;
       final adjustedPrice =
-          (tx.pricePerShare / multiplier.toRational())
+          (tx.pricePerShare.toRational() / multiplier.toRational())
               .toDecimal(scaleOnInfinitePrecision: 10);
 
       if (tx.type == TransactionType.buy) {
@@ -55,7 +55,7 @@ class PortfolioCalculator {
         // average-cost method is standard for retail investors in most jurisdictions).
         if (sharesHeld.isZero) continue;
         final sellRatio =
-            (adjustedShares / sharesHeld.toRational())
+            (adjustedShares.toRational() / sharesHeld.toRational())
                 .toDecimal(scaleOnInfinitePrecision: 10);
         final costReduction = totalCostBasis * sellRatio;
         sharesHeld = DecimalMath.clampMin(sharesHeld - adjustedShares);
@@ -65,7 +65,7 @@ class PortfolioCalculator {
 
     final avgBuyPrice = sharesHeld.isZero
         ? Decimal.zero
-        : (totalCostBasis / sharesHeld.toRational())
+        : (totalCostBasis.toRational() / sharesHeld.toRational())
             .toDecimal(scaleOnInfinitePrecision: 10);
 
     return PositionSummary(
@@ -80,8 +80,7 @@ class PortfolioCalculator {
     var multiplier = Decimal.one;
     for (final split in splits) {
       if (split.date.isAfter(txDate)) {
-        multiplier = (multiplier * split.ratio.toRational())
-            .toDecimal(scaleOnInfinitePrecision: 10);
+        multiplier = multiplier * split.ratio;
       }
     }
     return multiplier;

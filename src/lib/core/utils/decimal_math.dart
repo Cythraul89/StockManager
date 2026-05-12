@@ -8,7 +8,7 @@ extension DecimalX on Decimal {
   // Percentage change from [base] to this.
   Decimal percentChangeFrom(Decimal base) {
     if (base.isZero) return Decimal.zero;
-    return ((this - base) / base.toRational() * Decimal.fromInt(100).toRational())
+    return ((this - base).toRational() / base.toRational() * Decimal.fromInt(100).toRational())
         .toDecimal(scaleOnInfinitePrecision: 6);
   }
 
@@ -23,7 +23,7 @@ class DecimalMath {
     if (totalWeight.isZero) return Decimal.zero;
     final weightedSum =
         items.fold(Decimal.zero, (acc, e) => acc + e.value * e.weight);
-    return (weightedSum / totalWeight.toRational())
+    return (weightedSum.toRational() / totalWeight.toRational())
         .toDecimal(scaleOnInfinitePrecision: 10);
   }
 
