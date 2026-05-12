@@ -4,6 +4,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/app_settings.dart';
 import 'settings_provider.dart';
 import 'widgets/settings_section.dart';
 
@@ -18,7 +19,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Notification preferences')),
       body: settingsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text('Error: \$e')),
         data: (settings) => ListView(
           children: [
             SettingsSection(
@@ -27,7 +28,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 ListTile(
                   title: const Text('Alert threshold'),
                   subtitle: Text(
-                      '${settings.priceAlertThresholdPct.toStringAsFixed(1)}% price change'),
+                      '\${settings.priceAlertThresholdPct.toStringAsFixed(1)}% price change'),
                   trailing: const Icon(Icons.edit),
                   onTap: () => _editThreshold(context, ref, settings),
                 ),
@@ -39,7 +40,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 ListTile(
                   title: const Text('Lead time'),
                   subtitle: Text(
-                      '${settings.dividendAlertDays} day(s) before payment'),
+                      '\${settings.dividendAlertDays} day(s) before payment'),
                   trailing: const Icon(Icons.edit),
                   onTap: () => _editDividendDays(context, ref, settings),
                 ),
@@ -66,7 +67,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _editThreshold(
-      BuildContext context, WidgetRef ref, settings) async {
+      BuildContext context, WidgetRef ref, AppSettings settings) async {
     final ctrl = TextEditingController(
         text: settings.priceAlertThresholdPct.toStringAsFixed(1));
     final result = await showDialog<String>(
@@ -101,7 +102,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _editDividendDays(
-      BuildContext context, WidgetRef ref, settings) async {
+      BuildContext context, WidgetRef ref, AppSettings settings) async {
     final ctrl = TextEditingController(
         text: settings.dividendAlertDays.toString());
     final result = await showDialog<String>(

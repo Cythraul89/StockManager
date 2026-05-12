@@ -40,7 +40,7 @@ class DividendsDao extends DatabaseAccessor<AppDatabase>
   Future<void> insert(DividendsCompanion companion) =>
       into(dividends).insert(companion);
 
-  Future<bool> update(DividendsCompanion companion) =>
+  Future<bool> updateRow(DividendsCompanion companion) =>
       (update(dividends)..where((t) => t.id.equals(companion.id.value)))
           .write(companion)
           .then((count) => count > 0);

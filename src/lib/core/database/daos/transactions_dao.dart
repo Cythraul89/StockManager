@@ -33,7 +33,7 @@ class TransactionsDao extends DatabaseAccessor<AppDatabase>
   Future<void> insert(TransactionsCompanion companion) =>
       into(transactions).insert(companion);
 
-  Future<bool> update(TransactionsCompanion companion) =>
+  Future<bool> updateRow(TransactionsCompanion companion) =>
       (update(transactions)
             ..where((t) => t.id.equals(companion.id.value)))
           .write(companion)
