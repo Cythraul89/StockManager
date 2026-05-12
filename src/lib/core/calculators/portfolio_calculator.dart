@@ -16,7 +16,7 @@ class PositionSummary {
   // Cost basis of currently held shares in the transaction currency.
   final Decimal totalInvested;
 
-  static const zero = PositionSummary(
+  static final zero = PositionSummary(
     sharesHeld: Decimal.zero,
     avgBuyPrice: Decimal.zero,
     totalInvested: Decimal.zero,
