@@ -34,7 +34,7 @@ dependencies:
   firebase_messaging: ^15.0.1
 
   # Background tasks (Android only — WorkManager)
-  workmanager: ^0.5.2
+  workmanager: ^0.6.0
 
   # Financial arithmetic — never double for money
   decimal: ^3.0.2
