@@ -56,6 +56,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Generate Android platform files
         run: flutter create --platforms=android .
 
@@ -83,6 +86,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Generate Linux platform files
         run: flutter create --platforms=linux .
 
@@ -105,6 +111,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
       - name: Generate Windows platform files
         run: flutter create --platforms=windows .
 
@@ -126,6 +135,9 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Generate macOS platform files
         run: flutter create --platforms=macos .
