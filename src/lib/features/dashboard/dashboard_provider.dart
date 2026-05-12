@@ -144,7 +144,7 @@ PortfolioSummary _buildSummary(
 
   final unrealisedPct = totalInvested == Decimal.zero
       ? Decimal.zero
-      : (unrealisedPnl /
+      : (unrealisedPnl.toRational() /
               totalInvested.toRational() *
               Decimal.fromInt(100).toRational())
           .toDecimal(scaleOnInfinitePrecision: 4);

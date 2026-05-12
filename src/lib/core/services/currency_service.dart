@@ -40,7 +40,7 @@ class CurrencyService {
       for (final entry in rates.entries) {
         final targetRate = _parseRate(entry.value);
         if (targetRate == null) continue;
-        final rate = (targetRate / baseRate.toRational())
+        final rate = (targetRate.toRational() / baseRate.toRational())
             .toDecimal(scaleOnInfinitePrecision: 10);
         result[entry.key] = ExchangeRate(
           base: baseCurrency,

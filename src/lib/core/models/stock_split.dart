@@ -18,7 +18,8 @@ class StockSplit extends Equatable {
 
   // e.g. 4:1 split → ratio = 4
   Decimal get ratio =>
-      Decimal.fromInt(toShares) / Decimal.fromInt(fromShares).toRational();
+      (Decimal.fromInt(toShares).toRational() / Decimal.fromInt(fromShares).toRational())
+          .toDecimal(scaleOnInfinitePrecision: 10);
 
   @override
   List<Object?> get props => [id, stockId, date, fromShares, toShares];
