@@ -65,15 +65,15 @@ jobs:
       - name: Enable core library desugaring (flutter_local_notifications)
         shell: python3 {0}
         run: |
-          path = 'android/app/build.gradle'
+          path = 'android/app/build.gradle.kts'
           with open(path) as f:
               content = f.read()
           content = content.replace(
               'compileOptions {',
-              'compileOptions {\n        coreLibraryDesugaringEnabled true',
+              'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
               1,
           )
-          dep = '    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"'
+          dep = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")'
           if 'dependencies {}' in content:
               content = content.replace('dependencies {}', 'dependencies {\n' + dep + '\n}', 1)
           else:
