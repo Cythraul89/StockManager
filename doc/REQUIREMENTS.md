@@ -18,6 +18,9 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 - Up to **100 different stocks** can be managed across all brokers.
 - Each stock is associated with one broker.
+- Each stock is identified by its **ISIN** (International Securities Identification Number).
+- The stock name, ticker symbol, exchange, and currency are **automatically resolved** from the ISIN via a lookup service when adding a stock; the user does not need to enter these manually.
+- Resolved fields can be reviewed and corrected by the user before saving.
 - Stocks can be held in **different currencies**.
 - Stocks can be added and removed in the app.
 
