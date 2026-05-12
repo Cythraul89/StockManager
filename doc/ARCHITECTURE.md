@@ -83,10 +83,11 @@ features/<name>/
 |---|---|---|
 | id | UUID (PK) | |
 | broker_id | UUID (FK brokers) | |
-| symbol | TEXT | e.g. AAPL |
-| name | TEXT | e.g. Apple Inc. |
-| exchange | TEXT | e.g. NASDAQ |
-| currency | TEXT | ISO 4217, e.g. USD |
+| isin | TEXT (UNIQUE) | ISO 6166, e.g. US0378331005 |
+| symbol | TEXT | e.g. AAPL — resolved from ISIN |
+| name | TEXT | e.g. Apple Inc. — resolved from ISIN |
+| exchange | TEXT | e.g. NASDAQ — resolved from ISIN |
+| currency | TEXT | ISO 4217, e.g. USD — resolved from ISIN |
 | drip_enabled | BOOL | Dividend reinvestment flag |
 
 **transactions**
@@ -194,27 +195,131 @@ Raw transaction rows are never modified when a stock split is recorded. The doma
 ### 5.3 Currency Conversion
 Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline, the most recent cached rate is used with a staleness indicator shown in the UI. Manual overrides stored in the database bypass the TTL entirely.
 
-### 5.4 Financial Arithmetic
+### 5.4 ISIN Lookup
+When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. The resolved data is shown to the user for confirmation before saving. If the lookup fails (offline or unknown ISIN), the user can enter the fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made.
+
+### 5.5 Financial Arithmetic
 All monetary values are stored and calculated as `Decimal` (via the `decimal` package), never `double`, to avoid floating-point rounding errors.
 
-### 5.5 Background Price Alerts on Android
+### 5.6 Background Price Alerts on Android
 True FCM push requires a backend server to send messages. To avoid a server dependency, price alerts on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval). The task fetches latest prices, checks thresholds, and fires a local notification if triggered. FCM infrastructure is included in the project so a self-hosted backend can be added later without client changes.
 
-### 5.6 Nextcloud Sync Strategy
+### 5.7 ODS Structure
+
+The exported ODS file contains 7 sheets in the following order.
+
+#### Sheet 1 — Summary
+
+Key-value pairs, no fixed column count.
+
+| Row | A | B |
+|---|---|---|
+| 1 | StockManager Export | _(app name / version)_ |
+| 2 | Generated | ISO 8601 timestamp |
+| 3 | Preferred currency | ISO 4217 code |
+| 5 | Portfolio value | converted to preferred currency |
+| 6 | Total invested | converted to preferred currency |
+| 7 | Unrealised P&L | converted to preferred currency |
+| 8 | Unrealised P&L % | percentage |
+| 9 | Realised P&L | converted to preferred currency |
+| 10 | Dividends received (all-time) | converted to preferred currency |
+| 11 | Dividends received (current year) | converted to preferred currency |
+
+#### Sheet 2 — Brokers
+
+| A: Name | B: Notes |
+|---|---|
+| Scalable Capital | |
+| Trade Republic | Main account |
+
+#### Sheet 3 — Stocks
+
+| Col | Field | Notes |
+|---|---|---|
+| A | ISIN | ISO 6166 |
+| B | Ticker | e.g. AAPL |
+| C | Name | e.g. Apple Inc. |
+| D | Broker | broker name |
+| E | Exchange | e.g. NASDAQ |
+| F | Currency | native ISO 4217 |
+| G | Shares held | decimal |
+| H | Avg buy price | in native currency |
+| I | Current price | in native currency |
+| J | Current value | converted to preferred currency |
+| K | Invested | converted to preferred currency |
+| L | Unrealised P&L | converted to preferred currency |
+| M | Unrealised P&L % | percentage |
+| N | Dividend yield % | annual, percentage |
+| O | DRIP | Yes / No |
+
+#### Sheet 4 — Transactions
+
+| Col | Field | Notes |
+|---|---|---|
+| A | Date | YYYY-MM-DD |
+| B | Time | HH:MM |
+| C | ISIN | |
+| D | Ticker | |
+| E | Name | |
+| F | Broker | |
+| G | Type | BUY / SELL |
+| H | Shares | decimal |
+| I | Price per share | in transaction currency |
+| J | Currency | ISO 4217 |
+| K | Fees | in transaction currency |
+| L | Total cost | shares × price + fees |
+| M | Notes | optional |
+
+#### Sheet 5 — Dividends Paid
+
+| Col | Field | Notes |
+|---|---|---|
+| A | Date | YYYY-MM-DD |
+| B | ISIN | |
+| C | Ticker | |
+| D | Name | |
+| E | Amount per share | in dividend currency |
+| F | Shares | at time of payment |
+| G | Total gross | E × F |
+| H | Withholding tax | in dividend currency |
+| I | Total net | G − H |
+| J | Currency | ISO 4217 |
+| K | Notes | optional |
+
+#### Sheet 6 — Dividends Expected
+
+| Col | Field | Notes |
+|---|---|---|
+| A | Expected date | YYYY-MM-DD |
+| B | ISIN | |
+| C | Ticker | |
+| D | Name | |
+| E | Amount per share (est.) | in dividend currency |
+| F | Shares | current holding |
+| G | Total estimated | E × F |
+| H | Currency | ISO 4217 |
+
+#### Sheet 7 — Exchange Rates
+
+| Col | Field | Notes |
+|---|---|---|
+| A | Base currency | ISO 4217 |
+| B | Target currency | ISO 4217 |
+| C | Rate | decimal |
+| D | Source | `live` or `manual override` |
+| E | Fetched / set at | ISO 8601 timestamp |
+
+### 5.8 Nextcloud Sync Strategy
 The local SQLite database is the source of truth. Sync is one-directional: local data → ODS export → uploaded to Nextcloud via WebDAV PUT. The ODS filename includes a timestamp (e.g. `stockmanager_2026-05-12T14-30.ods`). Previous exports are retained on Nextcloud (configurable count).
 
-### 5.7 ODS Structure
-The exported ODS file contains the following sheets in order:
+### 5.9 Self-Signed Certificate Support
+The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
+1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
+2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
+3. All subsequent WebDAV requests validate against the stored fingerprint; a mismatch aborts the connection and alerts the user.
+4. The certificate can be re-pinned or removed from the Nextcloud settings screen.
 
-| Sheet | Contents |
-|---|---|
-| Summary | Total portfolio value, P&L, preferred currency, sync timestamp |
-| Brokers | All brokers with names and notes |
-| Stocks | All stocks with current price, value, avg buy price, P&L |
-| Transactions | Full transaction history across all stocks |
-| Dividends Paid | All recorded dividend payments |
-| Dividends Expected | All upcoming expected dividends |
-| Exchange Rates | Rates used at time of export |
+This approach avoids globally disabling TLS verification — only the explicitly approved certificate is trusted.
 
 ---
 
