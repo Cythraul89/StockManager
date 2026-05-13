@@ -118,7 +118,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final brokersAsync = ref.watch(brokersProvider);
+    final brokersAsync = ref.watch(brokersStreamProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Add Stock')),

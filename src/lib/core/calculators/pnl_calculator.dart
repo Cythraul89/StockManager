@@ -36,7 +36,7 @@ class PnlCalculator {
 
     final unrealisedPnl = currentValue - position.totalInvested;
     final unrealisedPnlPct =
-        unrealisedPnl.percentChangeFrom(position.totalInvested);
+        currentValue.percentChangeFrom(position.totalInvested);
 
     final realisedPnl = _realisedPnl(transactions, splits);
 

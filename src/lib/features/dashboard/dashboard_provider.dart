@@ -65,8 +65,8 @@ class StockSummaryItem {
 
 final portfolioSummaryProvider =
     FutureProvider<PortfolioSummary>((ref) async {
-  final stocks = await ref.watch(stocksProvider.future);
-  final brokers = await ref.watch(brokersProvider.future);
+  final stocks = await ref.watch(stocksStreamProvider.future);
+  final brokers = await ref.watch(brokersStreamProvider.future);
   final settings = await ref.watch(settingsProvider.future);
   final rates = await ref.watch(exchangeRatesProvider.future);
   final quotes = ref.watch(priceQuotesProvider);
