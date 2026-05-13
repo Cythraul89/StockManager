@@ -1,0 +1,219 @@
+# StockManager — Developer Guide
+
+> Quick reference for working on this codebase. Full architecture details are in
+> [`doc/ARCHITECTURE.md`](doc/ARCHITECTURE.md). Class diagram is in
+> [`doc/CLASS_DIAGRAM.md`](doc/CLASS_DIAGRAM.md).
+
+---
+
+## Flutter / Dart version
+
+```
+Flutter stable channel   (CI uses subosito/flutter-action@v2, channel: stable)
+Dart SDK >=3.3.0 <4.0.0
+Java 17 (Android builds only)
+```
+
+---
+
+## Key commands
+
+All commands run from `src/`:
+
+```bash
+cd src
+
+# Resolve dependencies
+flutter pub get
+
+# Generate Drift .g.dart files (REQUIRED after touching any table or DAO)
+dart run build_runner build --delete-conflicting-outputs
+
+# Static analysis (mirrors CI — must be clean with --fatal-infos)
+flutter analyze --fatal-infos
+
+# Run tests
+flutter test
+
+# Run on connected device / default desktop
+flutter run
+
+# Build targets
+flutter build apk --debug                  # Android (debug, unsigned)
+flutter build linux --release
+flutter build windows --release
+flutter build macos --release
+```
+
+---
+
+## Generated code
+
+Drift uses `build_runner` to generate `*.g.dart` files from table and DAO
+annotations. These files are **not committed** — every build step regenerates
+them. Any change to a file in `core/database/tables/` or `core/database/daos/`
+requires running:
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
+The generated file for the main database is `core/database/app_database.g.dart`.
+The `DecimalConverter` class (in `core/database/tables/decimal_converter.dart`)
+must be imported in `app_database.dart` so the generated code can see it.
+
+---
+
+## Project layout
+
+```
+src/
+├── lib/
+│   ├── main.dart                       # Entry point, ProviderScope bootstrap
+│   ├── app.dart                        # MaterialApp, GoRouter, theme
+│   ├── core/
+│   │   ├── database/
+│   │   │   ├── app_database.dart       # @DriftDatabase root
+│   │   │   ├── daos/                   # One DAO per aggregate
+│   │   │   └── tables/                 # One table per entity + DecimalConverter
+│   │   ├── models/                     # Immutable domain models (pure Dart)
+│   │   ├── services/                   # HTTP APIs, notifications, WebDAV
+│   │   ├── calculators/                # Pure P&L / dividend / position math
+│   │   └── utils/                      # Formatting, date helpers, decimal math
+│   └── features/
+│       ├── dashboard/                  # portfolioSummaryProvider + DashboardScreen
+│       ├── stocks/                     # stocksProvider, stockActionsProvider
+│       ├── transactions/               # AddTransactionScreen
+│       ├── dividends/                  # DividendsScreen, AddDividendScreen
+│       ├── brokers/                    # BrokersScreen, CRUD screens
+│       └── settings/                   # settingsProvider, settingsActionsProvider
+└── test/
+    └── widget_test.dart
+```
+
+---
+
+## Architecture in brief
+
+```
+UI (Flutter widgets, ConsumerWidget)
+  │ watches
+Riverpod providers (FutureProvider / StreamProvider / StateProvider)
+  │ calls
+DAOs (Drift, typed queries, reactive streams)
+  │ persists
+SQLite (via Drift / NativeDatabase)
+
+         ┌───────────────────────────┐
+         │  Calculators (pure Dart)  │  ← no I/O; consume models, return results
+         │  portfolio, pnl, dividend │
+         └───────────────────────────┘
+
+         ┌─────────────────────────────────────────┐
+         │  Services (HTTP / platform)             │
+         │  MarketData · Currency · ISIN · Nextcloud│
+         │  Notifications                           │
+         └─────────────────────────────────────────┘
+```
+
+Providers that **must be overridden** in `ProviderScope` at startup:
+
+| Provider | Concrete value |
+|---|---|
+| `databaseProvider` | `AppDatabase()` |
+| `notificationServiceProvider` | `NotificationService()` |
+| `marketDataServiceProvider` | `MarketDataService(dio)` |
+| `currencyServiceProvider` | `CurrencyService(dio)` |
+
+---
+
+## Key conventions
+
+- **Decimal, never double** — all monetary values use `package:decimal`. The
+  `DecimalConverter` serialises them to/from SQLite text. The extension
+  `DecimalX` (in `core/utils/decimal_math.dart`) adds `isZero`, `isPositive`,
+  `percentChangeFrom()`, etc.
+
+- **Immutable domain models** — every model has `copyWith()` and extends
+  `Equatable`. Database rows (`StockRow`, etc.) are separate classes auto-
+  generated by Drift; DAOs map them to domain models.
+
+- **Stock-split-adjusted calculations** — never mutate historical transaction
+  rows when a split is recorded. `PortfolioCalculator.calculate()` applies a
+  cumulative split ratio on read.
+
+- **Currency conversion at the provider layer** — `portfolioSummaryProvider`
+  converts all per-stock values to `preferredCurrency` using `ExchangeRate`.
+  Screens never do currency math.
+
+- **Navigator** — GoRouter with a `ShellRoute`. All feature routes live inside
+  the shell. Adaptive layout: `DesktopShell` (NavigationRail) at ≥ 600 dp,
+  `MobileShell` (BottomNavigationBar) below.
+
+- **Analyzer strictness** — CI runs `flutter analyze --fatal-infos`. Keep
+  analysis clean. Notable lint rules already enforced: `use_build_context_synchronously`,
+  `deprecated_member_use`, `prefer_const_constructors`.
+
+---
+
+## Testing
+
+The single widget test in `test/widget_test.dart` verifies the app renders the
+dashboard. Key overrides required:
+
+```dart
+ProviderScope(
+  overrides: [
+    databaseProvider.overrideWithValue(AppDatabase.forTesting(NativeDatabase.memory())),
+    notificationServiceProvider.overrideWithValue(NotificationService()),
+    marketDataServiceProvider.overrideWith((ref) => throw UnimplementedError()),
+    // Prevents Drift StreamQueryStore from creating cleanup timers inside
+    // testWidgets' FakeAsync zone (would cause "Timer still pending" failures).
+    portfolioSummaryProvider.overrideWith((ref) async => PortfolioSummary(...)),
+  ],
+  child: const StockManagerApp(),
+)
+```
+
+Close the in-memory DB via `tester.runAsync(db.close)` to exit the FakeAsync
+zone before Drift's internal futures resolve.
+
+---
+
+## CI pipeline (`.github/workflows/ci.yml`)
+
+| Job | Runner | Key steps |
+|---|---|---|
+| Analyze & Test | ubuntu-latest | `pub get` → `build_runner` → `flutter analyze` → `flutter test` |
+| Build Android | ubuntu-latest | pub get → build_runner → `flutter create --platforms=android .` → patch `build.gradle.kts` for core library desugaring → `flutter build apk --debug` |
+| Build Linux | ubuntu-latest | apt-get `clang cmake ninja-build libgtk-3-dev libsecret-1-dev` → pub get → build_runner → `flutter create --platforms=linux .` → `flutter build linux --release` |
+| Build Windows | windows-latest | pub get → build_runner → `flutter create --platforms=windows .` → `flutter build windows --release` |
+| Build macOS | macos-latest | pub get → build_runner → `flutter create --platforms=macos .` → `flutter build macos --release` |
+
+Platform directories (`android/`, `linux/`, `windows/`, `macos/`) are **not
+committed**; they are scaffolded on the fly with `flutter create --platforms=<platform> .`.
+
+Build artifacts are uploaded via `actions/upload-artifact@v4` and downloadable
+from the Actions run summary for 90 days.
+
+---
+
+## Adding a new Drift table
+
+1. Create `core/database/tables/<name>_table.dart` — extend `Table`.
+2. Add it to the `@DriftDatabase(tables: [...])` list in `app_database.dart`.
+3. Create `core/database/daos/<name>_dao.dart` — annotate with `@DriftAccessor`.
+4. Add the DAO to `@DriftDatabase(daos: [...])` and as a getter in `AppDatabase`.
+5. Run `dart run build_runner build --delete-conflicting-outputs`.
+6. Bump `schemaVersion` in `AppDatabase` and add a migration in `onUpgrade`.
+
+---
+
+## External API integrations
+
+| Service | Endpoint | Auth | Notes |
+|---|---|---|---|
+| Yahoo Finance | `query2.finance.yahoo.com/v8/finance/chart/{symbol}` | None | Unofficial; rate-limited |
+| Open Exchange Rates | `openexchangerates.org/api/latest.json` | App ID (free tier) | USD base only on free tier |
+| OpenFIGI | `api.openfigi.com/v3/mapping` | None (basic) | ISIN → ticker/name/exchange/currency |
+| Nextcloud | WebDAV (`/remote.php/dav/files/…`) | Basic auth | Self-signed cert support via fingerprint pinning |
