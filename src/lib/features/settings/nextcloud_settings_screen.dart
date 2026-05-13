@@ -74,7 +74,7 @@ class _NextcloudSettingsScreenState
   Future<bool?> _showCertDialog(CertificateInfo info) =>
       showDialog<bool>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: const Text('Untrusted certificate'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -95,10 +95,10 @@ class _NextcloudSettingsScreenState
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(dialogContext, false),
                 child: const Text('Reject')),
             FilledButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(dialogContext, true),
                 child: const Text('Trust & pin')),
           ],
         ),
