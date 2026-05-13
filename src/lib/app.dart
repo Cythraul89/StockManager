@@ -10,6 +10,7 @@ import 'features/dashboard/dashboard_screen.dart';
 import 'features/dividends/add_dividend_screen.dart';
 import 'features/dividends/dividends_screen.dart';
 import 'features/settings/currency_settings_screen.dart';
+import 'features/settings/local_backup_screen.dart';
 import 'features/settings/nextcloud_settings_screen.dart';
 import 'features/settings/notification_settings_screen.dart';
 import 'features/settings/settings_provider.dart';
@@ -120,6 +121,10 @@ final _router = GoRouter(
           path: '/settings',
           builder: (context, state) => const SettingsScreen(),
           routes: [
+            GoRoute(
+              path: 'backup',
+              builder: (context, state) => const LocalBackupScreen(),
+            ),
             GoRoute(
               path: 'nextcloud',
               builder: (context, state) => const NextcloudSettingsScreen(),

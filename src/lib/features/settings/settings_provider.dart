@@ -6,12 +6,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/app_settings.dart';
 import '../../core/models/exchange_rate.dart';
+import '../../core/services/backup_service.dart';
 import '../../core/services/currency_service.dart';
 import '../../core/services/nextcloud_service.dart';
 import '../../core/services/notification_service.dart';
 import '../stocks/stocks_provider.dart';
 
-// ── Core service providers ───────────────────────────────────────────────────────────────────
+// ── Core service providers ────────────────────────────────────────────────────────────────────────────────────────
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
   return const FlutterSecureStorage();
@@ -19,6 +20,10 @@ final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
 
 final nextcloudServiceProvider = Provider<NextcloudService>((ref) {
   return NextcloudService(ref.watch(secureStorageProvider));
+});
+
+final backupServiceProvider = Provider<BackupService>((ref) {
+  return BackupService(ref.watch(databaseProvider));
 });
 
 final currencyServiceProvider = Provider<CurrencyService>((ref) {
@@ -29,7 +34,7 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   throw UnimplementedError('notificationServiceProvider must be overridden');
 });
 
-// ── Settings providers ───────────────────────────────────────────────────────────────────────
+// ── Settings providers ───────────────────────────────────────────────────────────────────────────────────────
 
 final settingsProvider = FutureProvider<AppSettings>((ref) async {
   final db = ref.watch(databaseProvider);
@@ -44,7 +49,7 @@ final settingsStreamProvider = StreamProvider<AppSettings>((ref) {
       .map((row) => row == null ? AppSettings.defaults : _settingsFromRow(row));
 });
 
-// ── Exchange rate providers ──────────────────────────────────────────────────────────────────
+// ── Exchange rate providers ──────────────────────────────────────────────────────────────────────────────────────
 
 final exchangeRatesProvider =
     FutureProvider<List<ExchangeRate>>((ref) async {
@@ -53,7 +58,7 @@ final exchangeRatesProvider =
   return rows.map(_rateFromRow).toList();
 });
 
-// ── Settings actions ──────────────────────────────────────────────────────────────────────────
+// ── Settings actions ──────────────────────────────────────────────────────────────────────────────────────────
 
 class SettingsActions {
   const SettingsActions(this._db);
@@ -107,7 +112,7 @@ final settingsActionsProvider = Provider<SettingsActions>((ref) {
   return SettingsActions(ref.watch(databaseProvider));
 });
 
-// ── Row → model mappers ─────────────────────────────────────────────────────────────────────────
+// ── Row → model mappers ────────────────────────────────────────────────────────────────────────────────────────
 
 AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       preferredCurrency: r.preferredCurrency,

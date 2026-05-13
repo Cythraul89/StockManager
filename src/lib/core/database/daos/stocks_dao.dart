@@ -39,6 +39,8 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
             ..orderBy([(t) => OrderingTerm.asc(t.date)]))
           .get();
 
+  Future<List<StockSplitRow>> getAllSplits() => select(stockSplits).get();
+
   Future<void> upsertSplit(StockSplitsCompanion companion) =>
       into(stockSplits).insertOnConflictUpdate(companion);
 

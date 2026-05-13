@@ -41,6 +41,12 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Synchronisation',
               children: [
                 ListTile(
+                  title: const Text('Local Backup'),
+                  subtitle: const Text('Export or import a local ZIP backup'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/backup'),
+                ),
+                ListTile(
                   title: const Text('Nextcloud Sync'),
                   subtitle: settings.nextcloudUrl != null
                       ? Text(settings.nextcloudUrl!)
