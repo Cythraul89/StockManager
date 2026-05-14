@@ -27,14 +27,20 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   final _symbolCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _exchangeCtrl = TextEditingController();
-  final _currencyCtrl = TextEditingController();
 
   String? _selectedBrokerId;
+  String? _selectedCurrency;
   bool _dripEnabled = false;
   bool _isLookingUp = false;
   bool _isSaving = false;
   String? _lookupError;
   bool _symbolUnverified = false;
+
+  static const _currencies = [
+    'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
+    'HKD', 'HUF', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'NZD',
+    'PLN', 'SEK', 'SGD', 'USD', 'ZAR',
+  ];
 
   @override
   void dispose() {
@@ -42,7 +48,6 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
     _symbolCtrl.dispose();
     _nameCtrl.dispose();
     _exchangeCtrl.dispose();
-    _currencyCtrl.dispose();
     super.dispose();
   }
 
@@ -106,7 +111,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
       _nameCtrl.text = chosen.name;
       _exchangeCtrl.text =
           chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
-      _currencyCtrl.text = chosen.currency;
+      _selectedCurrency = chosen.currency.toUpperCase();
       _symbolUnverified = !priceLabels.containsKey(chosen.symbol);
     });
   }
@@ -192,7 +197,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
         symbol: _symbolCtrl.text.trim().toUpperCase(),
         name: _nameCtrl.text.trim(),
         exchange: _exchangeCtrl.text.trim(),
-        currency: _currencyCtrl.text.trim().toUpperCase(),
+        currency: _selectedCurrency!,
         dripEnabled: _dripEnabled,
       );
       await ref.read(stockActionsProvider).addStock(stock);
@@ -294,15 +299,19 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
               decoration: const InputDecoration(labelText: 'Exchange'),
             ),
             const SizedBox(height: 8),
-            TextFormField(
-              controller: _currencyCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Currency (ISO 4217)', hintText: 'e.g. USD'),
-              textCapitalization: TextCapitalization.characters,
-              maxLength: 3,
-              validator: (v) => v == null || v.trim().length != 3
-                  ? '3-letter code required'
-                  : null,
+            DropdownButtonFormField<String>(
+              value: _selectedCurrency,
+              decoration: const InputDecoration(labelText: 'Currency'),
+              items: [
+                ..._currencies,
+                if (_selectedCurrency != null &&
+                    !_currencies.contains(_selectedCurrency))
+                  _selectedCurrency!,
+              ]
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedCurrency = v),
+              validator: (v) => v == null ? 'Required' : null,
             ),
             const SizedBox(height: 8),
             brokersAsync.when(

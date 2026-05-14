@@ -198,7 +198,7 @@ class _CurrencySettingsScreenState
 
   static const _commonCurrencies = [
     'EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD',
-    'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF',
+    'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'ZAR',
   ];
 }
 
