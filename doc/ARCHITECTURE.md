@@ -10,7 +10,7 @@
 | Navigation | go_router | Declarative, shell routes for adaptive layout, deep-link ready |
 | HTTP client | Dio | Interceptors, retry logic, timeout handling |
 | Market data | Yahoo Finance (unofficial JSON endpoint) | Free, no API key required for basic quotes |
-| Currency rates | Open Exchange Rates (free tier) | Simple JSON, cacheable, supports all ISO 4217 pairs |
+| Currency rates | Frankfurter (api.frankfurter.app) | Free, no API key, ECB data, cacheable, supports major ISO 4217 pairs |
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
 | Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
 | Push notifications | firebase_messaging | Android FCM only (per requirements) |
@@ -195,7 +195,7 @@ Raw transaction rows are never modified when a stock split is recorded. `Portfol
 ### 5.3 Currency Conversion
 Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline, the most recent cached rate is used with a staleness indicator shown in the UI. Manual overrides stored in the database bypass the TTL entirely.
 
-**Rate convention:** `ExchangeRate(base: preferred, target: other, rate: r)` where `r = preferredPerOther` — i.e. "how many preferred-currency units equal 1 unit of `other`". `ExchangeRate.convert(amount)` is simply `amount * rate`, which converts an `other`-denominated amount to the preferred currency. `CurrencyService` computes this as `(preferred_per_USD) / (other_per_USD)` from the OXR `rates` map (which returns "1 USD = X currency" values).
+**Rate convention:** `ExchangeRate(base: preferred, target: other, rate: r)` where `r = preferredPerOther` — i.e. "how many preferred-currency units equal 1 unit of `other`". `ExchangeRate.convert(amount)` is simply `amount * rate`, which converts an `other`-denominated amount to the preferred currency. `CurrencyService` fetches from Frankfurter (`?from=preferredCurrency`), which returns `"1 preferred = X other"`. The stored rate is `1/X` (preferred per other), consistent with the convention.
 
 Rate lookup uses the **price currency reported by Yahoo Finance** (`PriceQuote.currency`) rather than the stored `stock.currency`. This ensures correct conversion even when the stored currency was recorded incorrectly at creation time. If no exchange rate is available for the price currency, a missing-rate badge is displayed on the dashboard tile and no conversion is applied.
 

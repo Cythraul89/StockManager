@@ -9,19 +9,15 @@ class CurrencyService {
 
   final Dio _dio;
 
-  // Open Exchange Rates free tier — base currency is always USD.
-  static const _oxrBaseUrl = 'https://openexchangerates.org/api/latest.json';
-  // App ID is optional for basic access but required for higher rate limits.
-  static const _appId = '';
+  // Frankfurter (api.frankfurter.app) — ECB data, free, no API key.
+  // Returns rates relative to a chosen base currency.
+  static const _baseUrl = 'https://api.frankfurter.app/latest';
 
   Future<Map<String, ExchangeRate>> fetchRates(String baseCurrency) async {
     try {
       final response = await _dio.get<Map<String, dynamic>>(
-        _oxrBaseUrl,
-        queryParameters: {
-          if (_appId.isNotEmpty) 'app_id': _appId,
-          'base': 'USD', // free tier only supports USD base
-        },
+        _baseUrl,
+        queryParameters: {'from': baseCurrency},
         options: Options(
           sendTimeout: const Duration(seconds: 15),
           receiveTimeout: const Duration(seconds: 15),
@@ -34,22 +30,14 @@ class CurrencyService {
       final now = DateTime.now();
       final result = <String, ExchangeRate>{};
 
-      // OXR returns rates as "1 USD = X currency". Convert to:
-      // ExchangeRate(base: preferredCurrency, target: other, rate: r)
-      // where r = "1 other = r preferredCurrency" (used via amount * r).
-      final baseRate = _parseRate(rates[baseCurrency]);
-      if (baseRate == null || baseRate == Decimal.zero) {
-        debugPrint(
-            'CurrencyService: preferred currency "$baseCurrency" not found '
-            'in OXR response — no rates cached.');
-        return {};
-      }
-
+      // Frankfurter returns "1 baseCurrency = X other" (otherPerBase).
+      // We need rate = baseCurrencyPerOther = 1 / otherPerBase so that
+      // ExchangeRate.convert(amount_in_other) = amount_in_other * rate
+      // gives the correct amount in baseCurrency.
       for (final entry in rates.entries) {
-        final targetRate = _parseRate(entry.value);
-        if (targetRate == null || targetRate == Decimal.zero) continue;
-        // rate = (preferred per USD) / (other per USD) = preferred per other
-        final rate = (baseRate.toRational() / targetRate.toRational())
+        final otherPerBase = _parseRate(entry.value);
+        if (otherPerBase == null || otherPerBase == Decimal.zero) continue;
+        final rate = (Decimal.one.toRational() / otherPerBase.toRational())
             .toDecimal(scaleOnInfinitePrecision: 10);
         result[entry.key] = ExchangeRate(
           base: baseCurrency,
@@ -60,7 +48,8 @@ class CurrencyService {
         );
       }
       return result;
-    } on DioException {
+    } on DioException catch (e) {
+      debugPrint('CurrencyService: fetchRates failed: $e');
       return {};
     }
   }
