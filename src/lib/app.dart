@@ -12,6 +12,7 @@ import 'features/dividends/dividends_screen.dart';
 import 'features/settings/currency_settings_screen.dart';
 import 'features/settings/local_backup_screen.dart';
 import 'features/settings/nextcloud_settings_screen.dart';
+import 'features/settings/nextcloud_sync_provider.dart';
 import 'features/settings/notification_settings_screen.dart';
 import 'features/settings/settings_provider.dart';
 import 'features/settings/settings_screen.dart';
@@ -27,6 +28,9 @@ class StockManagerApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keep the sync service alive for the lifetime of the app.
+    ref.watch(nextcloudSyncProvider);
+
     final settingsAsync = ref.watch(settingsStreamProvider);
     final themeMode = settingsAsync.whenOrNull(
           data: (s) => switch (s.theme) {

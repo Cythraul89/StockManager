@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/models/stock.dart';
 import '../../core/services/isin_lookup_service.dart';
+import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/isin_validator.dart';
 import 'stocks_provider.dart';
 
@@ -73,22 +74,30 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
       return;
     }
 
+    // Fetch prices for all listings in parallel
+    final priceLabels = <String, String>{};
+    await Future.wait(results.map((r) async {
+      final q = await ref
+          .read(marketDataServiceProvider)
+          .fetchQuote(r.symbol, '__preview__');
+      if (q != null) {
+        priceLabels[r.symbol] =
+            CurrencyFormatter.format(q.price, q.currency);
+      }
+    }));
+    if (!mounted) return;
+
     // If multiple listings exist, let the user choose.
     IsinLookupResult chosen;
     if (results.length == 1) {
       chosen = results.first;
     } else {
       setState(() => _isLookingUp = false);
-      final picked = await _showListingPicker(results);
+      final picked = await _showListingPicker(results, priceLabels);
       if (!mounted || picked == null) return;
       chosen = picked;
       setState(() => _isLookingUp = true);
     }
-
-    // Validate the resolved symbol against Yahoo Finance.
-    final quote = await ref
-        .read(marketDataServiceProvider)
-        .fetchQuote(chosen.symbol, '__preview__');
 
     if (!mounted) return;
     setState(() {
@@ -98,12 +107,12 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
       _exchangeCtrl.text =
           chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
       _currencyCtrl.text = chosen.currency;
-      _symbolUnverified = quote == null;
+      _symbolUnverified = !priceLabels.containsKey(chosen.symbol);
     });
   }
 
   Future<IsinLookupResult?> _showListingPicker(
-      List<IsinLookupResult> results) {
+      List<IsinLookupResult> results, Map<String, String> priceLabels) {
     return showModalBottomSheet<IsinLookupResult>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -124,16 +133,23 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                 itemCount: results.length,
                 itemBuilder: (_, i) {
                   final r = results[i];
-                  final subtitle = [
-                    if (r.exchangeName.isNotEmpty) r.exchangeName,
-                    if (r.currency.isNotEmpty) r.currency,
-                    if (r.securityType.isNotEmpty) r.securityType,
-                  ].join(' · ');
+                  final price = priceLabels[r.symbol];
                   return ListTile(
-                    title: Text(r.symbol,
-                        style:
-                            const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                    title: Row(children: [
+                      Text(r.symbol,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      if (price != null)
+                        Text(price,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                    ]),
+                    subtitle: Text([
+                      if (r.exchangeName.isNotEmpty) r.exchangeName,
+                      if (r.currency.isNotEmpty) r.currency,
+                      if (r.securityType.isNotEmpty) r.securityType,
+                      if (price == null) 'No price',
+                    ].join(' · ')),
                     onTap: () => Navigator.pop(ctx, r),
                   );
                 },

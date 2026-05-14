@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/services/nextcloud_service.dart';
+import 'nextcloud_sync_provider.dart';
 import 'settings_provider.dart';
 
 class NextcloudSettingsScreen extends ConsumerStatefulWidget {
@@ -24,7 +25,6 @@ class _NextcloudSettingsScreenState
   bool _loaded = false;
   bool _isTesting = false;
   bool _isSaving = false;
-  bool _isSyncing = false;
   bool _obscurePassword = true;
   String? _connectionStatus;
 
@@ -78,50 +78,6 @@ class _NextcloudSettingsScreenState
       if (mounted) setState(() => _connectionStatus = 'Connection failed: $e');
     } finally {
       if (mounted) setState(() => _isTesting = false);
-    }
-  }
-
-  Future<void> _syncToNextcloud() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _isSyncing = true;
-      _connectionStatus = null;
-    });
-
-    try {
-      final backupFile = await ref.read(backupServiceProvider).exportToZip();
-      final bytes = await backupFile.readAsBytes();
-
-      final url = _urlCtrl.text.trim();
-      final username = _usernameCtrl.text.trim();
-      final password = _passwordCtrl.text;
-      final dir = _pathCtrl.text.trim();
-      final dateStr =
-          DateTime.now().toUtc().toIso8601String().substring(0, 10);
-      final remotePath =
-          '${dir.endsWith('/') ? dir : '$dir/'}stockmanager_backup_$dateStr.zip';
-
-      await ref.read(nextcloudServiceProvider).uploadBackup(
-            serverUrl: url,
-            username: username,
-            password: password,
-            remotePath: remotePath,
-            bytes: bytes,
-          );
-
-      final settings = await ref.read(settingsProvider.future);
-      await ref.read(settingsActionsProvider).saveSettings(
-            settings.copyWith(lastSyncAt: DateTime.now()),
-          );
-
-      if (mounted) {
-        setState(
-            () => _connectionStatus = 'Backup uploaded to $remotePath.');
-      }
-    } catch (e) {
-      if (mounted) setState(() => _connectionStatus = 'Sync failed: $e');
-    } finally {
-      if (mounted) setState(() => _isSyncing = false);
     }
   }
 
@@ -200,7 +156,8 @@ class _NextcloudSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
-    final busy = _isTesting || _isSaving || _isSyncing;
+    final syncState = ref.watch(nextcloudSyncProvider);
+    final busy = _isTesting || _isSaving || syncState.status == SyncStatus.syncing;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nextcloud Sync')),
@@ -281,6 +238,23 @@ class _NextcloudSettingsScreenState
                     ),
                   ),
                 ],
+                if (syncState.lastSyncAt != null ||
+                    syncState.status == SyncStatus.error) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    syncState.status == SyncStatus.error
+                        ? 'Auto-sync error: ${syncState.error}'
+                        : syncState.status == SyncStatus.syncing
+                            ? 'Syncing…'
+                            : 'Last auto-sync: ${syncState.lastSyncAt!.toLocal().toIso8601String().substring(0, 16).replaceAll('T', ' ')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: syncState.status == SyncStatus.error
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 OutlinedButton(
                   onPressed: busy ? null : _testConnection,
@@ -294,8 +268,10 @@ class _NextcloudSettingsScreenState
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  onPressed: busy ? null : _syncToNextcloud,
-                  icon: _isSyncing
+                  onPressed: busy
+                      ? null
+                      : () => ref.read(nextcloudSyncProvider.notifier).syncNow(),
+                  icon: syncState.status == SyncStatus.syncing
                       ? const SizedBox(
                           width: 18,
                           height: 18,

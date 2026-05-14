@@ -19,7 +19,7 @@ class StockListTile extends StatelessWidget {
         : Colors.green;
 
     return ListTile(
-      onTap: () => context.push('/stocks/\${item.stock.id}'),
+      onTap: () => context.push('/stocks/${item.stock.id}'),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       title: Row(
         children: [
@@ -73,9 +73,9 @@ class StockListTile extends StatelessWidget {
       ),
       subtitle: Text(
         noPrice
-            ? '\${item.sharesHeld.toStringAsFixed(4)} shares'
-            : '\${item.sharesHeld.toStringAsFixed(4)} shares '
-                '@ \${CurrencyFormatter.format(item.currentPrice, item.stock.currency)}',
+            ? '${item.sharesHeld.toStringAsFixed(4)} shares'
+            : '${item.sharesHeld.toStringAsFixed(4)} shares '
+                '@ ${CurrencyFormatter.format(item.currentPrice, item.stock.currency)}',
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),

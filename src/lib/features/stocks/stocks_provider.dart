@@ -94,12 +94,19 @@ final marketDataServiceProvider = Provider<MarketDataService>((ref) {
   throw UnimplementedError('marketDataServiceProvider must be overridden');
 });
 
+// Increments on every data mutation; sync service listens to schedule uploads.
+final dataVersionProvider = StateProvider<int>((ref) => 0);
+
 // ── CRUD actions ─────────────────────────────────────────────────────────────────────────────
 
 class StockActions {
-  const StockActions(this._db);
+  StockActions(this._db, this._ref);
   final AppDatabase _db;
+  final Ref _ref;
   static const _uuid = Uuid();
+
+  void _notifyChange() =>
+      _ref.read(dataVersionProvider.notifier).update((n) => n + 1);
 
   Future<String> addStock(Stock stock) async {
     await _db.stocksDao.upsert(StocksCompanion.insert(
@@ -112,24 +119,30 @@ class StockActions {
       currency: stock.currency,
       dripEnabled: Value(stock.dripEnabled),
     ));
+    _notifyChange();
     return stock.id;
   }
 
-  Future<void> updateStock(Stock stock) => _db.stocksDao.upsert(
-        StocksCompanion(
-          id: Value(stock.id),
-          brokerId: Value(stock.brokerId),
-          isin: Value(stock.isin),
-          symbol: Value(stock.symbol),
-          name: Value(stock.name),
-          exchange: Value(stock.exchange),
-          currency: Value(stock.currency),
-          dripEnabled: Value(stock.dripEnabled),
-        ),
-      );
+  Future<void> updateStock(Stock stock) async {
+    await _db.stocksDao.upsert(
+      StocksCompanion(
+        id: Value(stock.id),
+        brokerId: Value(stock.brokerId),
+        isin: Value(stock.isin),
+        symbol: Value(stock.symbol),
+        name: Value(stock.name),
+        exchange: Value(stock.exchange),
+        currency: Value(stock.currency),
+        dripEnabled: Value(stock.dripEnabled),
+      ),
+    );
+    _notifyChange();
+  }
 
-  Future<void> deleteStock(String stockId) =>
-      _db.stocksDao.deleteById(stockId);
+  Future<void> deleteStock(String stockId) async {
+    await _db.stocksDao.deleteById(stockId);
+    _notifyChange();
+  }
 
   Future<String> addTransaction(StockTransaction tx) async {
     final id = tx.id.isEmpty ? _uuid.v4() : tx.id;
@@ -144,11 +157,14 @@ class StockActions {
       fees: Value(tx.fees),
       notes: Value(tx.notes),
     ));
+    _notifyChange();
     return id;
   }
 
-  Future<void> deleteTransaction(String txId) =>
-      _db.transactionsDao.deleteById(txId);
+  Future<void> deleteTransaction(String txId) async {
+    await _db.transactionsDao.deleteById(txId);
+    _notifyChange();
+  }
 
   Future<String> addDividend(Dividend div) async {
     final id = div.id.isEmpty ? _uuid.v4() : div.id;
@@ -163,15 +179,18 @@ class StockActions {
       withholdingTax: Value(div.withholdingTax),
       notes: Value(div.notes),
     ));
+    _notifyChange();
     return id;
   }
 
-  Future<void> deleteDividend(String divId) =>
-      _db.dividendsDao.deleteById(divId);
+  Future<void> deleteDividend(String divId) async {
+    await _db.dividendsDao.deleteById(divId);
+    _notifyChange();
+  }
 }
 
 final stockActionsProvider = Provider<StockActions>((ref) {
-  return StockActions(ref.watch(databaseProvider));
+  return StockActions(ref.watch(databaseProvider), ref);
 });
 
 // ── Row → model mappers ─────────────────────────────────────────────────────────────────────────
