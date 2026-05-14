@@ -146,10 +146,15 @@ class NextcloudService {
       pinnedFingerprint: fingerprint,
     );
 
+    final davBase = '/remote.php/dav/files/$username';
+    final fullPath = remotePath.startsWith('/')
+        ? '$davBase$remotePath'
+        : '$davBase/$remotePath';
+
     // Ensure parent directory exists (MKCOL; 405 = already exists, ignore it).
-    final slash = remotePath.lastIndexOf('/');
+    final slash = fullPath.lastIndexOf('/');
     if (slash > 0) {
-      final dir = remotePath.substring(0, slash + 1);
+      final dir = fullPath.substring(0, slash + 1);
       try {
         await client.request<void>(dir, options: Options(method: 'MKCOL'));
       } on DioException catch (e) {
@@ -158,7 +163,7 @@ class NextcloudService {
     }
 
     final response = await client.put(
-      remotePath,
+      fullPath,
       data: Stream.fromIterable([bytes]),
       options: Options(
         headers: {
