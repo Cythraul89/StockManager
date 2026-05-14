@@ -70,7 +70,8 @@ class PnlCalculator {
     Decimal realisedPnl = Decimal.zero;
 
     for (final tx in sortedTx) {
-      final multiplier = _splitMultiplierAfter(tx.executedAt, sortedSplits);
+      final multiplier = PortfolioCalculator.splitMultiplierAfter(
+          tx.executedAt, sortedSplits);
       final adjustedShares = tx.shares * multiplier;
       final adjustedPrice =
           (tx.pricePerShare.toRational() / multiplier.toRational())
@@ -82,28 +83,20 @@ class PnlCalculator {
             runningCostBasis + adjustedShares * adjustedPrice + tx.fees;
       } else {
         if (runningShares.isZero) continue;
-        final avgCost = (runningCostBasis.toRational() / runningShares.toRational())
-            .toDecimal(scaleOnInfinitePrecision: 10);
-        final proceeds = adjustedShares * adjustedPrice - tx.fees;
-        realisedPnl =
-            realisedPnl + proceeds - adjustedShares * avgCost;
-        runningShares = DecimalMath.clampMin(runningShares - adjustedShares);
-        runningCostBasis = runningShares.isZero
-            ? Decimal.zero
-            : runningShares * avgCost;
+        // Clamp to owned shares — sells beyond current holding are data errors.
+        final actualSold = adjustedShares > runningShares
+            ? runningShares
+            : adjustedShares;
+        final avgCost =
+            (runningCostBasis.toRational() / runningShares.toRational())
+                .toDecimal(scaleOnInfinitePrecision: 10);
+        final proceeds = actualSold * adjustedPrice - tx.fees;
+        realisedPnl = realisedPnl + proceeds - actualSold * avgCost;
+        runningShares = DecimalMath.clampMin(runningShares - actualSold);
+        runningCostBasis =
+            runningShares.isZero ? Decimal.zero : runningShares * avgCost;
       }
     }
     return realisedPnl;
-  }
-
-  static Decimal _splitMultiplierAfter(
-      DateTime txDate, List<StockSplit> splits) {
-    var multiplier = Decimal.one;
-    for (final split in splits) {
-      if (split.date.isAfter(txDate)) {
-        multiplier = multiplier * split.ratio;
-      }
-    }
-    return multiplier;
   }
 }

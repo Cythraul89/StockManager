@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:xml/xml.dart';
 
 class NextcloudException implements Exception {
   const NextcloudException(this.message);
@@ -41,15 +42,19 @@ class NextcloudService {
 
   static const _fingerprintKey = 'nextcloud_cert_fingerprint';
 
+  // Build a Dio client. baseUrl uses only the server origin (scheme + host + port)
+  // so that absolute DAV paths (/remote.php/dav/…) resolve correctly even when
+  // serverUrl itself contains a sub-path.
   Dio _buildClient({
     required String serverUrl,
     required String username,
     required String password,
     String? pinnedFingerprint,
   }) {
+    final origin = Uri.parse(serverUrl).origin;
     final dio = Dio(
       BaseOptions(
-        baseUrl: serverUrl,
+        baseUrl: origin,
         headers: {
           'Authorization':
               'Basic ${base64Encode(utf8.encode('$username:$password'))}',
@@ -74,12 +79,13 @@ class NextcloudService {
   }
 
   // First-connection: fetch the server certificate fingerprint for user approval.
+  // Returns null when the certificate is trusted by the OS (no action needed).
+  // Throws for pre-TLS failures (network error, DNS, timeout).
   Future<CertificateInfo?> fetchCertificateInfo(String serverUrl) async {
     CertificateInfo? info;
     final uri = Uri.parse(serverUrl);
-
+    final client = HttpClient();
     try {
-      final client = HttpClient();
       client.badCertificateCallback = (cert, host, port) {
         info = CertificateInfo(
           fingerprint: _certFingerprint(cert.der),
@@ -89,15 +95,15 @@ class NextcloudService {
         );
         return false; // reject — we only wanted the info
       };
-      final conn = await client
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 10));
-      await conn.close();
+      final req = await client.getUrl(uri).timeout(const Duration(seconds: 10));
+      await req.close();
+    } catch (e) {
+      // If badCertificateCallback fired, info is set — this is the expected
+      // TLS rejection path. Any other error is a real network failure.
+      if (info == null) rethrow;
+    } finally {
       client.close();
-    } catch (_) {
-      // expected — certificate was rejected after inspection
     }
-
     return info;
   }
 
@@ -219,11 +225,11 @@ class NextcloudService {
       return;
     }
 
-    throw NextcloudException(
-        'Upload failed: HTTP ${response.statusCode}');
+    throw NextcloudException('Upload failed: HTTP ${response.statusCode}');
   }
 
   // List files at [remotePath] via PROPFIND (WebDAV).
+  // Returns server-relative href strings as found in the XML response.
   Future<List<String>> listFiles({
     required String serverUrl,
     required String username,
@@ -251,12 +257,20 @@ class NextcloudService {
     }
 
     final body = response.data ?? '';
-    // Extract <d:href> values — simple regex extraction avoids xml dependency here.
-    final hrefs = RegExp(r'<[^:]*:href>([^<]+)<')
-        .allMatches(body)
-        .map((m) => m.group(1)!.trim())
-        .toList();
-    return hrefs;
+    try {
+      final doc = XmlDocument.parse(body);
+      return doc
+          .findAllElements('href', namespace: 'DAV:')
+          .map((e) => e.innerText.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    } catch (_) {
+      // Fall back to regex if the server returns non-standard XML.
+      return RegExp(r'<[^:]*:href>([^<]+)<')
+          .allMatches(body)
+          .map((m) => m.group(1)!.trim())
+          .toList();
+    }
   }
 
   // Delete [remotePath] via WebDAV DELETE.

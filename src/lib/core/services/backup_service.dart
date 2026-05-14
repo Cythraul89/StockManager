@@ -422,7 +422,7 @@ class BackupService {
           shares: Decimal.parse(t['shares'] as String),
           pricePerShare: Decimal.parse(t['pricePerShare'] as String),
           currency: t['currency'] as String,
-          fees: Value(Decimal.parse((t['fees'] as String?) ?? '0')),
+          fees: Value(Decimal.parse(t['fees']?.toString() ?? '0')),
           notes: Value(t['notes'] as String?),
         ));
       }

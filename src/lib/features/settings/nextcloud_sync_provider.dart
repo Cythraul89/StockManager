@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/app_settings.dart';
 import '../../core/services/nextcloud_service.dart';
 import '../stocks/stocks_provider.dart';
 import 'settings_provider.dart';
@@ -43,15 +44,21 @@ final nextcloudSyncProvider =
 
 class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
   Timer? _debounce;
+  Timer? _startupTimer;
 
   @override
   NextcloudSyncState build() {
-    ref.onDispose(() => _debounce?.cancel());
+    ref.onDispose(() {
+      _debounce?.cancel();
+      _startupTimer?.cancel();
+    });
 
     _listenToDataChanges();
 
     // On startup: check for newer remote backup; upload if none found.
-    Future.delayed(const Duration(seconds: 4), _checkAndSync);
+    // Stored as a Timer so it can be cancelled on dispose (avoids leaking
+    // into test FakeAsync zones and prevents use-after-dispose reads).
+    _startupTimer = Timer(const Duration(seconds: 4), _checkAndSync);
 
     return const NextcloudSyncState();
   }
@@ -80,6 +87,14 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     return (url: url, username: username, password: password);
   }
 
+  // Compare two sync timestamps as local calendar dates to avoid DST issues.
+  bool _remoteIsNewer(DateTime? lastSyncAt, DateTime remoteBackupDate) {
+    if (lastSyncAt == null) return true;
+    final local = lastSyncAt.toLocal();
+    final lastSyncDay = DateTime(local.year, local.month, local.day);
+    return remoteBackupDate.isAfter(lastSyncDay);
+  }
+
   // On startup: offer restore if remote has a newer backup, else upload.
   Future<void> _checkAndSync() async {
     final creds = await _credentials();
@@ -96,15 +111,9 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
                 remotePath: settings.nextcloudPath,
               );
 
-      if (remote != null) {
-        final lastSync = settings.lastSyncAt;
-        final remoteIsNewer = lastSync == null ||
-            remote.backupDate.isAfter(
-                DateTime.utc(lastSync.year, lastSync.month, lastSync.day));
-        if (remoteIsNewer) {
-          state = state.copyWith(pendingRestore: remote);
-          return;
-        }
+      if (remote != null && _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
+        state = state.copyWith(pendingRestore: remote);
+        return;
       }
     } catch (_) {
       // Silently ignore — proceed to upload.
@@ -129,14 +138,8 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
                 remotePath: settings.nextcloudPath,
               );
 
-      if (remote != null) {
-        final lastSync = settings.lastSyncAt;
-        final remoteIsNewer = lastSync == null ||
-            remote.backupDate.isAfter(
-                DateTime.utc(lastSync.year, lastSync.month, lastSync.day));
-        if (remoteIsNewer) {
-          state = state.copyWith(pendingRestore: remote);
-        }
+      if (remote != null && _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
+        state = state.copyWith(pendingRestore: remote);
       }
     } catch (_) {}
   }
@@ -218,8 +221,60 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
           );
 
       state = NextcloudSyncState(status: SyncStatus.idle, lastSyncAt: now);
+
+      // Prune old backups according to the keep-exports setting.
+      await _pruneOldBackups(creds: creds, settings: settings);
     } catch (e) {
       state = state.copyWith(status: SyncStatus.error, error: e.toString());
+    }
+  }
+
+  Future<void> _pruneOldBackups({
+    required ({String url, String username, String password}) creds,
+    required AppSettings settings,
+  }) async {
+    final service = ref.read(nextcloudServiceProvider);
+    final davBase = '/remote.php/dav/files/${creds.username}';
+    final dir = settings.nextcloudPath;
+    final fullDir =
+        dir.startsWith('/') ? '$davBase$dir' : '$davBase/$dir';
+
+    List<String> hrefs;
+    try {
+      hrefs = await service.listFiles(
+        serverUrl: creds.url,
+        username: creds.username,
+        password: creds.password,
+        remotePath: fullDir,
+      );
+    } catch (_) {
+      return; // Best effort — don't fail sync if listing fails
+    }
+
+    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2})\.zip$');
+    final backups = <(DateTime, String)>[];
+    for (final href in hrefs) {
+      final decoded = Uri.decodeFull(href);
+      final match = pattern.firstMatch(decoded);
+      if (match == null) continue;
+      final date = DateTime.tryParse(match.group(1)!);
+      if (date != null) backups.add((date, href));
+    }
+
+    backups.sort((a, b) => b.$1.compareTo(a.$1)); // newest first
+
+    final keep = settings.nextcloudKeepExports;
+    for (final backup in backups.skip(keep)) {
+      try {
+        await service.delete(
+          serverUrl: creds.url,
+          username: creds.username,
+          password: creds.password,
+          remotePath: backup.$2,
+        );
+      } catch (_) {
+        // Best effort — continue pruning remaining backups
+      }
     }
   }
 }

@@ -159,6 +159,9 @@ class _NextcloudSettingsScreenState
         if (!mounted) return;
         if (restore == true) {
           await ref.read(nextcloudSyncProvider.notifier).restoreFromRemote();
+          if (!mounted) return;
+          // Stay on screen if restore failed so the user sees the error.
+          if (ref.read(nextcloudSyncProvider).status == SyncStatus.error) return;
         } else {
           ref.read(nextcloudSyncProvider.notifier).dismissRestore();
         }

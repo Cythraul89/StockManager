@@ -41,7 +41,7 @@ class PortfolioCalculator {
 
     for (final tx in sortedTx) {
       // Split multiplier: product of all split ratios that occurred AFTER tx.
-      final multiplier = _splitMultiplierAfter(tx.executedAt, sortedSplits);
+      final multiplier = splitMultiplierAfter(tx.executedAt, sortedSplits);
       final adjustedShares = tx.shares * multiplier;
       final adjustedPrice =
           (tx.pricePerShare.toRational() / multiplier.toRational())
@@ -75,7 +75,9 @@ class PortfolioCalculator {
     );
   }
 
-  static Decimal _splitMultiplierAfter(
+  // Product of all split ratios that occurred strictly after [txDate].
+  // Shared by PnlCalculator to avoid duplication.
+  static Decimal splitMultiplierAfter(
       DateTime txDate, List<StockSplit> splits) {
     var multiplier = Decimal.one;
     for (final split in splits) {

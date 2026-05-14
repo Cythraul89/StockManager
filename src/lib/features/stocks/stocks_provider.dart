@@ -212,7 +212,7 @@ Stock _stockFromRow(StockRow r) => Stock(
 StockTransaction _txFromRow(TransactionRow r) => StockTransaction(
       id: r.id,
       stockId: r.stockId,
-      type: r.type == 'buy' ? TransactionType.buy : TransactionType.sell,
+      type: TransactionType.values.byName(r.type),
       executedAt: r.executedAt,
       shares: r.shares,
       pricePerShare: r.pricePerShare,
@@ -232,7 +232,7 @@ StockSplit _splitFromRow(StockSplitRow r) => StockSplit(
 Dividend _dividendFromRow(DividendRow r) => Dividend(
       id: r.id,
       stockId: r.stockId,
-      type: r.type == 'paid' ? DividendType.paid : DividendType.expected,
+      type: DividendType.values.byName(r.type),
       date: r.date,
       amountPerShare: r.amountPerShare,
       totalAmount: r.totalAmount,

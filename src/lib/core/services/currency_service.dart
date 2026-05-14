@@ -1,5 +1,6 @@
 import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/exchange_rate.dart';
 
@@ -33,14 +34,22 @@ class CurrencyService {
       final now = DateTime.now();
       final result = <String, ExchangeRate>{};
 
-      // Convert all rates to the user's preferred base currency.
+      // OXR returns rates as "1 USD = X currency". Convert to:
+      // ExchangeRate(base: preferredCurrency, target: other, rate: r)
+      // where r = "1 other = r preferredCurrency" (used via amount * r).
       final baseRate = _parseRate(rates[baseCurrency]);
-      if (baseRate == null || baseRate == Decimal.zero) return {};
+      if (baseRate == null || baseRate == Decimal.zero) {
+        debugPrint(
+            'CurrencyService: preferred currency "$baseCurrency" not found '
+            'in OXR response — no rates cached.');
+        return {};
+      }
 
       for (final entry in rates.entries) {
         final targetRate = _parseRate(entry.value);
-        if (targetRate == null) continue;
-        final rate = (targetRate.toRational() / baseRate.toRational())
+        if (targetRate == null || targetRate == Decimal.zero) continue;
+        // rate = (preferred per USD) / (other per USD) = preferred per other
+        final rate = (baseRate.toRational() / targetRate.toRational())
             .toDecimal(scaleOnInfinitePrecision: 10);
         result[entry.key] = ExchangeRate(
           base: baseCurrency,
