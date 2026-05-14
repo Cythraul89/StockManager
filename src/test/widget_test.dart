@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stock_manager/app.dart';
 import 'package:stock_manager/core/database/app_database.dart';
+import 'package:stock_manager/core/models/price_quote.dart';
 import 'package:stock_manager/core/services/market_data_service.dart';
 import 'package:stock_manager/core/services/notification_service.dart';
 import 'package:stock_manager/features/dashboard/dashboard_provider.dart';
