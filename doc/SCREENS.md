@@ -180,9 +180,15 @@ All three sections (Overview, Transactions, Dividends) displayed simultaneously 
 
 **Purpose:** Create a new stock or edit an existing one.
 
+### Add Stock
+ISIN lookup auto-fills symbol, name, exchange, and currency. If multiple listings are found a bottom-sheet picker shows all options with live prices.
+
 ```
 ┌─────────────────────────────┐
 │  ← Add Stock                │
+│                             │
+│  ISIN          [ Lookup ]   │
+│  [ US0378331005           ] │
 │                             │
 │  Ticker symbol              │
 │  [ AAPL                   ] │
@@ -194,10 +200,10 @@ All three sections (Overview, Transactions, Dividends) displayed simultaneously 
 │  [ NASDAQ                 ] │
 │                             │
 │  Currency                   │
-│  [ USD ▾                  ] │
+│  [ USD ▾                  ] │  ← auto-filled from ISIN lookup
 │                             │
 │  Broker                     │
-│  [ Scalable Capital ▾     ] │
+│  [ Scalable Capital ▾     ] │  ← pre-selected (last used)
 │                             │
 │  Dividend Reinvestment (DRIP)│
 │  [ OFF                  ○ ] │
@@ -205,6 +211,9 @@ All three sections (Overview, Transactions, Dividends) displayed simultaneously 
 │        [ Save ]             │
 └─────────────────────────────┘
 ```
+
+### Edit Stock
+Same fields as Add, but ISIN is read-only. Currency can be corrected here if the wrong value was stored at creation time.
 
 ---
 
@@ -398,6 +407,13 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 ┌─────────────────────────────┐
 │  ← Nextcloud Sync           │
 │                             │
+│  ╔═════════════════════════╗ │  ← shown only when remote is newer
+│  ║ Newer backup on server  ║ │
+│  ║ Backup date: 2026-05-12 ║ │
+│  ║ [Restore from server]   ║ │
+│  ║ [Dismiss]               ║ │
+│  ╚═════════════════════════╝ │
+│                             │
 │  Server URL                 │
 │  [ https://cloud.example.com]│
 │                             │
@@ -405,21 +421,21 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 │  [ myuser                 ] │
 │                             │
 │  Password / App Token       │
-│  [ ••••••••               ] │
+│  [ ••••••••            👁 ] │
 │                             │
 │  Upload path                │
 │  [ /StockManager/         ] │
 │                             │
-│  Keep last N exports        │
-│  [ 5                      ] │
+│  Connection successful …    │  ← status after Test Connection
+│  Last auto-sync: 2026-05-12 │  ← shown after a sync
 │                             │
-│  Auto-sync on data change   │
-│  [ ON                   ● ] │
-│                             │
-│  [ Test Connection ]        │
-│  [ Sync Now        ]        │
+│  [ Test Connection          ]│
+│  [ Backup to Nextcloud now  ]│
+│  [ Save                     ]│
 └─────────────────────────────┘
 ```
+
+**Restore flow:** Saving credentials triggers a remote check. If the server has a newer backup, a dialog asks "Restore from server?" before the screen closes. Auto-upload is suppressed while a restore is pending.
 
 ---
 

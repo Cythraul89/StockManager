@@ -212,13 +212,66 @@ classDiagram
     }
 
     class NextcloudService {
-        +upload(path, data)
-        +listFiles(path) List
-        +delete(path)
-        +fetchCertificateInfo(url) CertificateInfo
-        +pinCertificate(fingerprint)
-        +unpinCertificate()
+        +verifyCredentials(url, user, pw) Future
+        +uploadBackup(url, user, pw, path, bytes) Future
+        +upload(url, user, pw, path, bytes, contentType) Future
+        +listFiles(url, user, pw, path) List~String~
+        +delete(url, user, pw, path) Future
+        +downloadFile(url, user, pw, path) Uint8List
+        +findLatestBackup(url, user, pw, path) RemoteBackupInfo?
+        +fetchCertificateInfo(url) CertificateInfo?
+        +pinCertificate(fingerprint) Future
+        +unpinCertificate() Future
+        +getPinnedFingerprint() String?
     }
+
+    class RemoteBackupInfo {
+        +String remotePath
+        +DateTime backupDate
+    }
+
+    class CertificateInfo {
+        +String fingerprint
+        +String subject
+        +String issuer
+        +DateTime validUntil
+    }
+
+    class BackupService {
+        +exportToZip() File
+        +exportToOds() File
+        +importFromBytes(bytes) Future
+    }
+
+    class SyncStatus {
+        <<enumeration>>
+        idle
+        syncing
+        error
+    }
+
+    class NextcloudSyncState {
+        +SyncStatus status
+        +DateTime? lastSyncAt
+        +String? error
+        +RemoteBackupInfo? pendingRestore
+        +copyWith() NextcloudSyncState
+    }
+
+    class NextcloudSyncNotifier {
+        +syncNow() Future
+        +scheduleSync()
+        +checkForRemoteBackup() Future
+        +restoreFromRemote() Future
+        +dismissRestore()
+    }
+
+    NextcloudSyncNotifier --> NextcloudSyncState : manages
+    NextcloudSyncState --> RemoteBackupInfo
+    NextcloudSyncState --> SyncStatus
+    NextcloudService --> RemoteBackupInfo : produces
+    NextcloudService --> CertificateInfo : produces
+    BackupService ..> AppDatabase : reads/writes
 
     %% Service outputs
     MarketDataService --> PriceQuote : produces
@@ -355,6 +408,20 @@ stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStoc
 
 settingsActionsProvider ─ SettingsActions (saveSettings, setManualRate,
                                            deleteRate, cacheRates)
+
+backupServiceProvider  ── BackupService (exportToZip, exportToOds,
+                                         importFromBytes)
+
+nextcloudSyncProvider (NotifierProvider)
+  ├── settingsProvider          (credentials, lastSyncAt, nextcloudPath)
+  ├── nextcloudServiceProvider  (WebDAV upload / download / PROPFIND)
+  ├── backupServiceProvider     (exportToZip, importFromBytes)
+  ├── dataVersionProvider       (listens → schedules debounced sync)
+  └── NextcloudSyncState
+        ├── status: SyncStatus  (idle | syncing | error)
+        ├── lastSyncAt: DateTime?
+        ├── error: String?
+        └── pendingRestore: RemoteBackupInfo?
 ```
 
 ---

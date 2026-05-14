@@ -12,7 +12,7 @@
 | Market data | Yahoo Finance (unofficial JSON endpoint) | Free, no API key required for basic quotes |
 | Currency rates | Open Exchange Rates (free tier) | Simple JSON, cacheable, supports all ISO 4217 pairs |
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
-| ODS export | ods_builder (custom) | OpenDocument ZIP format; no dependency on office suite |
+| Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
 | Push notifications | firebase_messaging | Android FCM only (per requirements) |
 | Background tasks | WorkManager (via workmanager plugin) | Android only; polls prices when app is closed |
 | Local notifications | flutter_local_notifications | All platforms; used for alerts on desktop |
@@ -36,8 +36,8 @@ lib/
 │   │   ├── market_data_service.dart
 │   │   ├── currency_service.dart
 │   │   ├── nextcloud_service.dart
-│   │   ├── notification_service.dart
-│   │   └── ods_export_service.dart
+│   │   ├── backup_service.dart
+│   │   └── notification_service.dart
 │   ├── models/                     # Immutable domain models (pure Dart, no Flutter)
 │   ├── calculators/                # P&L, avg price, dividend yield — pure functions
 │   └── utils/                      # Formatting, date helpers, decimal math
@@ -195,8 +195,10 @@ Raw transaction rows are never modified when a stock split is recorded. The doma
 ### 5.3 Currency Conversion
 Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline, the most recent cached rate is used with a staleness indicator shown in the UI. Manual overrides stored in the database bypass the TTL entirely.
 
+Rate lookup uses the **price currency reported by Yahoo Finance** (`PriceQuote.currency`) rather than the stored `stock.currency`. This ensures correct conversion even when the stored currency was recorded incorrectly at creation time. If no exchange rate is available for the price currency, a missing-rate badge is displayed on the dashboard tile and no conversion is applied.
+
 ### 5.4 ISIN Lookup
-When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. The resolved data is shown to the user for confirmation before saving. If the lookup fails (offline or unknown ISIN), the user can enter the fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made.
+When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.
 
 ### 5.5 Financial Arithmetic
 All monetary values are stored and calculated as `Decimal` (via the `decimal` package), never `double`, to avoid floating-point rounding errors.
@@ -310,7 +312,34 @@ Key-value pairs, no fixed column count.
 | E | Fetched / set at | ISO 8601 timestamp |
 
 ### 5.8 Nextcloud Sync Strategy
-The local SQLite database is the source of truth. Sync is one-directional: local data → ODS export → uploaded to Nextcloud via WebDAV PUT. The ODS filename includes a timestamp (e.g. `stockmanager_2026-05-12T14-30.ods`). Previous exports are retained on Nextcloud (configurable count).
+
+#### Backup format
+Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
+
+#### Sync triggers
+`NextcloudSyncNotifier` (a Riverpod `NotifierProvider`) manages sync state and triggers:
+
+| Trigger | Behaviour |
+|---|---|
+| App startup (4 s delay) | Check remote for newer backup; if found set `pendingRestore`; otherwise upload |
+| After saving credentials | Immediately check remote via `checkForRemoteBackup()` |
+| Data mutation | `dataVersionProvider` increments; sync debounced by 5 s |
+| Manual "Backup now" tap | `syncNow()` called directly |
+
+#### Bidirectional conflict resolution
+On startup and after a credential save the app calls `findLatestBackup()` (WebDAV PROPFIND) and compares `backupDate` with `settings.lastSyncAt`. If the remote backup is newer, `pendingRestore` is set in `NextcloudSyncState` and:
+- A card is shown on the Nextcloud settings screen with "Restore from server" / "Dismiss".
+- On first launch a dialog is shown immediately after credential save.
+Auto-upload is **suppressed** while a restore is pending user decision.
+
+On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings.
+
+#### Secure storage keys
+| Key | Value |
+|---|---|
+| `nextcloud_password` | Nextcloud password / app token |
+| `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
+| `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
 ### 5.9 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
