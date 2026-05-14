@@ -14,6 +14,12 @@ class NextcloudException implements Exception {
   String toString() => 'NextcloudException: $message';
 }
 
+class RemoteBackupInfo {
+  const RemoteBackupInfo({required this.remotePath, required this.backupDate});
+  final String remotePath;
+  final DateTime backupDate;
+}
+
 class CertificateInfo {
   const CertificateInfo({
     required this.fingerprint,
@@ -268,6 +274,77 @@ class NextcloudService {
       pinnedFingerprint: fingerprint,
     );
     await client.delete(remotePath);
+  }
+
+  // Download [remotePath] and return its raw bytes.
+  Future<Uint8List> downloadFile({
+    required String serverUrl,
+    required String username,
+    required String password,
+    required String remotePath,
+  }) async {
+    final fingerprint = await getPinnedFingerprint();
+    final client = _buildClient(
+      serverUrl: serverUrl,
+      username: username,
+      password: password,
+      pinnedFingerprint: fingerprint,
+    );
+    final response = await client.get<List<int>>(
+      remotePath,
+      options: Options(responseType: ResponseType.bytes),
+    );
+    if (response.statusCode == null ||
+        response.statusCode! < 200 ||
+        response.statusCode! >= 300) {
+      throw NextcloudException('Download failed: HTTP ${response.statusCode}');
+    }
+    return Uint8List.fromList(response.data ?? []);
+  }
+
+  // Find the most recent stockmanager_backup_*.zip in [remotePath].
+  // Returns null if the directory is empty or unreachable.
+  Future<RemoteBackupInfo?> findLatestBackup({
+    required String serverUrl,
+    required String username,
+    required String password,
+    required String remotePath,
+  }) async {
+    final davBase = '/remote.php/dav/files/$username';
+    final fullDir = remotePath.startsWith('/')
+        ? '$davBase$remotePath'
+        : '$davBase/$remotePath';
+
+    List<String> hrefs;
+    try {
+      hrefs = await listFiles(
+        serverUrl: serverUrl,
+        username: username,
+        password: password,
+        remotePath: fullDir,
+      );
+    } catch (_) {
+      return null;
+    }
+
+    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2})\.zip$');
+    DateTime? latestDate;
+    String? latestHref;
+
+    for (final href in hrefs) {
+      final decoded = Uri.decodeFull(href);
+      final match = pattern.firstMatch(decoded);
+      if (match == null) continue;
+      final date = DateTime.tryParse(match.group(1)!);
+      if (date == null) continue;
+      if (latestDate == null || date.isAfter(latestDate)) {
+        latestDate = date;
+        latestHref = href;
+      }
+    }
+
+    if (latestDate == null || latestHref == null) return null;
+    return RemoteBackupInfo(remotePath: latestHref, backupDate: latestDate);
   }
 
   static String _certFingerprint(Uint8List derBytes) {

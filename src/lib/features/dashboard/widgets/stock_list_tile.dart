@@ -50,6 +50,13 @@ class StockListTile extends StatelessWidget {
               ),
               Row(
                 children: [
+                  if (item.missingRate)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Icon(Icons.currency_exchange,
+                          size: 12,
+                          color: theme.colorScheme.error),
+                    ),
                   if (item.isStale && !noPrice)
                     Padding(
                       padding: const EdgeInsets.only(right: 4),

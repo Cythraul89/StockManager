@@ -7,6 +7,7 @@ import '../../core/models/stock.dart';
 import '../../core/services/isin_lookup_service.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/isin_validator.dart';
+import '../settings/settings_provider.dart';
 import 'stocks_provider.dart';
 
 // Exposed so main.dart can override with the real service instance.
@@ -35,7 +36,9 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   bool _isSaving = false;
   String? _lookupError;
   bool _symbolUnverified = false;
+  bool _brokerLoaded = false;
 
+  static const _lastBrokerKey = 'last_used_broker_id';
   static const _currencies = [
     'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
     'HKD', 'HUF', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'NZD',
@@ -201,6 +204,8 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
         dripEnabled: _dripEnabled,
       );
       await ref.read(stockActionsProvider).addStock(stock);
+      await ref.read(secureStorageProvider).write(
+            key: _lastBrokerKey, value: _selectedBrokerId);
       if (mounted) router.pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -299,35 +304,59 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
               decoration: const InputDecoration(labelText: 'Exchange'),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              key: ValueKey(_selectedCurrency),
+            FormField<String>(
               initialValue: _selectedCurrency,
-              decoration: const InputDecoration(labelText: 'Currency'),
-              items: [
-                ..._currencies,
-                if (_selectedCurrency != null &&
-                    !_currencies.contains(_selectedCurrency))
-                  _selectedCurrency!,
-              ]
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) => setState(() => _selectedCurrency = v),
               validator: (v) => v == null ? 'Required' : null,
+              builder: (field) => InputDecorator(
+                decoration: InputDecoration(
+                  labelText: 'Currency',
+                  errorText: field.errorText,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedCurrency,
+                    isExpanded: true,
+                    isDense: true,
+                    items: [
+                      ..._currencies,
+                      if (_selectedCurrency != null &&
+                          !_currencies.contains(_selectedCurrency))
+                        _selectedCurrency!,
+                    ]
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() => _selectedCurrency = v);
+                      field.didChange(v);
+                    },
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 8),
             brokersAsync.when(
               loading: () => const CircularProgressIndicator(),
               error: (e, _) => Text('Error loading brokers: $e'),
-              data: (brokers) => DropdownButtonFormField<String>(
-                initialValue: _selectedBrokerId,
-                decoration: const InputDecoration(labelText: 'Broker'),
-                items: [
-                  for (final b in brokers)
-                    DropdownMenuItem(value: b.id, child: Text(b.name)),
-                ],
-                onChanged: (v) => setState(() => _selectedBrokerId = v),
-                validator: (v) => v == null ? 'Required' : null,
-              ),
+              data: (brokers) {
+                if (!_brokerLoaded && brokers.isNotEmpty) {
+                  _brokerLoaded = true;
+                  ref.read(secureStorageProvider).read(key: _lastBrokerKey).then((id) {
+                    if (mounted && id != null && brokers.any((b) => b.id == id)) {
+                      setState(() => _selectedBrokerId = id);
+                    }
+                  });
+                }
+                return DropdownButtonFormField<String>(
+                  initialValue: _selectedBrokerId,
+                  decoration: const InputDecoration(labelText: 'Broker'),
+                  items: [
+                    for (final b in brokers)
+                      DropdownMenuItem(value: b.id, child: Text(b.name)),
+                  ],
+                  onChanged: (v) => setState(() => _selectedBrokerId = v),
+                  validator: (v) => v == null ? 'Required' : null,
+                );
+              },
             ),
             const SizedBox(height: 8),
             SwitchListTile(

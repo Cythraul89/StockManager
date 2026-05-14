@@ -50,6 +50,7 @@ class StockSummaryItem {
     required this.annualYieldPct,
     required this.isStale,
     required this.hasPrice,
+    required this.missingRate,
   });
 
   final Stock stock;
@@ -63,6 +64,8 @@ class StockSummaryItem {
   final Decimal annualYieldPct;
   final bool isStale;
   final bool hasPrice;
+  // True when stock currency differs from preferred but no exchange rate is cached.
+  final bool missingRate;
 }
 
 final portfolioSummaryProvider =
@@ -116,6 +119,7 @@ PortfolioSummary _buildSummary(
     );
 
     final rate = _findRate(rates, stock.currency, preferred);
+    final missingRate = stock.currency != preferred && rate == null;
     final convertedPnl = rate != null ? PnlCalculator.convert(pnl, rate) : pnl;
     final convertedDiv = rate != null
         ? DividendCalculator.convert(divSummary, rate)
@@ -140,6 +144,7 @@ PortfolioSummary _buildSummary(
       annualYieldPct: divSummary.annualYieldPct,
       isStale: quote?.withStaleness().isStale ?? true,
       hasPrice: quote != null,
+      missingRate: missingRate,
     ));
   }
 

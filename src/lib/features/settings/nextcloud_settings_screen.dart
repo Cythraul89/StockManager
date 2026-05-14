@@ -147,11 +147,48 @@ class _NextcloudSettingsScreenState
               nextcloudPath: _pathCtrl.text.trim(),
             ),
           );
+
+      if (!mounted) return;
+      // Check if server has a newer backup and offer restore.
+      await ref.read(nextcloudSyncProvider.notifier).checkForRemoteBackup();
+      if (!mounted) return;
+
+      final pendingRestore = ref.read(nextcloudSyncProvider).pendingRestore;
+      if (pendingRestore != null) {
+        final restore = await _showRestoreDialog(pendingRestore);
+        if (!mounted) return;
+        if (restore == true) {
+          await ref.read(nextcloudSyncProvider.notifier).restoreFromRemote();
+        } else {
+          ref.read(nextcloudSyncProvider.notifier).dismissRestore();
+        }
+      }
+
       if (mounted) context.pop();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
+
+  Future<bool?> _showRestoreDialog(RemoteBackupInfo info) => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Server backup found'),
+          content: Text(
+            'A backup from ${info.backupDate.toIso8601String().substring(0, 10)} '
+            'was found on the server — newer than your local data.\n\n'
+            'Restore from server? Your current local data will be replaced.',
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Skip')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Restore')),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +219,56 @@ class _NextcloudSettingsScreenState
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (syncState.pendingRestore != null) ...[
+                  Card(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Newer backup on server',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimaryContainer)),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Backup date: ${syncState.pendingRestore!.backupDate.toIso8601String().substring(0, 10)}',
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onPrimaryContainer),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            FilledButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => ref
+                                      .read(nextcloudSyncProvider.notifier)
+                                      .restoreFromRemote(),
+                              child: const Text('Restore from server'),
+                            ),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => ref
+                                      .read(nextcloudSyncProvider.notifier)
+                                      .dismissRestore(),
+                              child: const Text('Dismiss'),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 TextFormField(
                   controller: _urlCtrl,
                   decoration: const InputDecoration(
