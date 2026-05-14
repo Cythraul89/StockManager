@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/price_quote.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'dashboard_provider.dart';
@@ -30,9 +31,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     try {
       final stocks = await ref.read(stocksStreamProvider.future);
       final symbolMap = {for (final s in stocks) s.id: s.symbol};
-      final quotes =
-          await ref.read(marketDataServiceProvider).fetchQuotes(symbolMap);
-      if (mounted) ref.read(priceQuotesProvider.notifier).state = quotes;
+      final currencyMap = {for (final s in stocks) s.id: s.currency};
+
+      final actions = ref.read(stockActionsProvider);
+      final marketQuotes = await ref
+          .read(marketDataServiceProvider)
+          .fetchQuotes(symbolMap, currencyByStockId: currencyMap);
+
+      // Persist fresh market prices to DB cache.
+      for (final q in marketQuotes.values) {
+        await actions.cacheMarketPrice(q);
+      }
+
+      // Fill in manual overrides for stocks with no market data.
+      final allQuotes = Map<String, PriceQuote>.from(marketQuotes);
+      final manualPrices = await actions.loadManualPrices();
+      for (final entry in manualPrices.entries) {
+        if (!allQuotes.containsKey(entry.key)) {
+          allQuotes[entry.key] = entry.value;
+        }
+      }
+
+      if (mounted) ref.read(priceQuotesProvider.notifier).state = allQuotes;
     } catch (e) {
       debugPrint('DashboardScreen: fetchQuotes failed: $e');
     }

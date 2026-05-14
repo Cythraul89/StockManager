@@ -8,14 +8,15 @@ class PriceQuote extends Equatable {
     required this.currency,
     required this.fetchedAt,
     this.isStale = false,
+    this.isManualOverride = false,
   });
 
   final String stockId;
   final Decimal price;
   final String currency;
   final DateTime fetchedAt;
-  // true when fetched_at is older than the cache TTL (1 hour)
   final bool isStale;
+  final bool isManualOverride;
 
   static const cacheTtl = Duration(hours: 1);
 
@@ -24,9 +25,14 @@ class PriceQuote extends Equatable {
         price: price,
         currency: currency,
         fetchedAt: fetchedAt,
-        isStale: DateTime.now().difference(fetchedAt) > cacheTtl,
+        // Manual prices are never stale — the user controls them.
+        isStale: isManualOverride
+            ? false
+            : DateTime.now().difference(fetchedAt) > cacheTtl,
+        isManualOverride: isManualOverride,
       );
 
   @override
-  List<Object?> get props => [stockId, price, currency, fetchedAt, isStale];
+  List<Object?> get props =>
+      [stockId, price, currency, fetchedAt, isStale, isManualOverride];
 }

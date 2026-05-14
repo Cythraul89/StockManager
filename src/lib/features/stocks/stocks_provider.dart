@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -186,6 +187,46 @@ class StockActions {
   Future<void> deleteDividend(String divId) async {
     await _db.dividendsDao.deleteById(divId);
     _notifyChange();
+  }
+
+  Future<void> setManualPrice(
+      String stockId, Decimal price, String currency) async {
+    await _db.stocksDao.upsertPrice(PriceCacheCompanion.insert(
+      stockId: stockId,
+      price: price,
+      currency: currency,
+      fetchedAt: DateTime.now(),
+      manualOverride: const Value(true),
+    ));
+  }
+
+  Future<void> clearManualPrice(String stockId) async {
+    await _db.stocksDao.deletePrice(stockId);
+  }
+
+  Future<void> cacheMarketPrice(PriceQuote quote) async {
+    await _db.stocksDao.upsertPrice(PriceCacheCompanion.insert(
+      stockId: quote.stockId,
+      price: quote.price,
+      currency: quote.currency,
+      fetchedAt: quote.fetchedAt,
+      manualOverride: const Value(false),
+    ));
+  }
+
+  Future<Map<String, PriceQuote>> loadManualPrices() async {
+    final cached = await _db.stocksDao.getAllCachedPrices();
+    return {
+      for (final e in cached.entries)
+        if (e.value.manualOverride)
+          e.key: PriceQuote(
+            stockId: e.key,
+            price: e.value.price,
+            currency: e.value.currency,
+            fetchedAt: e.value.fetchedAt,
+            isManualOverride: true,
+          ),
+    };
   }
 }
 

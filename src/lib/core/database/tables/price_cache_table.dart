@@ -10,6 +10,8 @@ class PriceCache extends Table {
   TextColumn get price => text().map(const DecimalConverter())();
   TextColumn get currency => text()();
   DateTimeColumn get fetchedAt => dateTime()();
+  BoolColumn get manualOverride =>
+      boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {stockId};

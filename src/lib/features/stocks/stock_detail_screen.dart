@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/exchange_rate.dart';
+import '../../core/models/price_quote.dart';
+import '../../core/models/stock.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/decimal_math.dart';
 import '../settings/settings_provider.dart';
@@ -114,7 +116,52 @@ class StockDetailScreen extends ConsumerWidget {
                             _currentPriceLabel(
                                 currentPrice, stock.currency,
                                 rawQuotePrice!, quoteCurrency,
-                                quote!.withStaleness().isStale)),
+                                quote!.withStaleness().isStale,
+                                quote.isManualOverride)),
+                        if (quote.isManualOverride)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () {
+                                ref
+                                    .read(stockActionsProvider)
+                                    .clearManualPrice(stock.id)
+                                    .then((_) {
+                                  final updated = Map<String, PriceQuote>.from(
+                                      ref.read(priceQuotesProvider));
+                                  updated.remove(stock.id);
+                                  ref
+                                      .read(priceQuotesProvider.notifier)
+                                      .state = updated;
+                                });
+                              },
+                              child: const Text('Clear manual price'),
+                            ),
+                          ),
+                      ] else ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Current price',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant),
+                              ),
+                              TextButton(
+                                onPressed: () => _showManualPriceDialog(
+                                    context, ref, stock),
+                                child: const Text('Set price'),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                       if (pnl != null) ...[
                         _kv(
@@ -204,12 +251,83 @@ class StockDetailScreen extends ConsumerWidget {
     Decimal rawPrice,
     String quoteCurrency,
     bool isStale,
+    bool isManual,
   ) {
-    final staleTag = isStale ? ' (stale)' : '';
+    final tag = isManual ? ' (manual)' : (isStale ? ' (stale)' : '');
     final converted = CurrencyFormatter.format(price, stockCurrency);
-    if (quoteCurrency == stockCurrency) return '$converted$staleTag';
+    if (quoteCurrency == stockCurrency) return '$converted$tag';
     final raw = CurrencyFormatter.format(rawPrice, quoteCurrency);
-    return '$converted ($raw)$staleTag';
+    return '$converted ($raw)$tag';
+  }
+
+  void _showManualPriceDialog(
+      BuildContext context, WidgetRef ref, Stock stock) {
+    final controller = TextEditingController();
+    String selectedCurrency = stock.currency;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Set manual price'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Price'),
+                autofocus: true,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: selectedCurrency,
+                decoration: const InputDecoration(labelText: 'Currency'),
+                items: CurrencyFormatter.supportedCurrencies
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) =>
+                    setState(() => selectedCurrency = v ?? selectedCurrency),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final price = Decimal.tryParse(controller.text.trim());
+                if (price == null || price.compareTo(Decimal.zero) <= 0) {
+                  return;
+                }
+                final currency = selectedCurrency;
+                Navigator.of(ctx).pop();
+                ref
+                    .read(stockActionsProvider)
+                    .setManualPrice(stock.id, price, currency)
+                    .then((_) {
+                  final quote = PriceQuote(
+                    stockId: stock.id,
+                    price: price,
+                    currency: currency,
+                    fetchedAt: DateTime.now(),
+                    isManualOverride: true,
+                  );
+                  final updated = Map<String, PriceQuote>.from(
+                      ref.read(priceQuotesProvider));
+                  updated[stock.id] = quote;
+                  ref.read(priceQuotesProvider.notifier).state = updated;
+                });
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _kv(String label, String value, {Color? valueColor}) {
