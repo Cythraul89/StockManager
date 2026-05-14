@@ -6,8 +6,14 @@ import 'package:stock_manager/app.dart';
 import 'package:stock_manager/core/database/app_database.dart';
 import 'package:stock_manager/core/services/notification_service.dart';
 import 'package:stock_manager/features/dashboard/dashboard_provider.dart';
+import 'package:stock_manager/features/settings/nextcloud_sync_provider.dart';
 import 'package:stock_manager/features/settings/settings_provider.dart';
 import 'package:stock_manager/features/stocks/stocks_provider.dart';
+
+class _NoOpSyncNotifier extends Notifier<NextcloudSyncState> {
+  @override
+  NextcloudSyncState build() => const NextcloudSyncState();
+}
 
 void main() {
   testWidgets('App renders dashboard', (tester) async {
@@ -22,10 +28,10 @@ void main() {
           marketDataServiceProvider.overrideWith(
             (ref) => throw UnimplementedError(),
           ),
-          // Override portfolioSummaryProvider so no Drift stream providers
-          // are subscribed to. Without this, Drift's StreamQueryStore creates
-          // zero-duration cleanup timers on cancellation that the test
-          // framework detects as pending, causing the test to fail.
+          // Prevents the 4-second startup timer in NextcloudSyncNotifier
+          // from leaking into the FakeAsync zone ("Timer still pending").
+          nextcloudSyncProvider.overrideWith(_NoOpSyncNotifier.new),
+          // Prevents Drift StreamQueryStore cleanup timers from leaking.
           portfolioSummaryProvider.overrideWith(
             (ref) async => PortfolioSummary(
               totalValue: Decimal.zero,
