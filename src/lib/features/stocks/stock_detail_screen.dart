@@ -14,6 +14,7 @@ import '../settings/settings_provider.dart';
 import '../transactions/widgets/transaction_tile.dart';
 import '../dividends/widgets/dividend_tile.dart';
 import 'stocks_provider.dart';
+import 'widgets/manual_price_dialog.dart';
 
 class StockDetailScreen extends ConsumerWidget {
   const StockDetailScreen({super.key, required this.id});
@@ -48,15 +49,15 @@ class StockDetailScreen extends ConsumerWidget {
 
         // Convert price from quoteCurrency to stock.currency so P&L arithmetic
         // uses the same unit as the stored transaction prices.
+        // If the rate is missing, currentPrice stays null → P&L is hidden rather
+        // than shown in the wrong currency unit.
         Decimal? currentPrice;
         if (rawQuotePrice != null) {
           if (quoteCurrency == stock.currency) {
             currentPrice = rawQuotePrice;
           } else {
             final adjRate = ExchangeRate.find(rates, quoteCurrency, stock.currency);
-            currentPrice = adjRate != null
-                ? adjRate.convert(rawQuotePrice)
-                : rawQuotePrice;
+            if (adjRate != null) currentPrice = adjRate.convert(rawQuotePrice);
           }
         }
 
@@ -103,16 +104,16 @@ class StockDetailScreen extends ConsumerWidget {
                                       .colorScheme
                                       .onSurfaceVariant)),
                       const Divider(height: 24),
-                      _kv('Shares held',
+                      _kv(context, 'Shares held',
                           position.sharesHeld.toStringAsFixed(6)),
-                      _kv('Avg buy price',
+                      _kv(context, 'Avg buy price',
                           CurrencyFormatter.format(
                               position.avgBuyPrice, stock.currency)),
-                      _kv('Invested',
+                      _kv(context, 'Invested',
                           CurrencyFormatter.format(
                               position.totalInvested, stock.currency)),
                       if (currentPrice != null) ...[
-                        _kv('Current price',
+                        _kv(context, 'Current price',
                             _currentPriceLabel(
                                 currentPrice, stock.currency,
                                 rawQuotePrice!, quoteCurrency,
@@ -168,6 +169,7 @@ class StockDetailScreen extends ConsumerWidget {
                       ],
                       if (pnl != null) ...[
                         _kv(
+                          context,
                           'Unrealised P&L',
                           '${CurrencyFormatter.format(pnl.unrealisedPnl, stock.currency)} '
                               '(${CurrencyFormatter.formatPercent(pnl.unrealisedPnlPct)})',
@@ -176,6 +178,7 @@ class StockDetailScreen extends ConsumerWidget {
                               : Colors.green,
                         ),
                         _kv(
+                          context,
                           'Realised P&L',
                           CurrencyFormatter.format(
                               pnl.realisedPnl, stock.currency),
@@ -269,7 +272,7 @@ class StockDetailScreen extends ConsumerWidget {
 
     showDialog<({String currency, Decimal price})>(
       context: context,
-      builder: (ctx) => _ManualPriceDialog(initialCurrency: stock.currency),
+      builder: (ctx) => ManualPriceDialog(initialCurrency: stock.currency),
     ).then((result) async {
       if (result == null) return;
       try {
@@ -292,103 +295,22 @@ class StockDetailScreen extends ConsumerWidget {
     });
   }
 
-  Widget _kv(String label, String value, {Color? valueColor}) {
-    return Builder(builder: (context) {
-      final theme = Theme.of(context);
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            Text(value,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(color: valueColor)),
-          ],
-        ),
-      );
-    });
-  }
-}
-
-class _ManualPriceDialog extends StatefulWidget {
-  const _ManualPriceDialog({required this.initialCurrency});
-
-  final String initialCurrency;
-
-  @override
-  State<_ManualPriceDialog> createState() => _ManualPriceDialogState();
-}
-
-class _ManualPriceDialogState extends State<_ManualPriceDialog> {
-  final _controller = TextEditingController();
-  late String _currency;
-  String? _errorText;
-
-  @override
-  void initState() {
-    super.initState();
-    _currency = widget.initialCurrency;
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Set manual price'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget _kv(BuildContext context, String label, String value,
+      {Color? valueColor}) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          TextField(
-            controller: _controller,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Price',
-              errorText: _errorText,
-            ),
-            autofocus: true,
-            onChanged: (_) {
-              if (_errorText != null) setState(() => _errorText = null);
-            },
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: _currency,
-            decoration: const InputDecoration(labelText: 'Currency'),
-            items: CurrencyFormatter.supportedCurrencies
-                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                .toList(),
-            onChanged: (v) {
-              if (v != null) setState(() => _currency = v);
-            },
-          ),
+          Text(label,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Text(value,
+              style:
+                  theme.textTheme.bodyMedium?.copyWith(color: valueColor)),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () {
-            final price = Decimal.tryParse(_controller.text.trim());
-            if (price == null || price.compareTo(Decimal.zero) <= 0) {
-              setState(() => _errorText = 'Enter a positive number');
-              return;
-            }
-            Navigator.of(context).pop((currency: _currency, price: price));
-          },
-          child: const Text('Save'),
-        ),
-      ],
     );
   }
 }
