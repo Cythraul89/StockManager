@@ -77,17 +77,26 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
 
   static const _passwordKey = 'nextcloud_password';
 
-  Future<({String url, String username, String password})?> _credentials() async {
-    final settings = await ref.read(settingsProvider.future);
-    final url = settings.nextcloudUrl;
-    final username = settings.nextcloudUsername;
+  // Always reads directly from the database so the result is never stale.
+  // FutureProvider caches its value until invalidated, which means reading
+  // settingsProvider immediately after saveSettings() returns old data.
+  Future<({String url, String username, String password, String path})?> _credentials() async {
+    final row =
+        await ref.read(databaseProvider).settingsDao.getSettings();
+    final url = row?.nextcloudUrl;
+    final username = row?.nextcloudUsername;
     if (url == null || url.isEmpty || username == null || username.isEmpty) {
       return null;
     }
     final password =
         await ref.read(secureStorageProvider).read(key: _passwordKey);
     if (password == null || password.isEmpty) return null;
-    return (url: url, username: username, password: password);
+    return (
+      url: url,
+      username: username,
+      password: password,
+      path: row!.nextcloudPath,
+    );
   }
 
   // Compare two sync timestamps as local calendar dates to avoid DST issues.
@@ -103,18 +112,20 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     final creds = await _credentials();
     if (creds == null) return;
 
-    final settings = await ref.read(settingsProvider.future);
-
     try {
       final remote =
           await ref.read(nextcloudServiceProvider).findLatestBackup(
                 serverUrl: creds.url,
                 username: creds.username,
                 password: creds.password,
-                remotePath: settings.nextcloudPath,
+                remotePath: creds.path,
               );
 
-      if (remote != null && _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
+      // lastSyncAt is only needed for comparison here; reading settingsProvider
+      // is acceptable since this runs on startup when the cache is still fresh.
+      final settings = await ref.read(settingsProvider.future);
+      if (remote != null &&
+          _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
         state = state.copyWith(pendingRestore: remote);
         return;
       }
@@ -132,18 +143,18 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     final creds = await _credentials();
     if (creds == null) return;
 
-    final settings = await ref.read(settingsProvider.future);
-
     try {
       final remote =
           await ref.read(nextcloudServiceProvider).findLatestBackup(
                 serverUrl: creds.url,
                 username: creds.username,
                 password: creds.password,
-                remotePath: settings.nextcloudPath,
+                remotePath: creds.path,
               );
 
-      if (remote != null && _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
+      final settings = await ref.read(settingsProvider.future);
+      if (remote != null &&
+          _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
         state = state.copyWith(pendingRestore: remote);
       }
     } catch (e) {
@@ -152,17 +163,17 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
   }
 
   // Return any backup found on the server without mutating state.
-  // Used by the setup flow to let the UI decide what to offer.
+  // Reads credentials directly from DB so this is safe to call immediately
+  // after saveSettings() without a provider invalidation cycle.
   Future<RemoteBackupInfo?> findRemoteBackup() async {
     final creds = await _credentials();
     if (creds == null) return null;
-    final settings = await ref.read(settingsProvider.future);
     try {
       return await ref.read(nextcloudServiceProvider).findLatestBackup(
             serverUrl: creds.url,
             username: creds.username,
             password: creds.password,
-            remotePath: settings.nextcloudPath,
+            remotePath: creds.path,
           );
     } catch (e) {
       debugPrint('NextcloudSync: findRemoteBackup failed: $e');
@@ -195,10 +206,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       await ref.read(backupServiceProvider).importFromBytes(bytes);
 
       final now = DateTime.now();
-      final settings = await ref.read(settingsProvider.future);
-      await ref
-          .read(settingsActionsProvider)
-          .saveSettings(settings.copyWith(lastSyncAt: now));
+      await ref.read(settingsActionsProvider).saveLastSyncAt(now);
 
       state = NextcloudSyncState(status: SyncStatus.idle, lastSyncAt: now);
     } catch (e) {
@@ -223,13 +231,12 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     state = state.copyWith(status: SyncStatus.syncing, error: null);
 
     try {
-      final settings = await ref.read(settingsProvider.future);
       final backupFile = await ref.read(backupServiceProvider).exportToZip();
       final bytes = await backupFile.readAsBytes();
 
-      final dir = settings.nextcloudPath;
       final dateStr =
           DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      final dir = creds.path;
       final remotePath =
           '${dir.endsWith('/') ? dir : '$dir/'}stockmanager_backup_$dateStr.zip';
 
@@ -242,22 +249,19 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
           );
 
       final now = DateTime.now();
-      await ref.read(settingsActionsProvider).saveSettings(
-            settings.copyWith(lastSyncAt: now),
-          );
+      await ref.read(settingsActionsProvider).saveLastSyncAt(now);
 
       state = NextcloudSyncState(status: SyncStatus.idle, lastSyncAt: now);
 
       // Prune old backups according to the keep-exports setting.
-      await _pruneOldBackups(creds: creds, settings: settings);
+      await _pruneOldBackups(creds: creds);
     } catch (e) {
       state = state.copyWith(status: SyncStatus.error, error: e.toString());
     }
   }
 
   Future<void> _pruneOldBackups({
-    required ({String url, String username, String password}) creds,
-    required AppSettings settings,
+    required ({String url, String username, String password, String path}) creds,
   }) async {
     final service = ref.read(nextcloudServiceProvider);
 
@@ -267,11 +271,15 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
         serverUrl: creds.url,
         username: creds.username,
         password: creds.password,
-        remotePath: settings.nextcloudPath,
+        remotePath: creds.path,
       );
     } catch (_) {
       return; // Best effort — don't fail sync if listing fails
     }
+
+    // Read keep-exports setting directly from DB to avoid stale provider data.
+    final row = await ref.read(databaseProvider).settingsDao.getSettings();
+    final keep = row?.nextcloudKeepExports ?? AppSettings.defaults.nextcloudKeepExports;
 
     final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2})\.zip$');
     final backups = <(DateTime, String)>[];
@@ -285,7 +293,6 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
 
     backups.sort((a, b) => b.$1.compareTo(a.$1)); // newest first
 
-    final keep = settings.nextcloudKeepExports;
     for (final backup in backups.skip(keep)) {
       try {
         await service.delete(

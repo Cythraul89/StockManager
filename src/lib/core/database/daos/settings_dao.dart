@@ -26,6 +26,10 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
         companion.copyWith(id: const Value(_settingsId)),
       );
 
+  Future<void> updateLastSyncAt(DateTime time) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(lastSyncAt: Value(time)));
+
   // Exchange rates
   Stream<List<ExchangeRateCacheRow>> watchExchangeRates() =>
       (select(exchangeRateCache)

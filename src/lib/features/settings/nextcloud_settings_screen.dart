@@ -249,9 +249,12 @@ class _NextcloudSettingsScreenState
             _pathCtrl.text = settings.nextcloudPath;
             _loaded = true;
             // Treat existing, previously synced credentials as already verified.
+            // Use settings.lastSyncAt (DB-persisted) not syncState.lastSyncAt
+            // (in-memory), which is null on a fresh app launch until the first
+            // scheduled sync completes.
             _connectionVerified = settings.nextcloudUrl?.isNotEmpty == true &&
                 settings.nextcloudUsername?.isNotEmpty == true &&
-                syncState.lastSyncAt != null;
+                settings.lastSyncAt != null;
             ref.read(secureStorageProvider).read(key: _passwordKey).then((pw) {
               if (mounted && pw != null) {
                 setState(() => _passwordCtrl.text = pw);

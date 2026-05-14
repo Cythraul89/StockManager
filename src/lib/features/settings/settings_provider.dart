@@ -64,6 +64,11 @@ class SettingsActions {
   const SettingsActions(this._db);
   final AppDatabase _db;
 
+  // Targeted update — avoids reading the full settings row first, so it
+  // cannot accidentally overwrite other columns with stale provider data.
+  Future<void> saveLastSyncAt(DateTime time) =>
+      _db.settingsDao.updateLastSyncAt(time);
+
   Future<void> saveSettings(AppSettings s) => _db.settingsDao.upsertSettings(
         SettingsCompanion(
           preferredCurrency: Value(s.preferredCurrency),
