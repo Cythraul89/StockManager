@@ -33,6 +33,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   bool _isLookingUp = false;
   bool _isSaving = false;
   String? _lookupError;
+  bool _symbolUnverified = false;
 
   @override
   void dispose() {
@@ -61,17 +62,28 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
     final result = await service.lookup(isin);
 
     if (!mounted) return;
+    if (result == null) {
+      setState(() {
+        _isLookingUp = false;
+        _lookupError = 'Could not resolve ISIN. Please fill in details manually.';
+      });
+      return;
+    }
+
+    // Validate the resolved symbol against Yahoo Finance.
+    final tempId = '__preview__';
+    final quote = await ref
+        .read(marketDataServiceProvider)
+        .fetchQuote(result.symbol, tempId);
+
+    if (!mounted) return;
     setState(() {
       _isLookingUp = false;
-      if (result != null) {
-        _symbolCtrl.text = result.symbol;
-        _nameCtrl.text = result.name;
-        _exchangeCtrl.text = result.exchange;
-        _currencyCtrl.text = result.currency;
-      } else {
-        _lookupError =
-            'Could not resolve ISIN. Please fill in details manually.';
-      }
+      _symbolCtrl.text = result.symbol;
+      _nameCtrl.text = result.name;
+      _exchangeCtrl.text = result.exchange;
+      _currencyCtrl.text = result.currency;
+      _symbolUnverified = quote == null;
     });
   }
 
@@ -141,7 +153,10 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                     ),
                     textCapitalization: TextCapitalization.characters,
                     maxLength: 12,
-                    onChanged: (_) => setState(() => _lookupError = null),
+                    onChanged: (_) => setState(() {
+                      _lookupError = null;
+                      _symbolUnverified = false;
+                    }),
                     validator: (v) =>
                         IsinValidator.errorMessage(v?.trim() ?? ''),
                   ),
@@ -167,9 +182,31 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
               controller: _symbolCtrl,
               decoration: const InputDecoration(labelText: 'Ticker symbol'),
               textCapitalization: TextCapitalization.characters,
+              onChanged: (_) => setState(() => _symbolUnverified = false),
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'Required' : null,
             ),
+            if (_symbolUnverified) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'No price found for this symbol on Yahoo Finance. '
+                      'The stock may trade under a different ticker — '
+                      'check Yahoo Finance and edit the symbol above.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             TextFormField(
               controller: _nameCtrl,
