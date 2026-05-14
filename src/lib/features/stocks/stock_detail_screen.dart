@@ -262,85 +262,29 @@ class StockDetailScreen extends ConsumerWidget {
 
   void _showManualPriceDialog(
       BuildContext context, WidgetRef ref, Stock stock) {
-    final controller = TextEditingController();
-    String selectedCurrency = stock.currency;
     final notifier = ref.read(priceQuotesProvider.notifier);
 
-    showDialog<void>(
+    showDialog<({String currency, Decimal price})>(
       context: context,
-      builder: (ctx) {
-        String? errorText;
-        return StatefulBuilder(
-          builder: (ctx, setState) => AlertDialog(
-            title: const Text('Set manual price'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: controller,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Price',
-                    errorText: errorText,
-                  ),
-                  autofocus: true,
-                  onChanged: (_) {
-                    if (errorText != null) setState(() => errorText = null);
-                  },
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(selectedCurrency),
-                  initialValue: selectedCurrency,
-                  decoration: const InputDecoration(labelText: 'Currency'),
-                  items: CurrencyFormatter.supportedCurrencies
-                      .map((c) =>
-                          DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setState(
-                      () => selectedCurrency = v ?? selectedCurrency),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () {
-                  final price = Decimal.tryParse(controller.text.trim());
-                  if (price == null || price.compareTo(Decimal.zero) <= 0) {
-                    setState(() => errorText = 'Enter a positive number');
-                    return;
-                  }
-                  final currency = selectedCurrency;
-                  Navigator.of(ctx).pop();
-                  ref
-                      .read(stockActionsProvider)
-                      .setManualPrice(stock.id, price, currency)
-                      .then((_) {
-                    final quote = PriceQuote(
-                      stockId: stock.id,
-                      price: price,
-                      currency: currency,
-                      fetchedAt: DateTime.now(),
-                      isManualOverride: true,
-                    );
-                    final updated =
-                        Map<String, PriceQuote>.from(notifier.state);
-                    updated[stock.id] = quote;
-                    notifier.state = updated;
-                  });
-                },
-                child: const Text('Save'),
-              ),
-            ],
-          ),
+      builder: (ctx) => _ManualPriceDialog(initialCurrency: stock.currency),
+    ).then((result) {
+      if (result == null) return;
+      ref
+          .read(stockActionsProvider)
+          .setManualPrice(stock.id, result.price, result.currency)
+          .then((_) {
+        final quote = PriceQuote(
+          stockId: stock.id,
+          price: result.price,
+          currency: result.currency,
+          fetchedAt: DateTime.now(),
+          isManualOverride: true,
         );
-      },
-    ).whenComplete(controller.dispose);
+        final updated = Map<String, PriceQuote>.from(notifier.state);
+        updated[stock.id] = quote;
+        notifier.state = updated;
+      });
+    });
   }
 
   Widget _kv(String label, String value, {Color? valueColor}) {
@@ -361,5 +305,85 @@ class StockDetailScreen extends ConsumerWidget {
         ),
       );
     });
+  }
+}
+
+class _ManualPriceDialog extends StatefulWidget {
+  const _ManualPriceDialog({required this.initialCurrency});
+
+  final String initialCurrency;
+
+  @override
+  State<_ManualPriceDialog> createState() => _ManualPriceDialogState();
+}
+
+class _ManualPriceDialogState extends State<_ManualPriceDialog> {
+  final _controller = TextEditingController();
+  late String _currency;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _currency = widget.initialCurrency;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Set manual price'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _controller,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Price',
+              errorText: _errorText,
+            ),
+            autofocus: true,
+            onChanged: (_) {
+              if (_errorText != null) setState(() => _errorText = null);
+            },
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _currency,
+            decoration: const InputDecoration(labelText: 'Currency'),
+            items: CurrencyFormatter.supportedCurrencies
+                .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                .toList(),
+            onChanged: (v) {
+              if (v != null) setState(() => _currency = v);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            final price = Decimal.tryParse(_controller.text.trim());
+            if (price == null || price.compareTo(Decimal.zero) <= 0) {
+              setState(() => _errorText = 'Enter a positive number');
+              return;
+            }
+            Navigator.of(context).pop((currency: _currency, price: price));
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
