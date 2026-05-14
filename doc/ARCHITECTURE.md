@@ -190,12 +190,16 @@ Data always flows upward. Widgets never touch repositories directly — they go 
 At **≥ 600 dp** the `adaptive_shell` switches to the desktop shell (persistent sidebar). Below that the mobile shell (bottom navigation bar) is used. The breakpoint is implemented inside a `ShellRoute` in go_router so that navigation state and scroll positions are preserved across the switch.
 
 ### 5.2 Split-Adjusted Calculations
-Raw transaction rows are never modified when a stock split is recorded. The domain calculator applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable.
+Raw transaction rows are never modified when a stock split is recorded. `PortfolioCalculator.calculate()` applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable. The helper `PortfolioCalculator.splitMultiplierAfter(txDate, splits)` is a public static method so that `PnlCalculator` can share the same logic without duplication.
 
 ### 5.3 Currency Conversion
 Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline, the most recent cached rate is used with a staleness indicator shown in the UI. Manual overrides stored in the database bypass the TTL entirely.
 
+**Rate convention:** `ExchangeRate(base: preferred, target: other, rate: r)` where `r = preferredPerOther` — i.e. "how many preferred-currency units equal 1 unit of `other`". `ExchangeRate.convert(amount)` is simply `amount * rate`, which converts an `other`-denominated amount to the preferred currency. `CurrencyService` computes this as `(preferred_per_USD) / (other_per_USD)` from the OXR `rates` map (which returns "1 USD = X currency" values).
+
 Rate lookup uses the **price currency reported by Yahoo Finance** (`PriceQuote.currency`) rather than the stored `stock.currency`. This ensures correct conversion even when the stored currency was recorded incorrectly at creation time. If no exchange rate is available for the price currency, a missing-rate badge is displayed on the dashboard tile and no conversion is applied.
+
+`_findRate` (in `dashboard_provider.dart`) searches for `r.base == preferred && r.target == priceCurrency`, consistent with the convention above.
 
 ### 5.4 ISIN Lookup
 When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.
@@ -316,12 +320,14 @@ Key-value pairs, no fixed column count.
 #### Backup format
 Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
 
+`importFromBytes()` auto-detects the format from the archive contents (presence of `meta.json` → ZIP backup; presence of `content.xml` → ODS import).
+
 #### Sync triggers
 `NextcloudSyncNotifier` (a Riverpod `NotifierProvider`) manages sync state and triggers:
 
 | Trigger | Behaviour |
 |---|---|
-| App startup (4 s delay) | Check remote for newer backup; if found set `pendingRestore`; otherwise upload |
+| App startup (4 s delay) | PROPFIND for latest backup; if remote is newer set `pendingRestore`; if PROPFIND fails (network error) silently proceed to upload; a `Timer` (not `Future.delayed`) is used so it can be cancelled on dispose |
 | After saving credentials | Immediately check remote via `checkForRemoteBackup()` |
 | Data mutation | `dataVersionProvider` increments; sync debounced by 5 s |
 | Manual "Backup now" tap | `syncNow()` called directly |
@@ -332,7 +338,10 @@ On startup and after a credential save the app calls `findLatestBackup()` (WebDA
 - On first launch a dialog is shown immediately after credential save.
 Auto-upload is **suppressed** while a restore is pending user decision.
 
-On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings.
+On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. If the restore fails the screen stays open to display the error.
+
+#### Backup retention
+After every successful upload, `_pruneOldBackups` lists the remote directory, filters files matching the backup pattern, sorts newest-first, and deletes all beyond `AppSettings.nextcloudKeepExports` (default: 5). This is best-effort — individual delete failures are ignored.
 
 #### Secure storage keys
 | Key | Value |

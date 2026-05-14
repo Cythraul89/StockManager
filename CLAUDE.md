@@ -124,6 +124,7 @@ Providers that **must be overridden** in `ProviderScope` at startup:
 | `notificationServiceProvider` | `NotificationService()` |
 | `marketDataServiceProvider` | `MarketDataService(dio)` |
 | `currencyServiceProvider` | `CurrencyService(dio)` |
+| `isinLookupServiceProvider` | `IsinLookupService(dio)` |
 
 ---
 

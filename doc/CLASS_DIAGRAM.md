@@ -99,14 +99,15 @@ classDiagram
         +String preferredCurrency
         +String? nextcloudUrl
         +String? nextcloudUsername
-        +String? nextcloudPath
+        +String nextcloudPath
+        +int nextcloudKeepExports
         +AppTheme theme
         +bool notificationsEnabled
         +Decimal priceAlertThresholdPct
         +int dividendAlertDays
         +DateTime? lastSyncAt
         +copyWith() AppSettings
-        +defaults()$ AppSettings
+        +defaults AppSettings$
     }
 
     class AppTheme {
@@ -131,7 +132,8 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class PortfolioCalculator {
-        +calculate(txs, splits) PositionSummary
+        +calculate(txs, splits) PositionSummary$
+        +splitMultiplierAfter(txDate, splits) Decimal$
     }
 
     class PositionSummary {
@@ -141,8 +143,8 @@ classDiagram
     }
 
     class PnlCalculator {
-        +calculate(txs, splits, quote) PnlResult
-        +convert(result, rate) PnlResult
+        +calculate(txs, splits, currentPrice) PnlResult$
+        +convert(result, rate) PnlResult$
     }
 
     class PnlResult {
@@ -413,8 +415,8 @@ backupServiceProvider  ── BackupService (exportToZip, exportToOds,
                                          importFromBytes)
 
 nextcloudSyncProvider (NotifierProvider)
-  ├── settingsProvider          (credentials, lastSyncAt, nextcloudPath)
-  ├── nextcloudServiceProvider  (WebDAV upload / download / PROPFIND)
+  ├── settingsProvider          (credentials, lastSyncAt, nextcloudPath, nextcloudKeepExports)
+  ├── nextcloudServiceProvider  (WebDAV upload / download / PROPFIND / delete)
   ├── backupServiceProvider     (exportToZip, importFromBytes)
   ├── dataVersionProvider       (listens → schedules debounced sync)
   └── NextcloudSyncState
@@ -422,6 +424,8 @@ nextcloudSyncProvider (NotifierProvider)
         ├── lastSyncAt: DateTime?
         ├── error: String?
         └── pendingRestore: RemoteBackupInfo?
+
+isinLookupServiceProvider  ── IsinLookupService  (must be overridden in ProviderScope)
 ```
 
 ---
