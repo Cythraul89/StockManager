@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
+import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
@@ -12,21 +13,88 @@ import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/decimal_math.dart';
 import '../settings/settings_provider.dart';
 import '../transactions/widgets/transaction_tile.dart';
+import '../dividends/widgets/confirm_dividend_dialog.dart';
 import '../dividends/widgets/dividend_tile.dart';
 import 'stocks_provider.dart';
 import 'widgets/manual_price_dialog.dart';
 
-class StockDetailScreen extends ConsumerWidget {
+class StockDetailScreen extends ConsumerStatefulWidget {
   const StockDetailScreen({super.key, required this.id});
 
   final String id;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final stockAsync = ref.watch(stockByIdProvider(id));
-    final txsAsync = ref.watch(transactionsByStockProvider(id));
-    final splitsAsync = ref.watch(splitsByStockProvider(id));
-    final dividendsAsync = ref.watch(dividendsByStockProvider(id));
+  ConsumerState<StockDetailScreen> createState() => _StockDetailScreenState();
+}
+
+class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
+  bool _isSyncingDividends = false;
+
+  Future<void> _syncDividends(Stock stock) async {
+    if (_isSyncingDividends) return;
+    setState(() => _isSyncingDividends = true);
+    try {
+      final fetched = await ref
+          .read(marketDataServiceProvider)
+          .fetchDividends(stock.symbol);
+      if (!mounted) return;
+      await ref
+          .read(stockActionsProvider)
+          .syncDividends(stock.id, stock.currency, fetched);
+    } catch (e) {
+      debugPrint('StockDetail: dividend sync failed: $e');
+    } finally {
+      if (mounted) setState(() => _isSyncingDividends = false);
+    }
+  }
+
+  Future<void> _confirmDividend(Dividend dividend) async {
+    final confirmed = await showDialog<Dividend>(
+      context: context,
+      builder: (_) => ConfirmDividendDialog(dividend: dividend),
+    );
+    if (confirmed == null || !mounted) return;
+    try {
+      await ref.read(stockActionsProvider).confirmDividend(confirmed);
+    } catch (e) {
+      debugPrint('StockDetail: confirmDividend failed: $e');
+    }
+  }
+
+  void _showManualPriceDialog(Stock stock) {
+    final notifier = ref.read(priceQuotesProvider.notifier);
+
+    showDialog<({String currency, Decimal price})>(
+      context: context,
+      builder: (ctx) => ManualPriceDialog(initialCurrency: stock.currency),
+    ).then((result) async {
+      if (result == null) return;
+      try {
+        await ref
+            .read(stockActionsProvider)
+            .setManualPrice(stock.id, result.price, result.currency);
+        final quote = PriceQuote(
+          stockId: stock.id,
+          price: result.price,
+          currency: result.currency,
+          fetchedAt: DateTime.now(),
+          isManualOverride: true,
+        );
+        final updated = Map<String, PriceQuote>.from(notifier.state);
+        updated[stock.id] = quote;
+        notifier.state = updated;
+      } catch (e) {
+        debugPrint('StockDetail: setManualPrice failed: $e');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stockAsync = ref.watch(stockByIdProvider(widget.id));
+    final txsAsync = ref.watch(transactionsByStockProvider(widget.id));
+    final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
+    final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final quotes = ref.watch(priceQuotesProvider);
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
 
@@ -47,16 +115,13 @@ class StockDetailScreen extends ConsumerWidget {
         final rawQuotePrice = quote?.price;
         final quoteCurrency = quote?.currency ?? stock.currency;
 
-        // Convert price from quoteCurrency to stock.currency so P&L arithmetic
-        // uses the same unit as the stored transaction prices.
-        // If the rate is missing, currentPrice stays null → P&L is hidden rather
-        // than shown in the wrong currency unit.
         Decimal? currentPrice;
         if (rawQuotePrice != null) {
           if (quoteCurrency == stock.currency) {
             currentPrice = rawQuotePrice;
           } else {
-            final adjRate = ExchangeRate.find(rates, quoteCurrency, stock.currency);
+            final adjRate =
+                ExchangeRate.find(rates, quoteCurrency, stock.currency);
             if (adjRate != null) currentPrice = adjRate.convert(rawQuotePrice);
           }
         }
@@ -78,7 +143,7 @@ class StockDetailScreen extends ConsumerWidget {
             actions: [
               IconButton(
                 icon: const Icon(Icons.edit),
-                onPressed: () => context.push('/stocks/$id/edit'),
+                onPressed: () => context.push('/stocks/${widget.id}/edit'),
               ),
             ],
           ),
@@ -95,30 +160,39 @@ class StockDetailScreen extends ConsumerWidget {
                       Text(stock.name,
                           style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 4),
-                      Text('${stock.exchange} · ${stock.isin}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant)),
+                      Text(
+                        '${stock.exchange} · ${stock.isin}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant),
+                      ),
                       const Divider(height: 24),
                       _kv(context, 'Shares held',
                           position.sharesHeld.toStringAsFixed(6)),
-                      _kv(context, 'Avg buy price',
+                      _kv(
+                          context,
+                          'Avg buy price',
                           CurrencyFormatter.format(
                               position.avgBuyPrice, stock.currency)),
-                      _kv(context, 'Invested',
+                      _kv(
+                          context,
+                          'Invested',
                           CurrencyFormatter.format(
                               position.totalInvested, stock.currency)),
                       if (currentPrice != null) ...[
-                        _kv(context, 'Current price',
-                            _currentPriceLabel(
-                                currentPrice, stock.currency,
-                                rawQuotePrice!, quoteCurrency,
-                                quote!.withStaleness().isStale,
-                                quote.isManualOverride)),
+                        _kv(
+                          context,
+                          'Current price',
+                          _currentPriceLabel(
+                            currentPrice,
+                            stock.currency,
+                            rawQuotePrice!,
+                            quoteCurrency,
+                            quote!.withStaleness().isStale,
+                            quote.isManualOverride,
+                          ),
+                        ),
                         if (quote.isManualOverride)
                           Align(
                             alignment: Alignment.centerRight,
@@ -130,8 +204,9 @@ class StockDetailScreen extends ConsumerWidget {
                                   await ref
                                       .read(stockActionsProvider)
                                       .clearManualPrice(stock.id);
-                                  final updated = Map<String, PriceQuote>.from(
-                                      notifier.state);
+                                  final updated =
+                                      Map<String, PriceQuote>.from(
+                                          notifier.state);
                                   updated.remove(stock.id);
                                   notifier.state = updated;
                                 } catch (e) {
@@ -159,8 +234,8 @@ class StockDetailScreen extends ConsumerWidget {
                                             .onSurfaceVariant),
                               ),
                               TextButton(
-                                onPressed: () => _showManualPriceDialog(
-                                    context, ref, stock),
+                                onPressed: () =>
+                                    _showManualPriceDialog(stock),
                                 child: const Text('Set price'),
                               ),
                             ],
@@ -193,8 +268,12 @@ class StockDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              _sectionHeader(context, 'Transactions',
-                  () => context.push('/stocks/$id/transactions/add')),
+              _sectionHeader(
+                context,
+                'Transactions',
+                onAdd: () => context
+                    .push('/stocks/${widget.id}/transactions/add'),
+              ),
               txsAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -213,8 +292,14 @@ class StockDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              _sectionHeader(context, 'Dividends',
-                  () => context.push('/stocks/$id/dividends/add')),
+              _sectionHeader(
+                context,
+                'Dividends',
+                onAdd: () =>
+                    context.push('/stocks/${widget.id}/dividends/add'),
+                onSync: () => _syncDividends(stock),
+                isSyncing: _isSyncingDividends,
+              ),
               dividendsAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -226,7 +311,12 @@ class StockDetailScreen extends ConsumerWidget {
                       )
                     : Column(
                         children: divs
-                            .map((d) => DividendTile(dividend: d))
+                            .map((d) => DividendTile(
+                                  dividend: d,
+                                  onConfirm: d.isPendingConfirmation
+                                      ? () => _confirmDividend(d)
+                                      : null,
+                                ))
                             .toList(),
                       ),
               ),
@@ -237,15 +327,40 @@ class StockDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _sectionHeader(BuildContext context, String title, VoidCallback onAdd) {
+  Widget _sectionHeader(
+    BuildContext context,
+    String title, {
+    required VoidCallback onAdd,
+    VoidCallback? onSync,
+    bool isSyncing = false,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(title, style: Theme.of(context).textTheme.titleMedium),
-        TextButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Add'),
+        Row(
+          children: [
+            if (onSync != null)
+              isSyncing
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.sync, size: 18),
+                      onPressed: onSync,
+                      tooltip: 'Sync from market data',
+                    ),
+            TextButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+            ),
+          ],
         ),
       ],
     );
@@ -264,35 +379,6 @@ class StockDetailScreen extends ConsumerWidget {
     if (quoteCurrency == stockCurrency) return '$converted$tag';
     final raw = CurrencyFormatter.format(rawPrice, quoteCurrency);
     return '$converted ($raw)$tag';
-  }
-
-  void _showManualPriceDialog(
-      BuildContext context, WidgetRef ref, Stock stock) {
-    final notifier = ref.read(priceQuotesProvider.notifier);
-
-    showDialog<({String currency, Decimal price})>(
-      context: context,
-      builder: (ctx) => ManualPriceDialog(initialCurrency: stock.currency),
-    ).then((result) async {
-      if (result == null) return;
-      try {
-        await ref
-            .read(stockActionsProvider)
-            .setManualPrice(stock.id, result.price, result.currency);
-        final quote = PriceQuote(
-          stockId: stock.id,
-          price: result.price,
-          currency: result.currency,
-          fetchedAt: DateTime.now(),
-          isManualOverride: true,
-        );
-        final updated = Map<String, PriceQuote>.from(notifier.state);
-        updated[stock.id] = quote;
-        notifier.state = updated;
-      } catch (e) {
-        debugPrint('StockDetail: setManualPrice failed: $e');
-      }
-    });
   }
 
   Widget _kv(BuildContext context, String label, String value,

@@ -2,6 +2,7 @@ import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/fetched_dividend.dart';
 import '../models/price_quote.dart';
 
 class MarketDataService {
@@ -11,6 +12,8 @@ class MarketDataService {
 
   static const _yahooBaseUrl =
       'https://query1.finance.yahoo.com/v8/finance/chart/';
+  static const _yahooQuoteSummaryUrl =
+      'https://query1.finance.yahoo.com/v11/finance/quoteSummary/';
   static const _stooqBaseUrl = 'https://stooq.com/q/l/';
   static const _stooqHistUrl = 'https://stooq.com/q/d/l/';
 
@@ -74,6 +77,15 @@ class MarketDataService {
     if (price != null) return price;
 
     return _fetchHistoricalFromStooq(symbol, date);
+  }
+
+  /// Fetches dividend history (paid, up to 5 years) and the next expected
+  /// dividend (if any) from Yahoo Finance.  Returns an empty list when the
+  /// symbol is unknown or the API is unreachable.
+  Future<List<FetchedDividend>> fetchDividends(String symbol) async {
+    final paid = await _fetchPaidDividendsFromYahoo(symbol);
+    final expected = await _fetchExpectedDividendFromYahoo(symbol, paid);
+    return [...paid, if (expected != null) expected];
   }
 
   Future<PriceQuote?> _fetchFromYahoo(String symbol, String stockId) async {
@@ -231,5 +243,104 @@ class MarketDataService {
       return null;
     }
   }
-}
 
+  Future<List<FetchedDividend>> _fetchPaidDividendsFromYahoo(
+      String symbol) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '$_yahooBaseUrl$symbol',
+        queryParameters: {
+          'events': 'dividends',
+          'interval': '1mo',
+          'range': '5y',
+        },
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      final chart = response.data?['chart'] as Map<String, dynamic>?;
+      final result =
+          (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
+      if (result == null) return [];
+
+      final events = result['events'] as Map<String, dynamic>?;
+      final dividendsMap = events?['dividends'] as Map<String, dynamic>?;
+      if (dividendsMap == null || dividendsMap.isEmpty) return [];
+
+      final fetched = <FetchedDividend>[];
+      for (final entry in dividendsMap.values) {
+        if (entry is! Map<String, dynamic>) continue;
+        final amount = entry['amount'];
+        final timestamp = entry['date'];
+        if (amount == null || timestamp == null) continue;
+
+        final utc = DateTime.fromMillisecondsSinceEpoch(
+            (timestamp as int) * 1000,
+            isUtc: true);
+        final amountDecimal = Decimal.tryParse(amount.toString());
+        if (amountDecimal == null || amountDecimal <= Decimal.zero) continue;
+
+        fetched.add(FetchedDividend(
+          date: DateTime(utc.year, utc.month, utc.day),
+          amountPerShare: amountDecimal,
+          isPaid: true,
+        ));
+      }
+      return fetched;
+    } on DioException {
+      return [];
+    }
+  }
+
+  Future<FetchedDividend?> _fetchExpectedDividendFromYahoo(
+      String symbol, List<FetchedDividend> recentPaid) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '$_yahooQuoteSummaryUrl$symbol',
+        queryParameters: {'modules': 'calendarEvents'},
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      final result =
+          (response.data?['quoteSummary']?['result'] as List?)?.firstOrNull
+              as Map<String, dynamic>?;
+      if (result == null) return null;
+
+      final calEvents = result['calendarEvents'] as Map<String, dynamic>?;
+      final divDateRaw =
+          (calEvents?['dividendDate'] as Map<String, dynamic>?)?['raw'];
+      if (divDateRaw == null) return null;
+
+      final utc = DateTime.fromMillisecondsSinceEpoch(
+          (divDateRaw as int) * 1000,
+          isUtc: true);
+      final divDate = DateTime(utc.year, utc.month, utc.day);
+
+      final today = DateTime.now();
+      final todayDate = DateTime(today.year, today.month, today.day);
+      if (!divDate.isAfter(todayDate)) return null;
+
+      // Use the most recent paid dividend amount as estimate for expected
+      if (recentPaid.isEmpty) return null;
+      final lastPaid =
+          recentPaid.reduce((a, b) => a.date.isAfter(b.date) ? a : b);
+
+      return FetchedDividend(
+        date: divDate,
+        amountPerShare: lastPaid.amountPerShare,
+        isPaid: false,
+      );
+    } on DioException {
+      return null;
+    } catch (e) {
+      debugPrint(
+          'MarketDataService: expected dividend fetch failed for $symbol: $e');
+      return null;
+    }
+  }
+}

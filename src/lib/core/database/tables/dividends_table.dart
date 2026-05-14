@@ -16,6 +16,11 @@ class Dividends extends Table {
   TextColumn get withholdingTax =>
       text().nullable().map(const DecimalConverter())();
   TextColumn get notes => text().nullable()();
+  // 'manual' | 'auto'
+  TextColumn get source =>
+      text().withDefault(const Constant('manual'))();
+  // false = auto-fetched paid dividend awaiting user confirmation
+  BoolColumn get confirmed => boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {id};

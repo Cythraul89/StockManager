@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/dividend.dart';
+import '../../core/models/fetched_dividend.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
@@ -81,6 +82,7 @@ final dividendsByStockProvider =
 });
 
 final allDividendsProvider = FutureProvider<List<Dividend>>((ref) async {
+  ref.watch(dataVersionProvider); // Refresh on any data mutation
   final db = ref.watch(databaseProvider);
   final rows = await db.dividendsDao.getAll();
   return rows.map(_dividendFromRow).toList();
@@ -179,6 +181,8 @@ class StockActions {
       currency: div.currency,
       withholdingTax: Value(div.withholdingTax),
       notes: Value(div.notes),
+      source: Value(div.source.name),
+      confirmed: Value(div.confirmed),
     ));
     _notifyChange();
     return id;
@@ -186,6 +190,52 @@ class StockActions {
 
   Future<void> deleteDividend(String divId) async {
     await _db.dividendsDao.deleteById(divId);
+    _notifyChange();
+  }
+
+  /// Inserts auto-fetched dividends, skipping any date that already has an
+  /// entry (manual or confirmed auto) for this stock.
+  Future<void> syncDividends(
+    String stockId,
+    String currency,
+    List<FetchedDividend> fetched,
+  ) async {
+    for (final d in fetched) {
+      final existing =
+          await _db.dividendsDao.findByStockAndDate(stockId, d.date);
+      if (existing != null) continue;
+
+      final type = d.isPaid ? DividendType.paid : DividendType.expected;
+      // Expected auto-fetched dividends don't need confirmation; paid ones do.
+      final needsConfirmation = d.isPaid;
+
+      await _db.dividendsDao.insert(DividendsCompanion.insert(
+        id: _uuid.v4(),
+        stockId: stockId,
+        type: type.name,
+        date: d.date,
+        amountPerShare: d.amountPerShare,
+        currency: currency,
+        source: const Value('auto'),
+        confirmed: Value(!needsConfirmation),
+      ));
+    }
+    _notifyChange();
+  }
+
+  /// Marks a pending auto-fetched paid dividend as confirmed with user-adjusted values.
+  Future<void> confirmDividend(Dividend div) async {
+    await _db.dividendsDao.updateRow(DividendsCompanion(
+      id: Value(div.id),
+      type: Value(div.type.name),
+      date: Value(div.date),
+      amountPerShare: Value(div.amountPerShare),
+      totalAmount: Value(div.totalAmount),
+      currency: Value(div.currency),
+      withholdingTax: Value(div.withholdingTax),
+      notes: Value(div.notes),
+      confirmed: const Value(true),
+    ));
     _notifyChange();
   }
 
@@ -281,4 +331,6 @@ Dividend _dividendFromRow(DividendRow r) => Dividend(
       currency: r.currency,
       withholdingTax: r.withholdingTax,
       notes: r.notes,
+      source: DividendSource.values.byName(r.source),
+      confirmed: r.confirmed,
     );

@@ -3,6 +3,8 @@ import 'package:equatable/equatable.dart';
 
 enum DividendType { paid, expected }
 
+enum DividendSource { manual, auto }
+
 class Dividend extends Equatable {
   const Dividend({
     required this.id,
@@ -14,6 +16,8 @@ class Dividend extends Equatable {
     required this.currency,
     this.withholdingTax,
     this.notes,
+    this.source = DividendSource.manual,
+    this.confirmed = true,
   });
 
   final String id;
@@ -26,6 +30,14 @@ class Dividend extends Equatable {
   final String currency;
   final Decimal? withholdingTax;
   final String? notes;
+  final DividendSource source;
+  // Always true for manual entries; false = awaiting user confirmation for auto-fetched paid dividends
+  final bool confirmed;
+
+  bool get isPendingConfirmation =>
+      source == DividendSource.auto &&
+      type == DividendType.paid &&
+      !confirmed;
 
   Decimal get netAmount =>
       (totalAmount ?? Decimal.zero) - (withholdingTax ?? Decimal.zero);
@@ -40,6 +52,8 @@ class Dividend extends Equatable {
     String? currency,
     Decimal? withholdingTax,
     String? notes,
+    DividendSource? source,
+    bool? confirmed,
   }) =>
       Dividend(
         id: id ?? this.id,
@@ -51,6 +65,8 @@ class Dividend extends Equatable {
         currency: currency ?? this.currency,
         withholdingTax: withholdingTax ?? this.withholdingTax,
         notes: notes ?? this.notes,
+        source: source ?? this.source,
+        confirmed: confirmed ?? this.confirmed,
       );
 
   @override
@@ -64,5 +80,7 @@ class Dividend extends Equatable {
         currency,
         withholdingTax,
         notes,
+        source,
+        confirmed,
       ];
 }

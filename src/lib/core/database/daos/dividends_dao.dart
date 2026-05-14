@@ -28,6 +28,12 @@ class DividendsDao extends DatabaseAccessor<AppDatabase>
             ..orderBy([(t) => OrderingTerm.desc(t.date)]))
           .get();
 
+  Future<List<DividendRow>> getConfirmedPaid() =>
+      (select(dividends)
+            ..where((t) => t.type.equals('paid') & t.confirmed.equals(true))
+            ..orderBy([(t) => OrderingTerm.desc(t.date)]))
+          .get();
+
   Future<List<DividendRow>> getExpected() =>
       (select(dividends)
             ..where((t) => t.type.equals('expected'))
@@ -36,6 +42,12 @@ class DividendsDao extends DatabaseAccessor<AppDatabase>
 
   Future<List<DividendRow>> getAll() =>
       (select(dividends)..orderBy([(t) => OrderingTerm.desc(t.date)])).get();
+
+  Future<DividendRow?> findByStockAndDate(String stockId, DateTime date) =>
+      (select(dividends)
+            ..where((t) =>
+                t.stockId.equals(stockId) & t.date.equals(date)))
+          .getSingleOrNull();
 
   Future<void> insert(DividendsCompanion companion) =>
       into(dividends).insert(companion);
