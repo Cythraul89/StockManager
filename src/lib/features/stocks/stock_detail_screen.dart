@@ -290,19 +290,16 @@ class StockDetailScreen extends ConsumerWidget {
                   },
                 ),
                 const SizedBox(height: 8),
-                InputDecorator(
+                DropdownButtonFormField<String>(
+                  key: ValueKey(selectedCurrency),
+                  initialValue: selectedCurrency,
                   decoration: const InputDecoration(labelText: 'Currency'),
-                  child: DropdownButton<String>(
-                    value: selectedCurrency,
-                    isExpanded: true,
-                    underline: const SizedBox(),
-                    items: CurrencyFormatter.supportedCurrencies
-                        .map((c) =>
-                            DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (v) => setState(
-                        () => selectedCurrency = v ?? selectedCurrency),
-                  ),
+                  items: CurrencyFormatter.supportedCurrencies
+                      .map((c) =>
+                          DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) => setState(
+                      () => selectedCurrency = v ?? selectedCurrency),
                 ),
               ],
             ),
