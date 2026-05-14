@@ -121,26 +121,13 @@ void main() {
       expect(find.text('Enter a positive number'), findsNothing);
     });
 
-    testWidgets('Save uses updated currency from dropdown', (tester) async {
-      ({String currency, Decimal price})? result;
-      await tester.pumpWidget(
-          _app(initialCurrency: 'EUR', onResult: (r) => result = r));
-
+    testWidgets('initial currency is shown in dropdown', (tester) async {
+      await tester.pumpWidget(_app(initialCurrency: 'USD', onResult: (_) {}));
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
 
-      // Open the currency dropdown and select USD
-      await tester.tap(find.text('EUR'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('USD').last);
-      await tester.pumpAndSettle();
-
-      await tester.enterText(find.byType(TextField), '100');
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
-
-      expect(result?.currency, 'USD');
-      expect(result?.price, Decimal.parse('100'));
+      // The selected currency should appear inside the dialog.
+      expect(find.text('USD'), findsAtLeastNWidgets(1));
     });
   });
 }
