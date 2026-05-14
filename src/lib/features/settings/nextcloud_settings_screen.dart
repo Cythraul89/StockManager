@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,6 +26,7 @@ class _NextcloudSettingsScreenState
   bool _loaded = false;
   bool _isTesting = false;
   bool _isSaving = false;
+  bool _isSyncing = false;
   bool _obscurePassword = true;
   String? _connectionStatus;
 
@@ -53,26 +56,78 @@ class _NextcloudSettingsScreenState
       if (!mounted) return;
 
       if (certInfo != null) {
-        // Self-signed cert — ask user to approve
+        // Self-signed cert — ask user to approve before continuing.
         final approved = await _showCertDialog(certInfo);
-        if (approved == true) {
-          await service.pinCertificate(certInfo.fingerprint);
-          setState(() => _connectionStatus = 'Certificate trusted and pinned.');
-        } else {
+        if (approved != true) {
           setState(() => _connectionStatus = 'Certificate not trusted.');
+          return;
         }
-      } else {
-        setState(() => _connectionStatus = 'Connection successful (standard TLS).');
+        await service.pinCertificate(certInfo.fingerprint);
+      }
+
+      // Verify credentials with an authenticated request.
+      await service.verifyCredentials(
+        serverUrl: url,
+        username: _usernameCtrl.text.trim(),
+        password: _passwordCtrl.text,
+      );
+
+      if (mounted) {
+        setState(() =>
+            _connectionStatus = 'Connection successful — credentials verified.');
       }
     } catch (e) {
-      setState(() => _connectionStatus = 'Connection failed: $e');
+      if (mounted) setState(() => _connectionStatus = 'Connection failed: $e');
     } finally {
       if (mounted) setState(() => _isTesting = false);
     }
   }
 
-  Future<bool?> _showCertDialog(CertificateInfo info) =>
-      showDialog<bool>(
+  Future<void> _syncToNextcloud() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isSyncing = true;
+      _connectionStatus = null;
+    });
+
+    try {
+      final backupFile = await ref.read(backupServiceProvider).exportToZip();
+      final bytes = await backupFile.readAsBytes();
+
+      final url = _urlCtrl.text.trim();
+      final username = _usernameCtrl.text.trim();
+      final password = _passwordCtrl.text;
+      final dir = _pathCtrl.text.trim();
+      final dateStr =
+          DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      final remotePath =
+          '${dir.endsWith('/') ? dir : '$dir/'}stockmanager_backup_$dateStr.zip';
+
+      await ref.read(nextcloudServiceProvider).uploadBackup(
+            serverUrl: url,
+            username: username,
+            password: password,
+            remotePath: remotePath,
+            bytes: bytes,
+          );
+
+      final settings = await ref.read(settingsProvider.future);
+      await ref.read(settingsActionsProvider).saveSettings(
+            settings.copyWith(lastSyncAt: DateTime.now()),
+          );
+
+      if (mounted) {
+        setState(
+            () => _connectionStatus = 'Backup uploaded to $remotePath.');
+      }
+    } catch (e) {
+      if (mounted) setState(() => _connectionStatus = 'Sync failed: $e');
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  Future<bool?> _showCertDialog(CertificateInfo info) => showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Untrusted certificate'),
@@ -85,7 +140,8 @@ class _NextcloudSettingsScreenState
               const SizedBox(height: 12),
               _certRow('Subject', info.subject),
               _certRow('Issuer', info.issuer),
-              _certRow('Valid until', info.validUntil.toIso8601String().substring(0, 10)),
+              _certRow('Valid until',
+                  info.validUntil.toIso8601String().substring(0, 10)),
               _certRow('SHA-256', info.fingerprint),
               const SizedBox(height: 12),
               const Text(
@@ -115,8 +171,8 @@ class _NextcloudSettingsScreenState
                     style: const TextStyle(fontWeight: FontWeight.bold))),
             Expanded(
                 child: Text(value,
-                    style: const TextStyle(fontFamily: 'monospace',
-                        fontSize: 11))),
+                    style: const TextStyle(
+                        fontFamily: 'monospace', fontSize: 11))),
           ],
         ),
       );
@@ -127,8 +183,7 @@ class _NextcloudSettingsScreenState
 
     try {
       final storage = ref.read(secureStorageProvider);
-      await storage.write(
-          key: _passwordKey, value: _passwordCtrl.text);
+      await storage.write(key: _passwordKey, value: _passwordCtrl.text);
 
       final settings = await ref.read(settingsProvider.future);
       await ref.read(settingsActionsProvider).saveSettings(
@@ -147,6 +202,7 @@ class _NextcloudSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
+    final busy = _isTesting || _isSaving || _isSyncing;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nextcloud Sync')),
@@ -159,9 +215,7 @@ class _NextcloudSettingsScreenState
             _usernameCtrl.text = settings.nextcloudUsername ?? '';
             _pathCtrl.text = settings.nextcloudPath;
             _loaded = true;
-            ref.read(secureStorageProvider)
-                .read(key: _passwordKey)
-                .then((pw) {
+            ref.read(secureStorageProvider).read(key: _passwordKey).then((pw) {
               if (mounted && pw != null) {
                 setState(() => _passwordCtrl.text = pw);
               }
@@ -199,8 +253,8 @@ class _NextcloudSettingsScreenState
                       icon: Icon(_obscurePassword
                           ? Icons.visibility
                           : Icons.visibility_off),
-                      onPressed: () => setState(
-                          () => _obscurePassword = !_obscurePassword),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                   obscureText: _obscurePassword,
@@ -219,17 +273,19 @@ class _NextcloudSettingsScreenState
                 ),
                 if (_connectionStatus != null) ...[
                   const SizedBox(height: 8),
-                  Text(_connectionStatus!,
-                      style: TextStyle(
-                        color: _connectionStatus!.contains('failed') ||
-                                _connectionStatus!.contains('not trusted')
-                            ? Theme.of(context).colorScheme.error
-                            : Colors.green,
-                      )),
+                  Text(
+                    _connectionStatus!,
+                    style: TextStyle(
+                      color: _connectionStatus!.contains('failed') ||
+                              _connectionStatus!.contains('not trusted')
+                          ? Theme.of(context).colorScheme.error
+                          : Colors.green,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: 16),
                 OutlinedButton(
-                  onPressed: _isTesting ? null : _testConnection,
+                  onPressed: busy ? null : _testConnection,
                   child: _isTesting
                       ? const SizedBox(
                           width: 18,
@@ -239,8 +295,20 @@ class _NextcloudSettingsScreenState
                       : const Text('Test connection'),
                 ),
                 const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: busy ? null : _syncToNextcloud,
+                  icon: _isSyncing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_upload_outlined),
+                  label: const Text('Backup to Nextcloud now'),
+                ),
+                const SizedBox(height: 8),
                 FilledButton(
-                  onPressed: _isSaving ? null : _save,
+                  onPressed: busy ? null : _save,
                   child: _isSaving
                       ? const CircularProgressIndicator()
                       : const Text('Save'),

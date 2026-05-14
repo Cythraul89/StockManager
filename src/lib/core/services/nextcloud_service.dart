@@ -105,6 +105,75 @@ class NextcloudService {
   Future<String?> getPinnedFingerprint() =>
       _secureStorage.read(key: _fingerprintKey);
 
+  // Verify that [username]/[password] are accepted by the server.
+  // Throws [NextcloudException] on auth failure or network error.
+  Future<void> verifyCredentials({
+    required String serverUrl,
+    required String username,
+    required String password,
+  }) async {
+    final fingerprint = await getPinnedFingerprint();
+    final client = _buildClient(
+      serverUrl: serverUrl,
+      username: username,
+      password: password,
+      pinnedFingerprint: fingerprint,
+    );
+    // PROPFIND to the user's DAV root — always present for valid credentials.
+    final response = await client.request<String>(
+      '/remote.php/dav/files/$username/',
+      options: Options(method: 'PROPFIND', headers: {'Depth': '0'}),
+    );
+    if (response.statusCode != null && response.statusCode! >= 400) {
+      throw NextcloudException(
+          'Authentication failed: HTTP ${response.statusCode}');
+    }
+  }
+
+  // Upload a ZIP backup to [remotePath], creating the parent directory if needed.
+  Future<void> uploadBackup({
+    required String serverUrl,
+    required String username,
+    required String password,
+    required String remotePath,
+    required Uint8List bytes,
+  }) async {
+    final fingerprint = await getPinnedFingerprint();
+    final client = _buildClient(
+      serverUrl: serverUrl,
+      username: username,
+      password: password,
+      pinnedFingerprint: fingerprint,
+    );
+
+    // Ensure parent directory exists (MKCOL; 405 = already exists, ignore it).
+    final slash = remotePath.lastIndexOf('/');
+    if (slash > 0) {
+      final dir = remotePath.substring(0, slash + 1);
+      try {
+        await client.request<void>(dir, options: Options(method: 'MKCOL'));
+      } on DioException catch (e) {
+        if (e.response?.statusCode != 405) rethrow;
+      }
+    }
+
+    final response = await client.put(
+      remotePath,
+      data: Stream.fromIterable([bytes]),
+      options: Options(
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Length': bytes.length,
+        },
+      ),
+    );
+    if (response.statusCode == null ||
+        response.statusCode! < 200 ||
+        response.statusCode! >= 300) {
+      throw NextcloudException('Upload failed: HTTP ${response.statusCode}');
+    }
+  }
+
   // Upload [bytes] to [remotePath] via WebDAV PUT.
   Future<void> upload({
     required String serverUrl,

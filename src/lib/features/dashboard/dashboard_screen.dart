@@ -22,7 +22,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Future<void> _refreshPrices() async {
     try {
-      final stocks = await ref.read(stocksProvider.future);
+      final stocks = await ref.read(stocksStreamProvider.future);
       final service = ref.read(marketDataServiceProvider);
       final symbolMap = {
         for (final s in stocks) s.id: s.symbol,
@@ -36,6 +36,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Auto-refresh prices whenever a stock is added.
+    ref.listen(stocksStreamProvider, (prev, next) {
+      final prevLen = prev?.value?.length ?? 0;
+      final nextLen = next.value?.length ?? 0;
+      if (nextLen > prevLen) _refreshPrices();
+    });
+
     final summaryAsync = ref.watch(portfolioSummaryProvider);
 
     return Scaffold(
