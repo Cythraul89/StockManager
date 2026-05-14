@@ -80,6 +80,7 @@ src/
 │   │   ├── services/                   # HTTP APIs, notifications, WebDAV
 │   │   ├── calculators/                # Pure P&L / dividend / position math
 │   │   └── utils/                      # Formatting, date helpers, decimal math
+│   │       └── app_version.dart        # appVersion / appBuildNumber constants
 │   └── features/
 │       ├── dashboard/                  # portfolioSummaryProvider + DashboardScreen
 │       ├── stocks/                     # stocksProvider, stockActionsProvider
@@ -87,6 +88,7 @@ src/
 │       ├── dividends/                  # DividendsScreen, AddDividendScreen
 │       ├── brokers/                    # BrokersScreen, CRUD screens
 │       └── settings/                   # settingsProvider, settingsActionsProvider
+│           └── about_screen.dart       # Version, GPL-3 notice, LicensePage link
 └── test/
     └── widget_test.dart
 ```
@@ -145,7 +147,22 @@ Providers that **must be overridden** in `ProviderScope` at startup:
 
 - **Currency conversion at the provider layer** — `portfolioSummaryProvider`
   converts all per-stock values to `preferredCurrency` using `ExchangeRate`.
-  Screens never do currency math.
+  Screens never do currency math. Two-step conversion: quote currency →
+  `stock.currency` (so P&L arithmetic is in consistent units) → preferred
+  currency (for portfolio aggregation).
+
+- **FutureProvider staleness** — `settingsProvider` (a `FutureProvider`) caches
+  its result until invalidated. Code that writes to the DB and then immediately
+  reads settings must either go through the DAO directly or call
+  `ref.invalidate(settingsProvider)`. Never use `saveSettings(staleSnapshot.copyWith(...))`
+  to persist a partial update — use a targeted DAO method instead (e.g.
+  `updateLastSyncAt()`).
+
+- **Manual price overrides** — stocks without live market data can have a manual
+  price set via the Stock Detail screen. Manual prices (`manualOverride = true`
+  in `price_cache`) are never marked stale and take precedence over live quotes
+  in `priceQuotesProvider`. Use `stockActionsProvider.setManualPrice()` /
+  `clearManualPrice()`.
 
 - **Navigator** — GoRouter with a `ShellRoute`. All feature routes live inside
   the shell. Adaptive layout: `DesktopShell` (NavigationRail) at ≥ 600 dp,
@@ -153,7 +170,7 @@ Providers that **must be overridden** in `ProviderScope` at startup:
 
 - **Analyzer strictness** — CI runs `flutter analyze --fatal-infos`. Keep
   analysis clean. Notable lint rules already enforced: `use_build_context_synchronously`,
-  `deprecated_member_use`, `prefer_const_constructors`.
+  `deprecated_member_use`, `prefer_const_constructors`, `prefer_const_declarations`.
 
 ---
 

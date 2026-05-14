@@ -122,18 +122,21 @@ class StockDetailScreen extends ConsumerWidget {
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
-                              onPressed: () {
+                              onPressed: () async {
                                 final notifier =
                                     ref.read(priceQuotesProvider.notifier);
-                                ref
-                                    .read(stockActionsProvider)
-                                    .clearManualPrice(stock.id)
-                                    .then((_) {
+                                try {
+                                  await ref
+                                      .read(stockActionsProvider)
+                                      .clearManualPrice(stock.id);
                                   final updated = Map<String, PriceQuote>.from(
                                       notifier.state);
                                   updated.remove(stock.id);
                                   notifier.state = updated;
-                                });
+                                } catch (e) {
+                                  debugPrint(
+                                      'StockDetail: clearManualPrice failed: $e');
+                                }
                               },
                               child: const Text('Clear manual price'),
                             ),
@@ -267,12 +270,12 @@ class StockDetailScreen extends ConsumerWidget {
     showDialog<({String currency, Decimal price})>(
       context: context,
       builder: (ctx) => _ManualPriceDialog(initialCurrency: stock.currency),
-    ).then((result) {
+    ).then((result) async {
       if (result == null) return;
-      ref
-          .read(stockActionsProvider)
-          .setManualPrice(stock.id, result.price, result.currency)
-          .then((_) {
+      try {
+        await ref
+            .read(stockActionsProvider)
+            .setManualPrice(stock.id, result.price, result.currency);
         final quote = PriceQuote(
           stockId: stock.id,
           price: result.price,
@@ -283,7 +286,9 @@ class StockDetailScreen extends ConsumerWidget {
         final updated = Map<String, PriceQuote>.from(notifier.state);
         updated[stock.id] = quote;
         notifier.state = updated;
-      });
+      } catch (e) {
+        debugPrint('StockDetail: setManualPrice failed: $e');
+      }
     });
   }
 

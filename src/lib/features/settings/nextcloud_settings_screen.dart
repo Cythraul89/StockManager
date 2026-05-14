@@ -31,8 +31,6 @@ class _NextcloudSettingsScreenState
   String? _connectionStatus;
   bool _connectionVerified = false;
 
-  static const _passwordKey = 'nextcloud_password';
-
   @override
   void dispose() {
     _urlCtrl.dispose();
@@ -97,7 +95,7 @@ class _NextcloudSettingsScreenState
       // 1. Persist credentials.
       await ref
           .read(secureStorageProvider)
-          .write(key: _passwordKey, value: _passwordCtrl.text);
+          .write(key: nextcloudPasswordKey, value: _passwordCtrl.text);
 
       final settings = await ref.read(settingsProvider.future);
       await ref.read(settingsActionsProvider).saveSettings(
@@ -259,7 +257,7 @@ class _NextcloudSettingsScreenState
             _connectionVerified = settings.nextcloudUrl?.isNotEmpty == true &&
                 settings.nextcloudUsername?.isNotEmpty == true &&
                 settings.lastSyncAt != null;
-            ref.read(secureStorageProvider).read(key: _passwordKey).then((pw) {
+            ref.read(secureStorageProvider).read(key: nextcloudPasswordKey).then((pw) {
               if (mounted && pw != null) {
                 setState(() => _passwordCtrl.text = pw);
               }

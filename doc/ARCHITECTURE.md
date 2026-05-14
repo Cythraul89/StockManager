@@ -9,7 +9,7 @@
 | Local database | Drift (SQLite) | Type-safe, reactive streams, first-class migration support |
 | Navigation | go_router | Declarative, shell routes for adaptive layout, deep-link ready |
 | HTTP client | Dio | Interceptors, retry logic, timeout handling |
-| Market data | Yahoo Finance (unofficial JSON endpoint) | Free, no API key required for basic quotes |
+| Market data | Yahoo Finance (unofficial JSON) + Stooq CSV fallback | Yahoo primary; Stooq CSV (`f=sdc`) used when Yahoo returns no data |
 | Currency rates | Frankfurter (api.frankfurter.app) | Free, no API key, ECB data, cacheable, supports major ISO 4217 pairs |
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
 | Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
@@ -132,6 +132,7 @@ features/<name>/
 | price | DECIMAL | |
 | currency | TEXT | |
 | fetched_at | DATETIME | |
+| manual_override | BOOL | default false; manual prices bypass the staleness TTL |
 
 **exchange_rate_cache**
 | Column | Type | Notes |
@@ -154,6 +155,7 @@ features/<name>/
 | price_alert_threshold_pct | DECIMAL |
 | dividend_alert_days | INT |
 | last_sync_at | DATETIME? |
+| nextcloud_keep_exports | INT | number of remote backups to retain (default 5) |
 
 > Nextcloud password is stored separately in flutter_secure_storage, not in SQLite.
 
@@ -319,7 +321,19 @@ Key-value pairs, no fixed column count.
 | D | Source | `live` or `manual override` |
 | E | Fetched / set at | ISO 8601 timestamp |
 
-### 5.8 Nextcloud Sync Strategy
+### 5.8 Manual Price Override
+
+For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded funds), the user can set a price manually from the Stock Detail screen. Manual prices:
+
+- Are stored in `price_cache` with `manual_override = true`.
+- Are never marked stale (`PriceQuote.withStaleness()` returns `isStale: false` when `isManualOverride` is true).
+- Appear in the UI with a `(manual)` tag next to the price.
+- Take precedence over live market prices when both exist in `priceQuotesProvider`.
+- Can be cleared via a "Clear manual price" button on the Stock Detail screen, which removes the `price_cache` row and updates `priceQuotesProvider` immediately.
+
+`MarketDataService.fetchQuote()` accepts an optional `stockCurrency` parameter used for the Stooq fallback. `fetchQuotes()` accepts an optional `currencyByStockId` map so `DashboardScreen` can pass currencies in bulk.
+
+### 5.9 Nextcloud Sync Strategy
 
 #### Backup format
 Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
@@ -332,9 +346,12 @@ Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`
 | Trigger | Behaviour |
 |---|---|
 | App startup (4 s delay) | PROPFIND for latest backup; if remote is newer set `pendingRestore`; if PROPFIND fails (network error) silently proceed to upload; a `Timer` (not `Future.delayed`) is used so it can be cancelled on dispose |
-| After saving credentials | Immediately check remote via `checkForRemoteBackup()` |
+| Credential save | `findRemoteBackup()` → dialog: Restore / Upload / Later; choice is executed before returning to settings |
 | Data mutation | `dataVersionProvider` increments; sync debounced by 5 s |
 | Manual "Backup now" tap | `syncNow()` called directly |
+
+#### Credentials read pattern
+`NextcloudSyncNotifier._credentials()` reads directly from the Drift DAO (bypassing `settingsProvider`) on every invocation. This prevents stale `FutureProvider` cache from being used after `saveSettings()` writes new credentials. `lastSyncAt` is persisted via a targeted `updateLastSyncAt(DateTime)` DAO call rather than a full `upsertSettings()` to avoid overwriting other columns with stale data.
 
 #### Bidirectional conflict resolution
 On startup and after a credential save the app calls `findLatestBackup()` (WebDAV PROPFIND) and compares `backupDate` with `settings.lastSyncAt`. If the remote backup is newer, `pendingRestore` is set in `NextcloudSyncState` and:
@@ -380,9 +397,11 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /brokers/add             → Add broker
 /brokers/:id/edit        → Edit broker
 /settings                → Settings
+/settings/backup         → Local backup (export / import ZIP)
 /settings/nextcloud      → Nextcloud configuration
 /settings/currency       → Currency preferences & overrides
 /settings/notifications  → Notification preferences
+/settings/about          → App version and GPL-3 licence
 ```
 
 All routes are nested inside the `ShellRoute` so the navigation chrome (sidebar / bottom bar) is always present.

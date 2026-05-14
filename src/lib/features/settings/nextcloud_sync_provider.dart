@@ -10,6 +10,9 @@ import 'settings_provider.dart';
 
 export '../../core/services/nextcloud_service.dart' show RemoteBackupInfo;
 
+// Shared across NextcloudSyncNotifier and NextcloudSettingsScreen.
+const nextcloudPasswordKey = 'nextcloud_password';
+
 enum SyncStatus { idle, syncing, error }
 
 class NextcloudSyncState {
@@ -75,8 +78,6 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     _debounce = Timer(const Duration(seconds: 5), syncNow);
   }
 
-  static const _passwordKey = 'nextcloud_password';
-
   // Always reads directly from the database so the result is never stale.
   // FutureProvider caches its value until invalidated, which means reading
   // settingsProvider immediately after saveSettings() returns old data.
@@ -89,7 +90,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       return null;
     }
     final password =
-        await ref.read(secureStorageProvider).read(key: _passwordKey);
+        await ref.read(secureStorageProvider).read(key: nextcloudPasswordKey);
     if (password == null || password.isEmpty) return null;
     return (
       url: url,
