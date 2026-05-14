@@ -93,6 +93,7 @@ classDiagram
         +bool isManualOverride
         +isStale() bool
         +convert(Decimal amount) Decimal
+        +find(rates, from, to) ExchangeRate?$
     }
 
     class AppSettings {
@@ -384,7 +385,7 @@ stocksProvider        ←── StocksDao.getAll()                   ├── A
 transactionsByStock   ←── TransactionsDao.watchByStock(id)     │
 dividendsByStock      ←── DividendsDao.watchByStock(id)        │
 settingsStreamProvider←── SettingsDao.watchSettings()          │
-exchangeRatesProvider ←── SettingsDao.getExchangeRates()       │
+exchangeRatesProvider ←── SettingsDao.watchExchangeRates()     │
 splitsByStockProvider ←── StocksDao.getSplitsForStock(id)      │
                                                                 ┘
 
@@ -401,7 +402,8 @@ portfolioSummaryProvider (FutureProvider)
   └── dividendsByStockProvider   (per stock)
        │
        ├── PortfolioCalculator.calculate()
-       ├── PnlCalculator.calculate() + convert()
+       ├── PnlCalculator.calculate()  ← price converted quoteCurrency→stock.currency first
+       ├── PnlCalculator.convert()    ← then stock.currency→preferredCurrency
        └── DividendCalculator.calculate() + convert()
 
 stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStock,

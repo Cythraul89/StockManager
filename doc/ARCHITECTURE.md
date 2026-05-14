@@ -197,9 +197,13 @@ Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline,
 
 **Rate convention:** `ExchangeRate(base: preferred, target: other, rate: r)` where `r = preferredPerOther` — i.e. "how many preferred-currency units equal 1 unit of `other`". `ExchangeRate.convert(amount)` is simply `amount * rate`, which converts an `other`-denominated amount to the preferred currency. `CurrencyService` fetches from Frankfurter (`?from=preferredCurrency`), which returns `"1 preferred = X other"`. The stored rate is `1/X` (preferred per other), consistent with the convention.
 
-Rate lookup uses the **price currency reported by Yahoo Finance** (`PriceQuote.currency`) rather than the stored `stock.currency`. This ensures correct conversion even when the stored currency was recorded incorrectly at creation time. If no exchange rate is available for the price currency, a missing-rate badge is displayed on the dashboard tile and no conversion is applied.
+The static method `ExchangeRate.find(rates, from, to)` is the canonical lookup: it returns the rate where `r.base == to && r.target == from`, or `null` if none exists or `from == to`.
 
-`_findRate` (in `dashboard_provider.dart`) searches for `r.base == preferred && r.target == priceCurrency`, consistent with the convention above.
+**Two-step conversion in `portfolioSummaryProvider`:**
+1. If `PriceQuote.currency` (the currency Yahoo Finance returns) differs from `stock.currency` (the unit of stored transaction prices), the quote price is first converted to `stock.currency`. This ensures `PnlCalculator` always sees consistent units — both `currentPrice` and `avgBuyPrice` in the same currency — so P&L and percentage figures are correct.
+2. The resulting PnlResult (in `stock.currency`) is then converted to `preferredCurrency` for portfolio-level aggregation.
+
+If either rate is missing, a `missingRate` badge is shown on the dashboard tile.
 
 ### 5.4 ISIN Lookup
 When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.

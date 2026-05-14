@@ -25,6 +25,7 @@ class StockDetailScreen extends ConsumerWidget {
     final splitsAsync = ref.watch(splitsByStockProvider(id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(id));
     final quotes = ref.watch(priceQuotesProvider);
+    final rates = ref.watch(exchangeRatesProvider).value ?? [];
 
     return stockAsync.when(
       loading: () =>
@@ -37,7 +38,6 @@ class StockDetailScreen extends ConsumerWidget {
               body: const Center(child: Text('Stock not found')));
         }
 
-        final rates = ref.watch(exchangeRatesProvider).value ?? [];
         final txs = txsAsync.value ?? [];
         final splits = splitsAsync.value ?? [];
         final quote = quotes[stock.id];
@@ -51,7 +51,7 @@ class StockDetailScreen extends ConsumerWidget {
           if (quoteCurrency == stock.currency) {
             currentPrice = rawQuotePrice;
           } else {
-            final adjRate = _findRate(rates, quoteCurrency, stock.currency);
+            final adjRate = ExchangeRate.find(rates, quoteCurrency, stock.currency);
             currentPrice = adjRate != null
                 ? adjRate.convert(rawQuotePrice)
                 : rawQuotePrice;
@@ -220,16 +220,6 @@ class StockDetailScreen extends ConsumerWidget {
     if (quoteCurrency == stockCurrency) return '$converted$staleTag';
     final raw = CurrencyFormatter.format(rawPrice, quoteCurrency);
     return '$converted ($raw)$staleTag';
-  }
-
-  static ExchangeRate? _findRate(
-      List<ExchangeRate> rates, String from, String to) {
-    if (from == to) return null;
-    try {
-      return rates.firstWhere((r) => r.base == to && r.target == from);
-    } catch (_) {
-      return null;
-    }
   }
 
   Widget _kv(String label, String value, {Color? valueColor}) {

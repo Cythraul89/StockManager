@@ -22,19 +22,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _refreshPrices() async {
-    // Fetch latest stock prices.
+    await Future.wait([_fetchQuotes(), _fetchRates()]);
+  }
+
+  Future<void> _fetchQuotes() async {
     try {
       final stocks = await ref.read(stocksStreamProvider.future);
-      final service = ref.read(marketDataServiceProvider);
       final symbolMap = {for (final s in stocks) s.id: s.symbol};
-      final quotes = await service.fetchQuotes(symbolMap);
-      if (mounted) {
-        ref.read(priceQuotesProvider.notifier).state = quotes;
-      }
+      final quotes =
+          await ref.read(marketDataServiceProvider).fetchQuotes(symbolMap);
+      if (mounted) ref.read(priceQuotesProvider.notifier).state = quotes;
     } catch (_) {}
+  }
 
-    // Fetch exchange rates so currency conversion is always up to date.
-    // Runs in parallel with price display — failures are silently ignored.
+  Future<void> _fetchRates() async {
     try {
       final settings = await ref.read(settingsProvider.future);
       final rates = await ref

@@ -46,6 +46,7 @@ class StockSummaryItem {
     required this.currentPrice,
     required this.rawQuotePrice,
     required this.quoteCurrency,
+    required this.preferredCurrency,
     required this.currentValue,
     required this.unrealisedPnl,
     required this.unrealisedPnlPct,
@@ -64,6 +65,8 @@ class StockSummaryItem {
   // Raw price as returned by the market-data source, in quoteCurrency.
   final Decimal rawQuotePrice;
   final String quoteCurrency;
+  // The user's preferred display currency — currentValue and unrealisedPnl are in this unit.
+  final String preferredCurrency;
   final Decimal currentValue;
   final Decimal unrealisedPnl;
   final Decimal unrealisedPnlPct;
@@ -117,7 +120,7 @@ PortfolioSummary _buildSummary(
 
     // Convert price from quoteCurrency to stock.currency so PnlCalculator
     // sees values in the same unit as stored transaction prices.
-    final priceAdjRate = _findRate(rates, quoteCurrency, stock.currency);
+    final priceAdjRate = ExchangeRate.find(rates, quoteCurrency, stock.currency);
     final currentPrice = (quote != null && quoteCurrency != stock.currency && priceAdjRate != null)
         ? priceAdjRate.convert(rawQuotePrice)
         : rawQuotePrice;
@@ -135,7 +138,7 @@ PortfolioSummary _buildSummary(
     );
 
     // Convert from stock.currency to preferred.
-    final rate = _findRate(rates, stock.currency, preferred);
+    final rate = ExchangeRate.find(rates, stock.currency, preferred);
     final priceRateMissing = quoteCurrency != stock.currency && priceAdjRate == null;
     final missingRate = priceRateMissing || (stock.currency != preferred && rate == null);
     final convertedPnl = rate != null ? PnlCalculator.convert(pnl, rate) : pnl;
@@ -158,6 +161,7 @@ PortfolioSummary _buildSummary(
       currentPrice: currentPrice,
       rawQuotePrice: rawQuotePrice,
       quoteCurrency: quoteCurrency,
+      preferredCurrency: preferred,
       currentValue: convertedPnl.currentValue,
       unrealisedPnl: convertedPnl.unrealisedPnl,
       unrealisedPnlPct: pnl.unrealisedPnlPct,
@@ -188,12 +192,3 @@ PortfolioSummary _buildSummary(
   );
 }
 
-ExchangeRate? _findRate(
-    List<ExchangeRate> rates, String from, String to) {
-  if (from == to) return null;
-  try {
-    return rates.firstWhere((r) => r.base == to && r.target == from);
-  } catch (_) {
-    return null;
-  }
-}

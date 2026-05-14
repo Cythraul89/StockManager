@@ -45,7 +45,7 @@ class StockListTile extends StatelessWidget {
                 noPrice
                     ? '—'
                     : CurrencyFormatter.format(
-                        item.currentValue, item.stock.currency),
+                        item.currentValue, item.preferredCurrency),
                 style: theme.textTheme.bodyMedium,
               ),
               Row(

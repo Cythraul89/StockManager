@@ -18,6 +18,19 @@ class ExchangeRate extends Equatable {
 
   static const cacheTtl = Duration(hours: 1);
 
+  // Finds the rate that converts [from] → [to]. Returns null when from == to
+  // or no matching rate exists.
+  // Convention: stored as ExchangeRate(base: to, target: from, rate: toPerFrom),
+  // so convert(amount_in_from) = amount * rate = amount_in_to.
+  static ExchangeRate? find(
+      List<ExchangeRate> rates, String from, String to) {
+    if (from == to) return null;
+    for (final r in rates) {
+      if (r.base == to && r.target == from) return r;
+    }
+    return null;
+  }
+
   bool get isStale =>
       !isManualOverride &&
       DateTime.now().difference(fetchedAt) > cacheTtl;
