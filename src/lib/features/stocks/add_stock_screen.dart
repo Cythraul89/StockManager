@@ -119,18 +119,25 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
     }
 
     if (!mounted) return;
+    final resolvedCurrency = chosen.currency.toUpperCase();
     setState(() {
       _isLookingUp = false;
       _symbolCtrl.text = chosen.symbol;
       _nameCtrl.text = chosen.name;
       _exchangeCtrl.text =
           chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
-      _selectedCurrency = chosen.currency.toUpperCase();
+      // Only apply the resolved currency if it's a non-empty string so the
+      // user still sees the "Select currency" hint when OpenFIGI returns nothing.
+      if (resolvedCurrency.isNotEmpty) {
+        _selectedCurrency = resolvedCurrency;
+      }
       _symbolUnverified = !priceLabels.containsKey(chosen.symbol);
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _currencyFieldKey.currentState?.didChange(_selectedCurrency);
-    });
+    if (resolvedCurrency.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _currencyFieldKey.currentState?.didChange(_selectedCurrency);
+      });
+    }
   }
 
   Future<IsinLookupResult?> _showListingPicker(
@@ -330,6 +337,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _selectedCurrency,
+                    hint: const Text('Select currency'),
                     isExpanded: true,
                     isDense: true,
                     items: [

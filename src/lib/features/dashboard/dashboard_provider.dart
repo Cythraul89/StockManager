@@ -73,7 +73,9 @@ final portfolioSummaryProvider =
   final stocks = await ref.watch(stocksStreamProvider.future);
   final brokers = await ref.watch(brokersStreamProvider.future);
   final settings = await ref.watch(settingsProvider.future);
-  final rates = await ref.watch(exchangeRatesProvider.future);
+  // Watch the rates stream directly (not .future) so this provider
+  // re-runs whenever new rates are written to the DB.
+  final rates = ref.watch(exchangeRatesProvider).value ?? [];
   final quotes = ref.watch(priceQuotesProvider);
 
   return _buildSummary(stocks, brokers, settings, rates, quotes, ref);

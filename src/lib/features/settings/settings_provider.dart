@@ -51,11 +51,11 @@ final settingsStreamProvider = StreamProvider<AppSettings>((ref) {
 
 // ── Exchange rate providers ──────────────────────────────────────────────────────────────────────────────────────
 
-final exchangeRatesProvider =
-    FutureProvider<List<ExchangeRate>>((ref) async {
+final exchangeRatesProvider = StreamProvider<List<ExchangeRate>>((ref) {
   final db = ref.watch(databaseProvider);
-  final rows = await db.settingsDao.getExchangeRates();
-  return rows.map(_rateFromRow).toList();
+  return db.settingsDao
+      .watchExchangeRates()
+      .map((rows) => rows.map(_rateFromRow).toList());
 });
 
 // ── Settings actions ──────────────────────────────────────────────────────────────────────────────────────────

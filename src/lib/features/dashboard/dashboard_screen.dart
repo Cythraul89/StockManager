@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'dashboard_provider.dart';
 import 'widgets/portfolio_summary_card.dart';
@@ -21,15 +22,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _refreshPrices() async {
+    // Fetch latest stock prices.
     try {
       final stocks = await ref.read(stocksStreamProvider.future);
       final service = ref.read(marketDataServiceProvider);
-      final symbolMap = {
-        for (final s in stocks) s.id: s.symbol,
-      };
+      final symbolMap = {for (final s in stocks) s.id: s.symbol};
       final quotes = await service.fetchQuotes(symbolMap);
       if (mounted) {
         ref.read(priceQuotesProvider.notifier).state = quotes;
+      }
+    } catch (_) {}
+
+    // Fetch exchange rates so currency conversion is always up to date.
+    // Runs in parallel with price display — failures are silently ignored.
+    try {
+      final settings = await ref.read(settingsProvider.future);
+      final rates = await ref
+          .read(currencyServiceProvider)
+          .fetchRates(settings.preferredCurrency);
+      if (rates.isNotEmpty) {
+        await ref
+            .read(settingsActionsProvider)
+            .cacheRates(rates.values.toList());
       }
     } catch (_) {}
   }
