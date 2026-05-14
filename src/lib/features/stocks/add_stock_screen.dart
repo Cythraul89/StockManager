@@ -300,7 +300,8 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _selectedCurrency,
+              key: ValueKey(_selectedCurrency),
+              initialValue: _selectedCurrency,
               decoration: const InputDecoration(labelText: 'Currency'),
               items: [
                 ..._currencies,
