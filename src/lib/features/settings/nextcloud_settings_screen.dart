@@ -130,8 +130,12 @@ class _NextcloudSettingsScreenState
         if (!mounted) return;
       }
 
-      // 5. Return to settings.
-      if (mounted) context.pop();
+      // 5. Return to settings — invalidate first so re-opening this screen
+      //    reads fresh credentials from the DB instead of the stale cache.
+      if (mounted) {
+        ref.invalidate(settingsProvider);
+        context.pop();
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
