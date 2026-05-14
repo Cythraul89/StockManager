@@ -43,14 +43,44 @@ class IsinLookupService {
       if (dataList == null || dataList.isEmpty) return null;
 
       final item = dataList.first as Map<String, dynamic>;
+      final ticker = (item['ticker'] as String?) ?? '';
+      final exchCode = (item['exchCode'] as String?) ?? '';
+      final suffix = _yahooSuffix(exchCode);
       return IsinLookupResult(
-        symbol: (item['ticker'] as String?) ?? '',
+        symbol: suffix.isEmpty ? ticker : '$ticker$suffix',
         name: (item['name'] as String?) ?? '',
-        exchange: (item['exchCode'] as String?) ?? '',
+        exchange: exchCode,
         currency: (item['currency'] as String?) ?? '',
       );
     } on DioException {
       return null;
     }
   }
+
+  // Maps OpenFIGI exchCode (Bloomberg market code) to Yahoo Finance ticker suffix.
+  // US exchanges need no suffix; all others append one.
+  static String _yahooSuffix(String exchCode) => const {
+        'GY': '.DE', // XETRA
+        'GF': '.F',  // Frankfurt
+        'LN': '.L',  // London
+        'FP': '.PA', // Euronext Paris
+        'NA': '.AS', // Amsterdam
+        'BB': '.BR', // Brussels
+        'SM': '.MC', // Madrid
+        'IM': '.MI', // Milan
+        'SW': '.SW', // SIX Swiss Exchange
+        'AV': '.VI', // Vienna
+        'DC': '.CO', // Copenhagen
+        'SS': '.ST', // Stockholm
+        'HB': '.HE', // Helsinki
+        'NO': '.OL', // Oslo
+        'JT': '.T',  // Tokyo
+        'HK': '.HK', // Hong Kong
+        'AT': '.AX', // Australia (ASX)
+        'CT': '.TO', // Toronto
+        'CF': '.V',  // TSX Venture
+        'LS': '.LS', // Lisbon
+        'PW': '.WA', // Warsaw
+      }[exchCode] ??
+      '';
 }
