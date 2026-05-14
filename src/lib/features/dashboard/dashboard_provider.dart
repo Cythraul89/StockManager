@@ -44,6 +44,8 @@ class StockSummaryItem {
     required this.sharesHeld,
     required this.avgBuyPrice,
     required this.currentPrice,
+    required this.rawQuotePrice,
+    required this.quoteCurrency,
     required this.currentValue,
     required this.unrealisedPnl,
     required this.unrealisedPnlPct,
@@ -57,14 +59,18 @@ class StockSummaryItem {
   final Broker? broker;
   final Decimal sharesHeld;
   final Decimal avgBuyPrice;
+  // Price in stock.currency (quote price converted from quoteCurrency if they differ).
   final Decimal currentPrice;
+  // Raw price as returned by the market-data source, in quoteCurrency.
+  final Decimal rawQuotePrice;
+  final String quoteCurrency;
   final Decimal currentValue;
   final Decimal unrealisedPnl;
   final Decimal unrealisedPnlPct;
   final Decimal annualYieldPct;
   final bool isStale;
   final bool hasPrice;
-  // True when stock currency differs from preferred but no exchange rate is cached.
+  // True when a required exchange rate is missing (price or portfolio conversion).
   final bool missingRate;
 }
 
@@ -106,7 +112,15 @@ PortfolioSummary _buildSummary(
     final splits = ref.watch(splitsByStockProvider(stock.id)).value ?? [];
     final dividends = ref.watch(dividendsByStockProvider(stock.id)).value ?? [];
     final quote = quotes[stock.id];
-    final currentPrice = quote?.price ?? Decimal.zero;
+    final rawQuotePrice = quote?.price ?? Decimal.zero;
+    final quoteCurrency = quote?.currency ?? stock.currency;
+
+    // Convert price from quoteCurrency to stock.currency so PnlCalculator
+    // sees values in the same unit as stored transaction prices.
+    final priceAdjRate = _findRate(rates, quoteCurrency, stock.currency);
+    final currentPrice = (quote != null && quoteCurrency != stock.currency && priceAdjRate != null)
+        ? priceAdjRate.convert(rawQuotePrice)
+        : rawQuotePrice;
 
     final pos = PortfolioCalculator.calculate(txs, splits);
     final pnl = PnlCalculator.calculate(
@@ -120,9 +134,10 @@ PortfolioSummary _buildSummary(
       sharesHeld: pos.sharesHeld,
     );
 
-    final priceCurrency = quote?.currency ?? stock.currency;
-    final rate = _findRate(rates, priceCurrency, preferred);
-    final missingRate = priceCurrency != preferred && rate == null;
+    // Convert from stock.currency to preferred.
+    final rate = _findRate(rates, stock.currency, preferred);
+    final priceRateMissing = quoteCurrency != stock.currency && priceAdjRate == null;
+    final missingRate = priceRateMissing || (stock.currency != preferred && rate == null);
     final convertedPnl = rate != null ? PnlCalculator.convert(pnl, rate) : pnl;
     final convertedDiv = rate != null
         ? DividendCalculator.convert(divSummary, rate)
@@ -141,6 +156,8 @@ PortfolioSummary _buildSummary(
       sharesHeld: pos.sharesHeld,
       avgBuyPrice: pos.avgBuyPrice,
       currentPrice: currentPrice,
+      rawQuotePrice: rawQuotePrice,
+      quoteCurrency: quoteCurrency,
       currentValue: convertedPnl.currentValue,
       unrealisedPnl: convertedPnl.unrealisedPnl,
       unrealisedPnlPct: pnl.unrealisedPnlPct,

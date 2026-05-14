@@ -1,11 +1,14 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
+import '../../core/models/exchange_rate.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/decimal_math.dart';
+import '../settings/settings_provider.dart';
 import '../transactions/widgets/transaction_tile.dart';
 import '../dividends/widgets/dividend_tile.dart';
 import 'stocks_provider.dart';
@@ -34,10 +37,26 @@ class StockDetailScreen extends ConsumerWidget {
               body: const Center(child: Text('Stock not found')));
         }
 
+        final rates = ref.watch(exchangeRatesProvider).value ?? [];
         final txs = txsAsync.value ?? [];
         final splits = splitsAsync.value ?? [];
         final quote = quotes[stock.id];
-        final currentPrice = quote?.price;
+        final rawQuotePrice = quote?.price;
+        final quoteCurrency = quote?.currency ?? stock.currency;
+
+        // Convert price from quoteCurrency to stock.currency so P&L arithmetic
+        // uses the same unit as the stored transaction prices.
+        Decimal? currentPrice;
+        if (rawQuotePrice != null) {
+          if (quoteCurrency == stock.currency) {
+            currentPrice = rawQuotePrice;
+          } else {
+            final adjRate = _findRate(rates, quoteCurrency, stock.currency);
+            currentPrice = adjRate != null
+                ? adjRate.convert(rawQuotePrice)
+                : rawQuotePrice;
+          }
+        }
 
         final position = PortfolioCalculator.calculate(txs, splits);
 
@@ -92,8 +111,10 @@ class StockDetailScreen extends ConsumerWidget {
                               position.totalInvested, stock.currency)),
                       if (currentPrice != null) ...[
                         _kv('Current price',
-                            '${CurrencyFormatter.format(currentPrice, stock.currency)}'
-                            '${quote!.withStaleness().isStale ? " (stale)" : ""}'),
+                            _currentPriceLabel(
+                                currentPrice, stock.currency,
+                                rawQuotePrice!, quoteCurrency,
+                                quote!.withStaleness().isStale)),
                       ],
                       if (pnl != null) ...[
                         _kv(
@@ -185,6 +206,30 @@ class StockDetailScreen extends ConsumerWidget {
         );
       },
     );
+  }
+
+  String _currentPriceLabel(
+    Decimal price,
+    String stockCurrency,
+    Decimal rawPrice,
+    String quoteCurrency,
+    bool isStale,
+  ) {
+    final staleTag = isStale ? ' (stale)' : '';
+    final converted = CurrencyFormatter.format(price, stockCurrency);
+    if (quoteCurrency == stockCurrency) return '$converted$staleTag';
+    final raw = CurrencyFormatter.format(rawPrice, quoteCurrency);
+    return '$converted ($raw)$staleTag';
+  }
+
+  static ExchangeRate? _findRate(
+      List<ExchangeRate> rates, String from, String to) {
+    if (from == to) return null;
+    try {
+      return rates.firstWhere((r) => r.base == to && r.target == from);
+    } catch (_) {
+      return null;
+    }
   }
 
   Widget _kv(String label, String value, {Color? valueColor}) {

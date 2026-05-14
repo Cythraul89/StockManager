@@ -81,11 +81,18 @@ class StockListTile extends StatelessWidget {
       subtitle: Text(
         noPrice
             ? '${item.sharesHeld.toStringAsFixed(4)} shares'
-            : '${item.sharesHeld.toStringAsFixed(4)} shares '
-                '@ ${CurrencyFormatter.format(item.currentPrice, item.stock.currency)}',
+            : _priceSubtitle(item),
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
     );
+  }
+
+  String _priceSubtitle(StockSummaryItem item) {
+    final shares = '${item.sharesHeld.toStringAsFixed(4)} shares @ ';
+    final converted = CurrencyFormatter.format(item.currentPrice, item.stock.currency);
+    if (item.quoteCurrency == item.stock.currency) return '$shares$converted';
+    final raw = CurrencyFormatter.format(item.rawQuotePrice, item.quoteCurrency);
+    return '$shares$converted ($raw)';
   }
 }
