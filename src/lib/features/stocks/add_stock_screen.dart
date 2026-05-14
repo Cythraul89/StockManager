@@ -43,11 +43,6 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   bool _brokerLoaded = false;
 
   static const _lastBrokerKey = 'last_used_broker_id';
-  static const _currencies = [
-    'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
-    'HKD', 'HUF', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'NZD',
-    'PLN', 'SEK', 'SGD', 'USD', 'ZAR',
-  ];
 
   @override
   void dispose() {
@@ -341,9 +336,9 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                     isExpanded: true,
                     isDense: true,
                     items: [
-                      ..._currencies,
+                      ...CurrencyFormatter.supportedCurrencies,
                       if (_selectedCurrency != null &&
-                          !_currencies.contains(_selectedCurrency))
+                          !CurrencyFormatter.supportedCurrencies.contains(_selectedCurrency))
                         _selectedCurrency!,
                     ]
                         .map((c) => DropdownMenuItem(value: c, child: Text(c)))

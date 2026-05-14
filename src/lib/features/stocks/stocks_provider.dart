@@ -103,7 +103,7 @@ class StockActions {
   StockActions(this._db, this._ref);
   final AppDatabase _db;
   final Ref _ref;
-  static const _uuid = Uuid();
+  static final _uuid = Uuid();
 
   void _notifyChange() =>
       _ref.read(dataVersionProvider.notifier).update((n) => n + 1);

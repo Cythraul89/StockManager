@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:decimal/decimal.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -97,7 +98,9 @@ class NotificationSettingsScreen extends ConsumerWidget {
         await ref
             .read(settingsActionsProvider)
             .saveSettings(settings.copyWith(priceAlertThresholdPct: pct));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('NotificationSettings: invalid threshold value: $e');
+      }
     }
   }
 

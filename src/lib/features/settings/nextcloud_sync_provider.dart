@@ -146,7 +146,9 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       if (remote != null && _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
         state = state.copyWith(pendingRestore: remote);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('NextcloudSync: checkForRemoteBackup failed: $e');
+    }
   }
 
   // Download and import the pending remote backup.

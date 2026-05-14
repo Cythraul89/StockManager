@@ -2,6 +2,12 @@ import 'package:decimal/decimal.dart';
 import 'package:intl/intl.dart';
 
 class CurrencyFormatter {
+  static const supportedCurrencies = [
+    'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
+    'HKD', 'HUF', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'NZD',
+    'PLN', 'SEK', 'SGD', 'USD', 'ZAR',
+  ];
+
   // Returns a locale-aware formatted string, e.g. "€1,234.56" or "USD 1,234.56".
   static String format(
     Decimal amount,

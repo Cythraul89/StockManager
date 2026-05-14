@@ -140,20 +140,8 @@ class StockDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // Transactions section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Transactions',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  TextButton.icon(
-                    onPressed: () =>
-                        context.push('/stocks/$id/transactions/add'),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add'),
-                  ),
-                ],
-              ),
+              _sectionHeader(context, 'Transactions',
+                  () => context.push('/stocks/$id/transactions/add')),
               txsAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -172,20 +160,8 @@ class StockDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // Dividends section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Dividends',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  TextButton.icon(
-                    onPressed: () =>
-                        context.push('/stocks/$id/dividends/add'),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add'),
-                  ),
-                ],
-              ),
+              _sectionHeader(context, 'Dividends',
+                  () => context.push('/stocks/$id/dividends/add')),
               dividendsAsync.when(
                 loading: () =>
                     const Center(child: CircularProgressIndicator()),
@@ -205,6 +181,20 @@ class StockDetailScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _sectionHeader(BuildContext context, String title, VoidCallback onAdd) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        TextButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add'),
+        ),
+      ],
     );
   }
 

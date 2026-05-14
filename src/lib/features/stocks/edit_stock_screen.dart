@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/utils/currency_formatter.dart';
 import 'stocks_provider.dart';
 
 class EditStockScreen extends ConsumerStatefulWidget {
@@ -22,12 +23,6 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
   bool _dripEnabled = false;
   bool _loaded = false;
   bool _isSaving = false;
-
-  static const _currencies = [
-    'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
-    'HKD', 'HUF', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'NZD',
-    'PLN', 'SEK', 'SGD', 'USD', 'ZAR',
-  ];
 
   @override
   void dispose() {
@@ -97,9 +92,9 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                   initialValue: _selectedCurrency,
                   decoration: const InputDecoration(labelText: 'Currency'),
                   items: [
-                    ..._currencies,
+                    ...CurrencyFormatter.supportedCurrencies,
                     if (_selectedCurrency != null &&
-                        !_currencies.contains(_selectedCurrency))
+                        !CurrencyFormatter.supportedCurrencies.contains(_selectedCurrency))
                       _selectedCurrency!,
                   ]
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))

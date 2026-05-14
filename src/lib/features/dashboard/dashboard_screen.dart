@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -32,7 +33,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final quotes =
           await ref.read(marketDataServiceProvider).fetchQuotes(symbolMap);
       if (mounted) ref.read(priceQuotesProvider.notifier).state = quotes;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('DashboardScreen: fetchQuotes failed: $e');
+    }
   }
 
   Future<void> _fetchRates() async {
@@ -46,7 +49,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             .read(settingsActionsProvider)
             .cacheRates(rates.values.toList());
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('DashboardScreen: fetchRates failed: $e');
+    }
   }
 
   @override
