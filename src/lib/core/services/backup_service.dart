@@ -7,6 +7,7 @@ import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:xml/xml.dart';
 
 import '../database/app_database.dart';
 
@@ -23,6 +24,8 @@ class BackupService {
   final AppDatabase _db;
 
   static const _formatVersion = 1;
+  static const _nsTable = 'urn:oasis:names:tc:opendocument:xmlns:table:1.0';
+  static const _nsText = 'urn:oasis:names:tc:opendocument:xmlns:text:1.0';
 
   // Serialises the entire portfolio to a ZIP file in the temp directory.
   // Returns the file so the caller can share/save it.
@@ -116,33 +119,272 @@ class BackupService {
     return file;
   }
 
-  // Replaces all portfolio data with the contents of [bytes] (a ZIP archive).
+  // Serialises the entire portfolio to an ODS spreadsheet in the temp directory.
+  Future<File> exportToOds() async {
+    final brokers = await _db.brokersDao.getAll();
+    final stocks = await _db.stocksDao.getAll();
+    final transactions = await _db.transactionsDao.getAll();
+    final dividends = await _db.dividendsDao.getAll();
+    final splits = await _db.stocksDao.getAllSplits();
+
+    final content = StringBuffer();
+    content.write('<?xml version="1.0" encoding="UTF-8"?>');
+    content.write('<office:document-content'
+        ' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
+        ' xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"'
+        ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"'
+        ' office:version="1.3">');
+    content.write('<office:body><office:spreadsheet>');
+
+    content.write('<table:table table:name="brokers">');
+    content.write(_odsRow(['id', 'name', 'notes']));
+    for (final b in brokers) {
+      content.write(_odsRow([b.id, b.name, b.notes]));
+    }
+    content.write('</table:table>');
+
+    content.write('<table:table table:name="stocks">');
+    content.write(_odsRow(
+        ['id', 'brokerId', 'isin', 'symbol', 'name', 'exchange', 'currency', 'dripEnabled']));
+    for (final s in stocks) {
+      content.write(_odsRow([
+        s.id, s.brokerId, s.isin, s.symbol, s.name, s.exchange, s.currency,
+        s.dripEnabled.toString(),
+      ]));
+    }
+    content.write('</table:table>');
+
+    content.write('<table:table table:name="transactions">');
+    content.write(_odsRow([
+      'id', 'stockId', 'type', 'executedAt', 'shares', 'pricePerShare', 'currency', 'fees', 'notes',
+    ]));
+    for (final t in transactions) {
+      content.write(_odsRow([
+        t.id, t.stockId, t.type,
+        t.executedAt.toUtc().toIso8601String(),
+        t.shares.toString(), t.pricePerShare.toString(),
+        t.currency, t.fees.toString(), t.notes,
+      ]));
+    }
+    content.write('</table:table>');
+
+    content.write('<table:table table:name="dividends">');
+    content.write(_odsRow([
+      'id', 'stockId', 'type', 'date', 'amountPerShare', 'totalAmount', 'currency',
+      'withholdingTax', 'notes',
+    ]));
+    for (final d in dividends) {
+      content.write(_odsRow([
+        d.id, d.stockId, d.type,
+        d.date.toUtc().toIso8601String(),
+        d.amountPerShare.toString(), d.totalAmount?.toString(),
+        d.currency, d.withholdingTax?.toString(), d.notes,
+      ]));
+    }
+    content.write('</table:table>');
+
+    content.write('<table:table table:name="stock_splits">');
+    content.write(_odsRow(['id', 'stockId', 'date', 'fromShares', 'toShares']));
+    for (final s in splits) {
+      content.write(_odsRow([
+        s.id, s.stockId,
+        s.date.toUtc().toIso8601String(),
+        s.fromShares.toString(), s.toShares.toString(),
+      ]));
+    }
+    content.write('</table:table>');
+
+    content.write('</office:spreadsheet></office:body></office:document-content>');
+
+    const manifest = '<?xml version="1.0" encoding="UTF-8"?>'
+        '<manifest:manifest'
+        ' xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"'
+        ' manifest:version="1.3">'
+        '<manifest:file-entry manifest:full-path="/"'
+        ' manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/>'
+        '<manifest:file-entry manifest:full-path="content.xml"'
+        ' manifest:media-type="text/xml"/>'
+        '</manifest:manifest>';
+
+    final archive = Archive();
+
+    final mimetypeBytes =
+        utf8.encode('application/vnd.oasis.opendocument.spreadsheet');
+    final mimetypeFile =
+        ArchiveFile('mimetype', mimetypeBytes.length, mimetypeBytes);
+    mimetypeFile.compress = false;
+    archive.addFile(mimetypeFile);
+
+    final manifestBytes = utf8.encode(manifest);
+    archive.addFile(
+        ArchiveFile('META-INF/manifest.xml', manifestBytes.length, manifestBytes));
+
+    final contentBytes = utf8.encode(content.toString());
+    archive.addFile(ArchiveFile('content.xml', contentBytes.length, contentBytes));
+
+    final zipBytes = ZipEncoder().encode(archive);
+    if (zipBytes == null) throw const BackupException('Failed to create ODS file');
+
+    final tempDir = await getTemporaryDirectory();
+    final dateStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    final file = File(p.join(tempDir.path, 'stockmanager_backup_$dateStr.ods'));
+    await file.writeAsBytes(zipBytes);
+    return file;
+  }
+
+  // Replaces all portfolio data with the contents of [bytes].
+  // Auto-detects ZIP backup (contains meta.json) or ODS (contains content.xml).
   Future<void> importFromBytes(Uint8List bytes) async {
     final archive = ZipDecoder().decodeBytes(bytes);
+    if (archive.findFile('meta.json') != null) {
+      await _importZip(archive);
+    } else if (archive.findFile('content.xml') != null) {
+      await _importOds(archive);
+    } else {
+      throw const BackupException('Unrecognised file format');
+    }
+  }
 
+  Future<void> _importZip(Archive archive) async {
     List<int> fileBytes(String name) {
       final f = archive.findFile(name);
       if (f == null) throw BackupException('Invalid backup: missing $name');
       return f.content as List<int>;
     }
 
-    final meta = jsonDecode(utf8.decode(fileBytes('meta.json'))) as Map<String, dynamic>;
+    final meta =
+        jsonDecode(utf8.decode(fileBytes('meta.json'))) as Map<String, dynamic>;
     final version = meta['version'] as int? ?? 0;
     if (version != _formatVersion) {
-      throw BackupException('Unsupported backup version $version (expected $_formatVersion)');
+      throw BackupException(
+          'Unsupported backup version $version (expected $_formatVersion)');
     }
 
-    final brokersData =
-        (jsonDecode(utf8.decode(fileBytes('brokers.json'))) as List).cast<Map<String, dynamic>>();
-    final stocksData =
-        (jsonDecode(utf8.decode(fileBytes('stocks.json'))) as List).cast<Map<String, dynamic>>();
+    final brokersData = (jsonDecode(utf8.decode(fileBytes('brokers.json'))) as List)
+        .cast<Map<String, dynamic>>();
+    final stocksData = (jsonDecode(utf8.decode(fileBytes('stocks.json'))) as List)
+        .cast<Map<String, dynamic>>();
     final txData =
-        (jsonDecode(utf8.decode(fileBytes('transactions.json'))) as List).cast<Map<String, dynamic>>();
-    final divData =
-        (jsonDecode(utf8.decode(fileBytes('dividends.json'))) as List).cast<Map<String, dynamic>>();
+        (jsonDecode(utf8.decode(fileBytes('transactions.json'))) as List)
+            .cast<Map<String, dynamic>>();
+    final divData = (jsonDecode(utf8.decode(fileBytes('dividends.json'))) as List)
+        .cast<Map<String, dynamic>>();
     final splitsData =
-        (jsonDecode(utf8.decode(fileBytes('stock_splits.json'))) as List).cast<Map<String, dynamic>>();
+        (jsonDecode(utf8.decode(fileBytes('stock_splits.json'))) as List)
+            .cast<Map<String, dynamic>>();
 
+    await _restore(brokersData, stocksData, txData, divData, splitsData);
+  }
+
+  Future<void> _importOds(Archive archive) async {
+    final f = archive.findFile('content.xml');
+    if (f == null) throw const BackupException('Invalid ODS: missing content.xml');
+    final doc = XmlDocument.parse(utf8.decode(f.content as List<int>));
+
+    List<List<String>> readSheet(String sheetName) {
+      XmlElement? sheet;
+      for (final t in doc.findAllElements('table', namespace: _nsTable)) {
+        final n = t.getAttribute('name', namespace: _nsTable) ??
+            t.getAttribute('name');
+        if (n == sheetName) {
+          sheet = t;
+          break;
+        }
+      }
+      if (sheet == null) {
+        throw BackupException('Invalid ODS: missing sheet "$sheetName"');
+      }
+      final rows = <List<String>>[];
+      for (final row in sheet.findElements('table-row', namespace: _nsTable)) {
+        final cells = <String>[];
+        for (final cell
+            in row.findElements('table-cell', namespace: _nsTable)) {
+          final ps = cell.findElements('p', namespace: _nsText);
+          cells.add(ps.isEmpty ? '' : ps.first.innerText);
+        }
+        rows.add(cells);
+      }
+      return rows;
+    }
+
+    String col(List<String> row, int i) => i < row.length ? row[i] : '';
+    String? optCol(List<String> row, int i) {
+      final v = col(row, i);
+      return v.isEmpty ? null : v;
+    }
+
+    final brokersRows = readSheet('brokers').skip(1).toList();
+    final stocksRows = readSheet('stocks').skip(1).toList();
+    final txRows = readSheet('transactions').skip(1).toList();
+    final divRows = readSheet('dividends').skip(1).toList();
+    final splitsRows = readSheet('stock_splits').skip(1).toList();
+
+    final brokersData = [
+      for (final r in brokersRows)
+        {'id': col(r, 0), 'name': col(r, 1), 'notes': optCol(r, 2)},
+    ];
+    final stocksData = [
+      for (final r in stocksRows)
+        {
+          'id': col(r, 0),
+          'brokerId': col(r, 1),
+          'isin': col(r, 2),
+          'symbol': col(r, 3),
+          'name': col(r, 4),
+          'exchange': col(r, 5),
+          'currency': col(r, 6),
+          'dripEnabled': col(r, 7) == 'true',
+        },
+    ];
+    final txData = [
+      for (final r in txRows)
+        {
+          'id': col(r, 0),
+          'stockId': col(r, 1),
+          'type': col(r, 2),
+          'executedAt': col(r, 3),
+          'shares': col(r, 4),
+          'pricePerShare': col(r, 5),
+          'currency': col(r, 6),
+          'fees': col(r, 7).isEmpty ? '0' : col(r, 7),
+          'notes': optCol(r, 8),
+        },
+    ];
+    final divData = [
+      for (final r in divRows)
+        {
+          'id': col(r, 0),
+          'stockId': col(r, 1),
+          'type': col(r, 2),
+          'date': col(r, 3),
+          'amountPerShare': col(r, 4),
+          'totalAmount': optCol(r, 5),
+          'currency': col(r, 6),
+          'withholdingTax': optCol(r, 7),
+          'notes': optCol(r, 8),
+        },
+    ];
+    final splitsData = [
+      for (final r in splitsRows)
+        {
+          'id': col(r, 0),
+          'stockId': col(r, 1),
+          'date': col(r, 2),
+          'fromShares': int.parse(col(r, 3)),
+          'toShares': int.parse(col(r, 4)),
+        },
+    ];
+
+    await _restore(brokersData, stocksData, txData, divData, splitsData);
+  }
+
+  Future<void> _restore(
+    List<Map<String, dynamic>> brokersData,
+    List<Map<String, dynamic>> stocksData,
+    List<Map<String, dynamic>> txData,
+    List<Map<String, dynamic>> divData,
+    List<Map<String, dynamic>> splitsData,
+  ) async {
     await _db.transaction(() async {
       // Clear in reverse FK order so constraints are satisfied.
       await _db.customStatement('DELETE FROM dividends');
@@ -215,4 +457,21 @@ class BackupService {
       }
     });
   }
+
+  static String _odsRow(List<String?> cells) {
+    final buf = StringBuffer('<table:table-row>');
+    for (final c in cells) {
+      buf.write('<table:table-cell office:value-type="string">'
+          '<text:p>${_escXml(c ?? '')}</text:p>'
+          '</table:table-cell>');
+    }
+    buf.write('</table:table-row>');
+    return buf.toString();
+  }
+
+  static String _escXml(String s) => s
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
 }

@@ -17,6 +17,7 @@ class LocalBackupScreen extends ConsumerStatefulWidget {
 
 class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
   bool _isExporting = false;
+  bool _isExportingOds = false;
   bool _isImporting = false;
   String? _status;
   bool _statusIsError = false;
@@ -51,10 +52,40 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
     }
   }
 
+  Future<void> _exportOds() async {
+    setState(() {
+      _isExportingOds = true;
+      _status = null;
+    });
+    try {
+      final file = await ref.read(backupServiceProvider).exportToOds();
+      if (!mounted) return;
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: 'StockManager Backup',
+      );
+      if (mounted) {
+        setState(() {
+          _status = 'ODS exported successfully.';
+          _statusIsError = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = 'Export failed: $e';
+          _statusIsError = true;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingOds = false);
+    }
+  }
+
   Future<void> _import() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['zip'],
+      allowedExtensions: ['zip', 'ods'],
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
@@ -102,7 +133,7 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
       _status = null;
     });
     try {
-      await ref.read(backupServiceProvider).importFromBytes(bytes!);
+      await ref.read(backupServiceProvider).importFromBytes(bytes);
       if (mounted) {
         setState(() {
           _status = 'Backup imported successfully.';
@@ -123,7 +154,7 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final busy = _isExporting || _isImporting;
+    final busy = _isExporting || _isExportingOds || _isImporting;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Local Backup')),
@@ -133,7 +164,7 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
           Card(
             child: ListTile(
               leading: const Icon(Icons.upload_outlined),
-              title: const Text('Export backup'),
+              title: const Text('Export backup (ZIP)'),
               subtitle: const Text(
                   'Save a ZIP file containing all stocks, transactions and dividends'),
               trailing: _isExporting
@@ -149,10 +180,27 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
           const SizedBox(height: 8),
           Card(
             child: ListTile(
+              leading: const Icon(Icons.table_chart_outlined),
+              title: const Text('Export backup (ODS spreadsheet)'),
+              subtitle: const Text(
+                  'Save an ODS spreadsheet containing all stocks, transactions and dividends'),
+              trailing: _isExportingOds
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right),
+              onTap: busy ? null : _exportOds,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: ListTile(
               leading: const Icon(Icons.download_outlined),
               title: const Text('Import backup'),
               subtitle: const Text(
-                  'Restore from a previously exported ZIP — replaces all current data'),
+                  'Restore from a ZIP or ODS backup — replaces all current data'),
               trailing: _isImporting
                   ? const SizedBox(
                       width: 20,
