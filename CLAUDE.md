@@ -27,7 +27,7 @@ cd src
 flutter pub get
 
 # Generate Drift .g.dart files (REQUIRED after touching any table or DAO)
-dart run build_runner build --delete-conflicting-outputs
+dart run build_runner build
 
 # Static analysis (mirrors CI — must be clean with --fatal-infos)
 flutter analyze --fatal-infos
@@ -55,7 +55,7 @@ them. Any change to a file in `core/database/tables/` or `core/database/daos/`
 requires running:
 
 ```bash
-dart run build_runner build --delete-conflicting-outputs
+dart run build_runner build
 ```
 
 The generated file for the main database is `core/database/app_database.g.dart`.
@@ -204,7 +204,7 @@ from the Actions run summary for 90 days.
 2. Add it to the `@DriftDatabase(tables: [...])` list in `app_database.dart`.
 3. Create `core/database/daos/<name>_dao.dart` — annotate with `@DriftAccessor`.
 4. Add the DAO to `@DriftDatabase(daos: [...])` and as a getter in `AppDatabase`.
-5. Run `dart run build_runner build --delete-conflicting-outputs`.
+5. Run `dart run build_runner build`.
 6. Bump `schemaVersion` in `AppDatabase` and add a migration in `onUpgrade`.
 
 ---
