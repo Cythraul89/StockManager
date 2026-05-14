@@ -56,35 +56,93 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
     setState(() {
       _isLookingUp = true;
       _lookupError = null;
+      _symbolUnverified = false;
     });
 
-    final service = ref.read(isinLookupServiceProvider);
-    final result = await service.lookup(isin);
+    final results =
+        await ref.read(isinLookupServiceProvider).lookup(isin);
 
     if (!mounted) return;
-    if (result == null) {
+
+    if (results == null || results.isEmpty) {
       setState(() {
         _isLookingUp = false;
-        _lookupError = 'Could not resolve ISIN. Please fill in details manually.';
+        _lookupError =
+            'Could not resolve ISIN. Please fill in details manually.';
       });
       return;
     }
 
+    // If multiple listings exist, let the user choose.
+    IsinLookupResult chosen;
+    if (results.length == 1) {
+      chosen = results.first;
+    } else {
+      setState(() => _isLookingUp = false);
+      final picked = await _showListingPicker(results);
+      if (!mounted || picked == null) return;
+      chosen = picked;
+      setState(() => _isLookingUp = true);
+    }
+
     // Validate the resolved symbol against Yahoo Finance.
-    final tempId = '__preview__';
     final quote = await ref
         .read(marketDataServiceProvider)
-        .fetchQuote(result.symbol, tempId);
+        .fetchQuote(chosen.symbol, '__preview__');
 
     if (!mounted) return;
     setState(() {
       _isLookingUp = false;
-      _symbolCtrl.text = result.symbol;
-      _nameCtrl.text = result.name;
-      _exchangeCtrl.text = result.exchange;
-      _currencyCtrl.text = result.currency;
+      _symbolCtrl.text = chosen.symbol;
+      _nameCtrl.text = chosen.name;
+      _exchangeCtrl.text =
+          chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
+      _currencyCtrl.text = chosen.currency;
       _symbolUnverified = quote == null;
     });
+  }
+
+  Future<IsinLookupResult?> _showListingPicker(
+      List<IsinLookupResult> results) {
+    return showModalBottomSheet<IsinLookupResult>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                'Select listing',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: results.length,
+                itemBuilder: (_, i) {
+                  final r = results[i];
+                  final subtitle = [
+                    if (r.exchangeName.isNotEmpty) r.exchangeName,
+                    if (r.currency.isNotEmpty) r.currency,
+                    if (r.securityType.isNotEmpty) r.securityType,
+                  ].join(' · ');
+                  return ListTile(
+                    title: Text(r.symbol,
+                        style:
+                            const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                    onTap: () => Navigator.pop(ctx, r),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -117,7 +175,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
         isin: _isinCtrl.text.trim().toUpperCase(),
         symbol: _symbolCtrl.text.trim().toUpperCase(),
         name: _nameCtrl.text.trim(),
-        exchange: _exchangeCtrl.text.trim().toUpperCase(),
+        exchange: _exchangeCtrl.text.trim(),
         currency: _currencyCtrl.text.trim().toUpperCase(),
         dripEnabled: _dripEnabled,
       );
@@ -218,7 +276,6 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
             TextFormField(
               controller: _exchangeCtrl,
               decoration: const InputDecoration(labelText: 'Exchange'),
-              textCapitalization: TextCapitalization.characters,
             ),
             const SizedBox(height: 8),
             TextFormField(

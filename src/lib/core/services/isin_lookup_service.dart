@@ -5,13 +5,17 @@ class IsinLookupResult {
     required this.symbol,
     required this.name,
     required this.exchange,
+    required this.exchangeName,
     required this.currency,
+    required this.securityType,
   });
 
   final String symbol;
   final String name;
   final String exchange;
+  final String exchangeName;
   final String currency;
+  final String securityType;
 }
 
 class IsinLookupService {
@@ -21,7 +25,9 @@ class IsinLookupService {
 
   static const _openFigiUrl = 'https://api.openfigi.com/v3/mapping';
 
-  Future<IsinLookupResult?> lookup(String isin) async {
+  // Returns all distinct exchange listings for the given ISIN, filtered to
+  // equity types where possible. Returns null on network error.
+  Future<List<IsinLookupResult>?> lookup(String isin) async {
     try {
       final response = await _dio.post<List>(
         _openFigiUrl,
@@ -42,41 +48,46 @@ class IsinLookupService {
       final dataList = first['data'] as List?;
       if (dataList == null || dataList.isEmpty) return null;
 
-      // Prefer equity entries with a recognized exchange; fall back to first.
-      Map<String, dynamic>? chosen;
-      for (final raw in dataList.cast<Map<String, dynamic>>()) {
-        final ec = (raw['exchCode'] as String?) ?? '';
-        final st = ((raw['securityType'] as String?) ?? '').toLowerCase();
-        final isEquity = st.contains('common') ||
+      final raw = dataList.cast<Map<String, dynamic>>();
+
+      // Prefer equity-type entries; fall back to all entries if none found.
+      var equities = raw.where((e) {
+        final st = ((e['securityType'] as String?) ?? '').toLowerCase();
+        return st.contains('common') ||
             st.contains('ordinary') ||
             st.contains('share');
-        if (isEquity && _yahooSuffix(ec).isNotEmpty) {
-          chosen = raw;
-          break;
-        }
-        chosen ??= raw;
-      }
-      final item = chosen!;
+      }).toList();
+      final candidates = equities.isNotEmpty ? equities : raw;
 
-      final ticker = (item['ticker'] as String?) ?? '';
-      final exchCode = (item['exchCode'] as String?) ?? '';
-      // Use exchCode suffix first; fall back to ISIN country code.
-      final suffix = _yahooSuffix(exchCode).isNotEmpty
-          ? _yahooSuffix(exchCode)
-          : _suffixFromIsin(isin);
-      return IsinLookupResult(
-        symbol: suffix.isEmpty ? ticker : '$ticker$suffix',
-        name: (item['name'] as String?) ?? '',
-        exchange: exchCode,
-        currency: (item['currency'] as String?) ?? '',
-      );
+      // Deduplicate by (exchCode, ticker) keeping first occurrence.
+      final seen = <String>{};
+      final deduped = <Map<String, dynamic>>[];
+      for (final item in candidates) {
+        final key = '${item["exchCode"]}:${item["ticker"]}';
+        if (seen.add(key)) deduped.add(item);
+      }
+
+      return deduped.map((item) {
+        final ticker = (item['ticker'] as String?) ?? '';
+        final exchCode = (item['exchCode'] as String?) ?? '';
+        final suffix = _yahooSuffix(exchCode).isNotEmpty
+            ? _yahooSuffix(exchCode)
+            : _suffixFromIsin(isin);
+        return IsinLookupResult(
+          symbol: suffix.isEmpty ? ticker : '$ticker$suffix',
+          name: (item['name'] as String?) ?? '',
+          exchange: exchCode,
+          exchangeName: _exchangeName(exchCode),
+          currency: (item['currency'] as String?) ?? '',
+          securityType: (item['securityType'] as String?) ?? '',
+        );
+      }).toList();
     } on DioException {
       return null;
     }
   }
 
-  // Maps OpenFIGI exchCode (Bloomberg market code) to Yahoo Finance ticker suffix.
-  // US exchanges need no suffix; all others append one.
+  // Maps OpenFIGI exchCode to Yahoo Finance ticker suffix.
   static String _yahooSuffix(String exchCode) => const {
         'GY': '.DE', // XETRA
         'GF': '.F',  // Frankfurt
@@ -93,8 +104,8 @@ class IsinLookupService {
         'HB': '.HE', // Helsinki
         'NO': '.OL', // Oslo
         'JT': '.T',  // Tokyo
-        'HK': '.HK', // Hong Kong
-        'AT': '.AX', // Australia (ASX)
+        'HK': '.HK', // HKEX
+        'AT': '.AX', // ASX
         'CT': '.TO', // Toronto
         'CF': '.V',  // TSX Venture
         'LS': '.LS', // Lisbon
@@ -113,4 +124,35 @@ class IsinLookupService {
       'HK': '.HK', 'AU': '.AX', 'CA': '.TO',
     }[isin.substring(0, 2)] ?? '';
   }
+
+  // Human-readable exchange name for display.
+  static String _exchangeName(String exchCode) => const {
+        'GY': 'XETRA',
+        'GF': 'Frankfurt',
+        'LN': 'London Stock Exchange',
+        'FP': 'Euronext Paris',
+        'NA': 'Euronext Amsterdam',
+        'BB': 'Euronext Brussels',
+        'SM': 'Bolsa de Madrid',
+        'IM': 'Borsa Italiana',
+        'SW': 'SIX Swiss Exchange',
+        'AV': 'Vienna Stock Exchange',
+        'DC': 'Nasdaq Copenhagen',
+        'SS': 'Nasdaq Stockholm',
+        'HB': 'Nasdaq Helsinki',
+        'NO': 'Oslo Stock Exchange',
+        'JT': 'Tokyo Stock Exchange',
+        'HK': 'HKEX',
+        'AT': 'ASX',
+        'CT': 'Toronto Stock Exchange',
+        'CF': 'TSX Venture',
+        'LS': 'Euronext Lisbon',
+        'PW': 'Warsaw Stock Exchange',
+        'UN': 'NYSE',
+        'UW': 'NASDAQ',
+        'UA': 'NYSE American',
+        'UP': 'OTC Markets',
+        'US': 'NYSE',
+      }[exchCode] ??
+      exchCode;
 }
