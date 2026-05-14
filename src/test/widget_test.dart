@@ -29,6 +29,10 @@ class _NoOpMarketDataService extends MarketDataService {
           Map<String, String> symbolByStockId,
           {Map<String, String> currencyByStockId = const {}}) async =>
       {};
+  @override
+  Future<Decimal?> fetchHistoricalPrice(String symbol, DateTime date,
+          {String? stockCurrency}) async =>
+      null;
 }
 
 void main() {

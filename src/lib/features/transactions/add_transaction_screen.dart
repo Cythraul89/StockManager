@@ -29,6 +29,17 @@ class _AddTransactionScreenState
   DateTime _executedAt = DateTime.now();
   bool _isSaving = false;
 
+  String? _symbol;
+  String? _stockCurrency;
+  bool _isFetchingPrice = false;
+  bool _priceAutoFilled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_loadStockAndFetchPrice);
+  }
+
   @override
   void dispose() {
     _sharesCtrl.dispose();
@@ -36,6 +47,17 @@ class _AddTransactionScreenState
     _feesCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadStockAndFetchPrice() async {
+    final row = await ref
+        .read(databaseProvider)
+        .stocksDao
+        .findById(widget.stockId);
+    if (!mounted || row == null) return;
+    _symbol = row.symbol;
+    _stockCurrency = row.currency;
+    await _autoFetchPrice();
   }
 
   Future<void> _pickDate() async {
@@ -61,6 +83,42 @@ class _AddTransactionScreenState
         time?.minute ?? _executedAt.minute,
       );
     });
+    await _autoFetchPrice();
+  }
+
+  Future<void> _autoFetchPrice() async {
+    if (_symbol == null) return;
+    // Don't overwrite a price the user has typed manually.
+    if (_priceCtrl.text.isNotEmpty && !_priceAutoFilled) return;
+
+    if (!mounted) return;
+    setState(() {
+      _isFetchingPrice = true;
+      _priceAutoFilled = false;
+    });
+
+    try {
+      final price = await ref
+          .read(marketDataServiceProvider)
+          .fetchHistoricalPrice(
+            _symbol!,
+            _executedAt,
+            stockCurrency: _stockCurrency,
+          );
+      if (!mounted) return;
+      if (price != null) {
+        setState(() {
+          _priceCtrl.text = price.toStringAsFixed(4)
+              .replaceAll(RegExp(r'0+$'), '')
+              .replaceAll(RegExp(r'\.$'), '');
+          _priceAutoFilled = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('AddTransaction: price fetch failed: $e');
+    } finally {
+      if (mounted) setState(() => _isFetchingPrice = false);
+    }
   }
 
   Decimal? _parseDecimal(String text) {
@@ -150,9 +208,26 @@ class _AddTransactionScreenState
             const SizedBox(height: 8),
             TextFormField(
               controller: _priceCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Price per share'),
+              decoration: InputDecoration(
+                labelText: 'Price per share',
+                helperText: _priceAutoFilled
+                    ? 'Auto-filled from market data · edit to adjust'
+                    : null,
+                suffixIcon: _isFetchingPrice
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : null,
+              ),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) {
+                if (_priceAutoFilled) setState(() => _priceAutoFilled = false);
+              },
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Required';
                 if (_parseDecimal(v) == null) return 'Invalid number';

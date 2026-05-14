@@ -12,6 +12,7 @@ class MarketDataService {
   static const _yahooBaseUrl =
       'https://query1.finance.yahoo.com/v8/finance/chart/';
   static const _stooqBaseUrl = 'https://stooq.com/q/l/';
+  static const _stooqHistUrl = 'https://stooq.com/q/d/l/';
 
   Future<PriceQuote?> fetchQuote(
     String symbol,
@@ -49,6 +50,30 @@ class MarketDataService {
       }
     }
     return results;
+  }
+
+  /// Returns the closing price for [date], or the current quote if [date] is
+  /// today.  Returns null when no data is available (weekend, holiday, unknown
+  /// symbol).
+  Future<Decimal?> fetchHistoricalPrice(
+    String symbol,
+    DateTime date, {
+    String? stockCurrency,
+  }) async {
+    final today = DateTime.now();
+    final isToday = date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day;
+
+    if (isToday) {
+      final quote = await fetchQuote(symbol, '', stockCurrency: stockCurrency);
+      return quote?.price;
+    }
+
+    final price = await _fetchHistoricalFromYahoo(symbol, date);
+    if (price != null) return price;
+
+    return _fetchHistoricalFromStooq(symbol, date);
   }
 
   Future<PriceQuote?> _fetchFromYahoo(String symbol, String stockId) async {
@@ -126,4 +151,85 @@ class MarketDataService {
       return null;
     }
   }
+
+  Future<Decimal?> _fetchHistoricalFromYahoo(
+      String symbol, DateTime date) async {
+    try {
+      final utc = DateTime.utc(date.year, date.month, date.day);
+      final period1 = utc.millisecondsSinceEpoch ~/ 1000;
+      final period2 =
+          utc.add(const Duration(days: 1)).millisecondsSinceEpoch ~/ 1000;
+
+      final response = await _dio.get<Map<String, dynamic>>(
+        '$_yahooBaseUrl$symbol',
+        queryParameters: {
+          'interval': '1d',
+          'period1': period1,
+          'period2': period2,
+        },
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      final chart = response.data?['chart'] as Map<String, dynamic>?;
+      final result =
+          (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
+      if (result == null) return null;
+
+      final quotes = result['indicators']?['quote'] as List?;
+      final closes =
+          (quotes?.firstOrNull as Map<String, dynamic>?)?['close'] as List?;
+      // Use the last non-null close in the window (handles partial trading days).
+      final close =
+          closes?.reversed.firstWhere((c) => c != null, orElse: () => null);
+      if (close != null) return Decimal.parse(close.toString());
+
+      return null;
+    } on DioException {
+      return null;
+    }
+  }
+
+  Future<Decimal?> _fetchHistoricalFromStooq(
+      String symbol, DateTime date) async {
+    try {
+      final d = '${date.year}'
+          '${date.month.toString().padLeft(2, '0')}'
+          '${date.day.toString().padLeft(2, '0')}';
+
+      final response = await _dio.get<String>(
+        _stooqHistUrl,
+        queryParameters: {'s': symbol, 'd1': d, 'd2': d, 'i': 'd'},
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+          responseType: ResponseType.plain,
+        ),
+      );
+
+      final body = response.data;
+      if (body == null) return null;
+
+      final lines = body.trim().split('\n');
+      if (lines.length < 2) return null;
+
+      // CSV: Date,Open,High,Low,Close,Volume
+      final values = lines[1].split(',');
+      if (values.length < 5) return null;
+
+      final closeStr = values[4].trim();
+      if (closeStr == 'N/D' || closeStr == 'N/A' || closeStr.isEmpty) {
+        return null;
+      }
+
+      return Decimal.tryParse(closeStr);
+    } catch (e) {
+      debugPrint(
+          'MarketDataService: Stooq historical fetch failed for $symbol: $e');
+      return null;
+    }
+  }
 }
+
