@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,6 +17,24 @@ import 'features/stocks/stocks_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  LicenseRegistry.addLicense(() async* {
+    yield const LicenseEntryWithLineBreaks(
+      ['StockManager'],
+      'StockManager — personal stock portfolio tracker\n'
+      'Copyright (C) 2025 StockManager contributors\n\n'
+      'This program is free software: you can redistribute it and/or modify '
+      'it under the terms of the GNU General Public License as published by '
+      'the Free Software Foundation, either version 3 of the License, or '
+      '(at your option) any later version.\n\n'
+      'This program is distributed in the hope that it will be useful, '
+      'but WITHOUT ANY WARRANTY; without even the implied warranty of '
+      'MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the '
+      'GNU General Public License for more details.\n\n'
+      'You should have received a copy of the GNU General Public License '
+      'along with this program. If not, see https://www.gnu.org/licenses/.',
+    );
+  });
 
   // Firebase only needed on Android for FCM push notifications.
   // Requires google-services.json in android/app/ — see README.

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/app_settings.dart';
+import '../../core/utils/app_version.dart';
 import 'settings_provider.dart';
 import 'widgets/settings_section.dart';
 
@@ -72,6 +73,18 @@ class SettingsScreen extends ConsumerWidget {
                   title: const Text('Notification preferences'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/settings/notifications'),
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: 'About',
+              children: [
+                ListTile(
+                  title: const Text('StockManager'),
+                  subtitle: Text('v$appVersion'),
+                  leading: const Icon(Icons.info_outline),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/about'),
                 ),
               ],
             ),
