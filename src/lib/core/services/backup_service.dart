@@ -369,8 +369,8 @@ class BackupService {
           'id': col(r, 0),
           'stockId': col(r, 1),
           'date': col(r, 2),
-          'fromShares': int.parse(col(r, 3)),
-          'toShares': int.parse(col(r, 4)),
+          'fromShares': int.tryParse(col(r, 3)) ?? 0,
+          'toShares': int.tryParse(col(r, 4)) ?? 0,
         },
     ];
 
@@ -450,8 +450,8 @@ class BackupService {
           id: s['id'] as String,
           stockId: s['stockId'] as String,
           date: DateTime.parse(s['date'] as String),
-          fromShares: s['fromShares'] as int,
-          toShares: s['toShares'] as int,
+          fromShares: (s['fromShares'] as num).toInt(),
+          toShares: (s['toShares'] as num).toInt(),
         ));
       }
     });

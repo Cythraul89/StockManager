@@ -132,13 +132,19 @@ class NextcloudService {
       pinnedFingerprint: fingerprint,
     );
     // PROPFIND to the user's DAV root — always present for valid credentials.
-    final response = await client.request<String>(
-      '/remote.php/dav/files/$username/',
-      options: Options(method: 'PROPFIND', headers: {'Depth': '0'}),
-    );
-    if (response.statusCode != null && response.statusCode! >= 400) {
-      throw NextcloudException(
-          'Authentication failed: HTTP ${response.statusCode}');
+    // Dio throws DioException on 4xx/5xx, so we catch and translate to a
+    // NextcloudException with a human-readable message.
+    try {
+      await client.request<String>(
+        '/remote.php/dav/files/$username/',
+        options: Options(method: 'PROPFIND', headers: {'Depth': '0'}),
+      );
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 401 || code == 403) {
+        throw NextcloudException('Authentication failed (HTTP $code)');
+      }
+      rethrow;
     }
   }
 
@@ -229,6 +235,8 @@ class NextcloudService {
   }
 
   // List files at [remotePath] via PROPFIND (WebDAV).
+  // [remotePath] is a logical path (e.g. '/StockManager/'); the DAV base
+  // (/remote.php/dav/files/<username>) is prepended automatically.
   // Returns server-relative href strings as found in the XML response.
   Future<List<String>> listFiles({
     required String serverUrl,
@@ -244,8 +252,13 @@ class NextcloudService {
       pinnedFingerprint: fingerprint,
     );
 
+    final davBase = '/remote.php/dav/files/$username';
+    final fullPath = remotePath.startsWith('/')
+        ? '$davBase$remotePath'
+        : '$davBase/$remotePath';
+
     final response = await client.request<String>(
-      remotePath,
+      fullPath,
       options: Options(
         method: 'PROPFIND',
         headers: {'Depth': '1'},
@@ -317,6 +330,7 @@ class NextcloudService {
   }
 
   // Find the most recent stockmanager_backup_*.zip in [remotePath].
+  // [remotePath] is a logical path; the DAV base is handled by listFiles.
   // Returns null if the directory is empty or unreachable.
   Future<RemoteBackupInfo?> findLatestBackup({
     required String serverUrl,
@@ -324,18 +338,13 @@ class NextcloudService {
     required String password,
     required String remotePath,
   }) async {
-    final davBase = '/remote.php/dav/files/$username';
-    final fullDir = remotePath.startsWith('/')
-        ? '$davBase$remotePath'
-        : '$davBase/$remotePath';
-
     List<String> hrefs;
     try {
       hrefs = await listFiles(
         serverUrl: serverUrl,
         username: username,
         password: password,
-        remotePath: fullDir,
+        remotePath: remotePath,
       );
     } catch (_) {
       return null;

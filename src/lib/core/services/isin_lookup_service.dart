@@ -48,7 +48,7 @@ class IsinLookupService {
       final dataList = first['data'] as List?;
       if (dataList == null || dataList.isEmpty) return null;
 
-      final raw = dataList.cast<Map<String, dynamic>>();
+      final raw = dataList.whereType<Map<String, dynamic>>().toList();
 
       // Prefer equity-type entries; fall back to all entries if none found.
       var equities = raw.where((e) {
@@ -70,8 +70,9 @@ class IsinLookupService {
       return deduped.map((item) {
         final ticker = (item['ticker'] as String?) ?? '';
         final exchCode = (item['exchCode'] as String?) ?? '';
-        final suffix = _yahooSuffix(exchCode).isNotEmpty
-            ? _yahooSuffix(exchCode)
+        final exchangeSuffix = _yahooSuffix(exchCode);
+        final suffix = exchangeSuffix.isNotEmpty
+            ? exchangeSuffix
             : _suffixFromIsin(isin);
         return IsinLookupResult(
           symbol: suffix.isEmpty ? ticker : '$ticker$suffix',

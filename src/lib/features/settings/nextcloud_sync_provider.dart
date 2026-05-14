@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/app_settings.dart';
@@ -29,12 +30,14 @@ class NextcloudSyncState {
     DateTime? lastSyncAt,
     String? error,
     RemoteBackupInfo? pendingRestore,
+    bool clearPendingRestore = false,
   }) =>
       NextcloudSyncState(
         status: status ?? this.status,
         lastSyncAt: lastSyncAt ?? this.lastSyncAt,
         error: error ?? this.error,
-        pendingRestore: pendingRestore ?? this.pendingRestore,
+        pendingRestore:
+            clearPendingRestore ? null : (pendingRestore ?? this.pendingRestore),
       );
 }
 
@@ -64,10 +67,10 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
   }
 
   void _listenToDataChanges() {
-    ref.listen(dataVersionProvider, (_, __) => scheduleSync());
+    ref.listen(dataVersionProvider, (_, __) => _scheduleSync());
   }
 
-  void scheduleSync() {
+  void _scheduleSync() {
     _debounce?.cancel();
     _debounce = Timer(const Duration(seconds: 5), syncNow);
   }
@@ -115,8 +118,10 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
         state = state.copyWith(pendingRestore: remote);
         return;
       }
-    } catch (_) {
-      // Silently ignore — proceed to upload.
+    } catch (e) {
+      // PROPFIND failed (network error, wrong path, etc.) — proceed to upload
+      // so a backup is always created on startup.
+      debugPrint('NextcloudSync: startup check failed: $e');
     }
 
     await syncNow();
@@ -178,11 +183,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
   }
 
   void dismissRestore() {
-    state = NextcloudSyncState(
-      status: state.status,
-      lastSyncAt: state.lastSyncAt,
-      error: state.error,
-    );
+    state = state.copyWith(clearPendingRestore: true);
   }
 
   Future<void> syncNow() async {
@@ -234,10 +235,6 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     required AppSettings settings,
   }) async {
     final service = ref.read(nextcloudServiceProvider);
-    final davBase = '/remote.php/dav/files/${creds.username}';
-    final dir = settings.nextcloudPath;
-    final fullDir =
-        dir.startsWith('/') ? '$davBase$dir' : '$davBase/$dir';
 
     List<String> hrefs;
     try {
@@ -245,7 +242,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
         serverUrl: creds.url,
         username: creds.username,
         password: creds.password,
-        remotePath: fullDir,
+        remotePath: settings.nextcloudPath,
       );
     } catch (_) {
       return; // Best effort — don't fail sync if listing fails

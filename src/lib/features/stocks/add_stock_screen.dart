@@ -36,6 +36,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   String? _selectedCurrency;
   bool _dripEnabled = false;
   bool _isLookingUp = false;
+  bool _showingPicker = false;
   bool _isSaving = false;
   String? _lookupError;
   bool _symbolUnverified = false;
@@ -103,11 +104,18 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
     if (results.length == 1) {
       chosen = results.first;
     } else {
-      setState(() => _isLookingUp = false);
+      setState(() {
+        _isLookingUp = false;
+        _showingPicker = true;
+      });
       final picked = await _showListingPicker(results, priceLabels);
-      if (!mounted || picked == null) return;
+      if (!mounted) return;
+      setState(() {
+        _showingPicker = false;
+        _isLookingUp = picked != null;
+      });
+      if (picked == null) return;
       chosen = picked;
-      setState(() => _isLookingUp = true);
     }
 
     if (!mounted) return;
@@ -255,7 +263,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: FilledButton(
-                    onPressed: _isLookingUp ? null : _lookupIsin,
+                    onPressed: (_isLookingUp || _showingPicker) ? null : _lookupIsin,
                     child: _isLookingUp
                         ? const SizedBox(
                             width: 18,
