@@ -21,10 +21,14 @@ class _NoOpSyncNotifier extends NextcloudSyncNotifier {
 class _NoOpMarketDataService extends MarketDataService {
   _NoOpMarketDataService() : super(Dio());
   @override
-  Future<PriceQuote?> fetchQuote(String symbol, String stockId) async => null;
+  Future<PriceQuote?> fetchQuote(String symbol, String stockId,
+          {String? stockCurrency}) async =>
+      null;
   @override
   Future<Map<String, PriceQuote>> fetchQuotes(
-      Map<String, String> symbolByStockId) async => {};
+          Map<String, String> symbolByStockId,
+          {Map<String, String> currencyByStockId = const {}}) async =>
+      {};
 }
 
 void main() {

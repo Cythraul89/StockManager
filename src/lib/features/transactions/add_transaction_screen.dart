@@ -83,7 +83,7 @@ class _AddTransactionScreenState
         await ref.read(databaseProvider).stocksDao.findById(widget.stockId);
     if (stockRow == null) return;
 
-    final uuid = Uuid();
+    final uuid = const Uuid();
     final tx = StockTransaction(
       id: uuid.v4(),
       stockId: widget.stockId,
