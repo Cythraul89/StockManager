@@ -89,7 +89,7 @@ class MarketDataService {
     try {
       final response = await _dio.get<String>(
         _stooqBaseUrl,
-        queryParameters: {'s': symbol, 'f': 'sd2c', 'e': 'csv'},
+        queryParameters: {'s': symbol, 'f': 'sdc', 'e': 'csv'},
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
@@ -121,7 +121,7 @@ class MarketDataService {
         currency: currency,
         fetchedAt: DateTime.now(),
       );
-    } on DioException catch (e) {
+    } catch (e) {
       debugPrint('MarketDataService: Stooq fetch failed for $symbol: $e');
       return null;
     }

@@ -123,16 +123,16 @@ class StockDetailScreen extends ConsumerWidget {
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: () {
+                                final notifier =
+                                    ref.read(priceQuotesProvider.notifier);
                                 ref
                                     .read(stockActionsProvider)
                                     .clearManualPrice(stock.id)
                                     .then((_) {
                                   final updated = Map<String, PriceQuote>.from(
-                                      ref.read(priceQuotesProvider));
+                                      notifier.state);
                                   updated.remove(stock.id);
-                                  ref
-                                      .read(priceQuotesProvider.notifier)
-                                      .state = updated;
+                                  notifier.state = updated;
                                 });
                               },
                               child: const Text('Clear manual price'),
@@ -264,70 +264,81 @@ class StockDetailScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, Stock stock) {
     final controller = TextEditingController();
     String selectedCurrency = stock.currency;
+    final notifier = ref.read(priceQuotesProvider.notifier);
 
     showDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Set manual price'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Price'),
-                autofocus: true,
+      builder: (ctx) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (ctx, setState) => AlertDialog(
+            title: const Text('Set manual price'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Price',
+                    errorText: errorText,
+                  ),
+                  autofocus: true,
+                  onChanged: (_) {
+                    if (errorText != null) setState(() => errorText = null);
+                  },
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedCurrency,
+                  decoration: const InputDecoration(labelText: 'Currency'),
+                  items: CurrencyFormatter.supportedCurrencies
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => selectedCurrency = v ?? selectedCurrency),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
               ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                value: selectedCurrency,
-                decoration: const InputDecoration(labelText: 'Currency'),
-                items: CurrencyFormatter.supportedCurrencies
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                    .toList(),
-                onChanged: (v) =>
-                    setState(() => selectedCurrency = v ?? selectedCurrency),
+              TextButton(
+                onPressed: () {
+                  final price = Decimal.tryParse(controller.text.trim());
+                  if (price == null || price.compareTo(Decimal.zero) <= 0) {
+                    setState(() => errorText = 'Enter a positive number');
+                    return;
+                  }
+                  final currency = selectedCurrency;
+                  Navigator.of(ctx).pop();
+                  ref
+                      .read(stockActionsProvider)
+                      .setManualPrice(stock.id, price, currency)
+                      .then((_) {
+                    final quote = PriceQuote(
+                      stockId: stock.id,
+                      price: price,
+                      currency: currency,
+                      fetchedAt: DateTime.now(),
+                      isManualOverride: true,
+                    );
+                    final updated =
+                        Map<String, PriceQuote>.from(notifier.state);
+                    updated[stock.id] = quote;
+                    notifier.state = updated;
+                  });
+                },
+                child: const Text('Save'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                final price = Decimal.tryParse(controller.text.trim());
-                if (price == null || price.compareTo(Decimal.zero) <= 0) {
-                  return;
-                }
-                final currency = selectedCurrency;
-                Navigator.of(ctx).pop();
-                ref
-                    .read(stockActionsProvider)
-                    .setManualPrice(stock.id, price, currency)
-                    .then((_) {
-                  final quote = PriceQuote(
-                    stockId: stock.id,
-                    price: price,
-                    currency: currency,
-                    fetchedAt: DateTime.now(),
-                    isManualOverride: true,
-                  );
-                  final updated = Map<String, PriceQuote>.from(
-                      ref.read(priceQuotesProvider));
-                  updated[stock.id] = quote;
-                  ref.read(priceQuotesProvider.notifier).state = updated;
-                });
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
+        );
+      },
+    ).whenComplete(controller.dispose);
   }
 
   Widget _kv(String label, String value, {Color? valueColor}) {

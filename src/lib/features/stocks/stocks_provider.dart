@@ -198,10 +198,12 @@ class StockActions {
       fetchedAt: DateTime.now(),
       manualOverride: const Value(true),
     ));
+    _notifyChange();
   }
 
   Future<void> clearManualPrice(String stockId) async {
     await _db.stocksDao.deletePrice(stockId);
+    _notifyChange();
   }
 
   Future<void> cacheMarketPrice(PriceQuote quote) async {
@@ -215,17 +217,16 @@ class StockActions {
   }
 
   Future<Map<String, PriceQuote>> loadManualPrices() async {
-    final cached = await _db.stocksDao.getAllCachedPrices();
+    final rows = await _db.stocksDao.getManualPrices();
     return {
-      for (final e in cached.entries)
-        if (e.value.manualOverride)
-          e.key: PriceQuote(
-            stockId: e.key,
-            price: e.value.price,
-            currency: e.value.currency,
-            fetchedAt: e.value.fetchedAt,
-            isManualOverride: true,
-          ),
+      for (final r in rows)
+        r.stockId: PriceQuote(
+          stockId: r.stockId,
+          price: r.price,
+          currency: r.currency,
+          fetchedAt: r.fetchedAt,
+          isManualOverride: true,
+        ),
     };
   }
 }

@@ -39,9 +39,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           .fetchQuotes(symbolMap, currencyByStockId: currencyMap);
 
       // Persist fresh market prices to DB cache.
-      for (final q in marketQuotes.values) {
-        await actions.cacheMarketPrice(q);
-      }
+      await Future.wait(marketQuotes.values.map(actions.cacheMarketPrice));
 
       // Fill in manual overrides for stocks with no market data.
       final allQuotes = Map<String, PriceQuote>.from(marketQuotes);

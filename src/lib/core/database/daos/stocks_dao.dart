@@ -57,6 +57,9 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
     return {for (final r in rows) r.stockId: r};
   }
 
+  Future<List<PriceCacheRow>> getManualPrices() =>
+      (select(priceCache)..where((t) => t.manualOverride.equals(true))).get();
+
   Future<void> upsertPrice(PriceCacheCompanion companion) =>
       into(priceCache).insertOnConflictUpdate(companion);
 
