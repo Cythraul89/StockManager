@@ -6,6 +6,8 @@ import '../../core/services/nextcloud_service.dart';
 import 'nextcloud_sync_provider.dart';
 import 'settings_provider.dart';
 
+enum _SyncChoice { restore, upload }
+
 class NextcloudSettingsScreen extends ConsumerStatefulWidget {
   const NextcloudSettingsScreen({super.key});
 
@@ -27,6 +29,7 @@ class _NextcloudSettingsScreenState
   bool _isSaving = false;
   bool _obscurePassword = true;
   String? _connectionStatus;
+  bool _connectionVerified = false;
 
   static const _passwordKey = 'nextcloud_password';
 
@@ -39,11 +42,16 @@ class _NextcloudSettingsScreenState
     super.dispose();
   }
 
+  void _invalidateVerification() {
+    if (_connectionVerified) setState(() => _connectionVerified = false);
+  }
+
   Future<void> _testConnection() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _isTesting = true;
       _connectionStatus = null;
+      _connectionVerified = false;
     });
 
     final service = ref.read(nextcloudServiceProvider);
@@ -54,7 +62,6 @@ class _NextcloudSettingsScreenState
       if (!mounted) return;
 
       if (certInfo != null) {
-        // Self-signed cert — ask user to approve before continuing.
         final approved = await _showCertDialog(certInfo);
         if (approved != true) {
           setState(() => _connectionStatus = 'Certificate not trusted.');
@@ -63,7 +70,6 @@ class _NextcloudSettingsScreenState
         await service.pinCertificate(certInfo.fingerprint);
       }
 
-      // Verify credentials with an authenticated request.
       await service.verifyCredentials(
         serverUrl: url,
         username: _usernameCtrl.text.trim(),
@@ -71,13 +77,63 @@ class _NextcloudSettingsScreenState
       );
 
       if (mounted) {
-        setState(() =>
-            _connectionStatus = 'Connection successful — credentials verified.');
+        setState(() {
+          _connectionStatus = 'Connection verified.';
+          _connectionVerified = true;
+        });
       }
     } catch (e) {
       if (mounted) setState(() => _connectionStatus = 'Connection failed: $e');
     } finally {
       if (mounted) setState(() => _isTesting = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+
+    try {
+      // 1. Persist credentials.
+      await ref
+          .read(secureStorageProvider)
+          .write(key: _passwordKey, value: _passwordCtrl.text);
+
+      final settings = await ref.read(settingsProvider.future);
+      await ref.read(settingsActionsProvider).saveSettings(
+            settings.copyWith(
+              nextcloudUrl: _urlCtrl.text.trim(),
+              nextcloudUsername: _usernameCtrl.text.trim(),
+              nextcloudPath: _pathCtrl.text.trim(),
+            ),
+          );
+
+      if (!mounted) return;
+
+      // 2. Check for any existing backup on the server.
+      final notifier = ref.read(nextcloudSyncProvider.notifier);
+      final remoteBackup = await notifier.findRemoteBackup();
+      if (!mounted) return;
+
+      // 3. Ask what to do (restore vs. upload; null = user dismissed = skip).
+      final choice = await _showSyncChoiceDialog(remoteBackup);
+      if (!mounted) return;
+
+      // 4. Execute the chosen action.
+      if (choice == _SyncChoice.restore && remoteBackup != null) {
+        notifier.setPendingRestore(remoteBackup);
+        await notifier.restoreFromRemote();
+        if (!mounted) return;
+        if (ref.read(nextcloudSyncProvider).status == SyncStatus.error) return;
+      } else if (choice == _SyncChoice.upload) {
+        await notifier.syncNow();
+        if (!mounted) return;
+      }
+
+      // 5. Return to settings.
+      if (mounted) context.pop();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -114,6 +170,49 @@ class _NextcloudSettingsScreenState
         ),
       );
 
+  Future<_SyncChoice?> _showSyncChoiceDialog(RemoteBackupInfo? remote) =>
+      showDialog<_SyncChoice>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(remote != null
+              ? 'Server backup found'
+              : 'Connected to Nextcloud'),
+          content: Text(
+            remote != null
+                ? 'A backup from '
+                    '${remote.backupDate.toIso8601String().substring(0, 10)} '
+                    'was found on your Nextcloud server.\n\n'
+                    'Restore from server, or upload your current data?'
+                : 'No existing backup was found on the server.\n\n'
+                    'Upload a backup of your current data now?',
+          ),
+          actions: remote != null
+              ? [
+                  OutlinedButton(
+                    onPressed: () =>
+                        Navigator.pop(ctx, _SyncChoice.upload),
+                    child: const Text('Upload current data'),
+                  ),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.pop(ctx, _SyncChoice.restore),
+                    child: const Text('Restore from server'),
+                  ),
+                ]
+              : [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Later'),
+                  ),
+                  FilledButton(
+                    onPressed: () =>
+                        Navigator.pop(ctx, _SyncChoice.upload),
+                    child: const Text('Upload now'),
+                  ),
+                ],
+        ),
+      );
+
   Widget _certRow(String label, String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(
@@ -131,73 +230,12 @@ class _NextcloudSettingsScreenState
         ),
       );
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isSaving = true);
-
-    try {
-      final storage = ref.read(secureStorageProvider);
-      await storage.write(key: _passwordKey, value: _passwordCtrl.text);
-
-      final settings = await ref.read(settingsProvider.future);
-      await ref.read(settingsActionsProvider).saveSettings(
-            settings.copyWith(
-              nextcloudUrl: _urlCtrl.text.trim(),
-              nextcloudUsername: _usernameCtrl.text.trim(),
-              nextcloudPath: _pathCtrl.text.trim(),
-            ),
-          );
-
-      if (!mounted) return;
-      // Check if server has a newer backup and offer restore.
-      await ref.read(nextcloudSyncProvider.notifier).checkForRemoteBackup();
-      if (!mounted) return;
-
-      final pendingRestore = ref.read(nextcloudSyncProvider).pendingRestore;
-      if (pendingRestore != null) {
-        final restore = await _showRestoreDialog(pendingRestore);
-        if (!mounted) return;
-        if (restore == true) {
-          await ref.read(nextcloudSyncProvider.notifier).restoreFromRemote();
-          if (!mounted) return;
-          // Stay on screen if restore failed so the user sees the error.
-          if (ref.read(nextcloudSyncProvider).status == SyncStatus.error) return;
-        } else {
-          ref.read(nextcloudSyncProvider.notifier).dismissRestore();
-        }
-      }
-
-      if (mounted) context.pop();
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<bool?> _showRestoreDialog(RemoteBackupInfo info) => showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Server backup found'),
-          content: Text(
-            'A backup from ${info.backupDate.toIso8601String().substring(0, 10)} '
-            'was found on the server — newer than your local data.\n\n'
-            'Restore from server? Your current local data will be replaced.',
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Skip')),
-            FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Restore')),
-          ],
-        ),
-      );
-
   @override
   Widget build(BuildContext context) {
     final settingsAsync = ref.watch(settingsProvider);
     final syncState = ref.watch(nextcloudSyncProvider);
-    final busy = _isTesting || _isSaving || syncState.status == SyncStatus.syncing;
+    final busy =
+        _isTesting || _isSaving || syncState.status == SyncStatus.syncing;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nextcloud Sync')),
@@ -210,6 +248,10 @@ class _NextcloudSettingsScreenState
             _usernameCtrl.text = settings.nextcloudUsername ?? '';
             _pathCtrl.text = settings.nextcloudPath;
             _loaded = true;
+            // Treat existing, previously synced credentials as already verified.
+            _connectionVerified = settings.nextcloudUrl?.isNotEmpty == true &&
+                settings.nextcloudUsername?.isNotEmpty == true &&
+                syncState.lastSyncAt != null;
             ref.read(secureStorageProvider).read(key: _passwordKey).then((pw) {
               if (mounted && pw != null) {
                 setState(() => _passwordCtrl.text = pw);
@@ -222,6 +264,7 @@ class _NextcloudSettingsScreenState
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // ── Pending-restore banner (startup check) ──────────────────
                 if (syncState.pendingRestore != null) ...[
                   Card(
                     color: Theme.of(context).colorScheme.primaryContainer,
@@ -272,6 +315,8 @@ class _NextcloudSettingsScreenState
                   ),
                   const SizedBox(height: 16),
                 ],
+
+                // ── Connection fields ────────────────────────────────────────
                 TextFormField(
                   controller: _urlCtrl,
                   decoration: const InputDecoration(
@@ -279,6 +324,7 @@ class _NextcloudSettingsScreenState
                     hintText: 'https://cloud.example.com',
                   ),
                   keyboardType: TextInputType.url,
+                  onChanged: (_) => _invalidateVerification(),
                   validator: (v) =>
                       v == null || v.trim().isEmpty ? 'Required' : null,
                 ),
@@ -286,6 +332,7 @@ class _NextcloudSettingsScreenState
                 TextFormField(
                   controller: _usernameCtrl,
                   decoration: const InputDecoration(labelText: 'Username'),
+                  onChanged: (_) => _invalidateVerification(),
                   validator: (v) =>
                       v == null || v.trim().isEmpty ? 'Required' : null,
                 ),
@@ -303,6 +350,7 @@ class _NextcloudSettingsScreenState
                     ),
                   ),
                   obscureText: _obscurePassword,
+                  onChanged: (_) => _invalidateVerification(),
                   validator: (v) =>
                       v == null || v.trim().isEmpty ? 'Required' : null,
                 ),
@@ -316,18 +364,37 @@ class _NextcloudSettingsScreenState
                   validator: (v) =>
                       v == null || v.trim().isEmpty ? 'Required' : null,
                 ),
+
+                // ── Connection status ────────────────────────────────────────
                 if (_connectionStatus != null) ...[
                   const SizedBox(height: 8),
-                  Text(
-                    _connectionStatus!,
-                    style: TextStyle(
-                      color: _connectionStatus!.contains('failed') ||
-                              _connectionStatus!.contains('not trusted')
-                          ? Theme.of(context).colorScheme.error
-                          : Colors.green,
-                    ),
+                  Row(
+                    children: [
+                      Icon(
+                        _connectionVerified
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                        size: 16,
+                        color: _connectionVerified
+                            ? Colors.green
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _connectionStatus!,
+                          style: TextStyle(
+                            color: _connectionVerified
+                                ? Colors.green
+                                : Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
+
+                // ── Sync status ──────────────────────────────────────────────
                 if (syncState.lastSyncAt != null ||
                     syncState.status == SyncStatus.error) ...[
                   const SizedBox(height: 8),
@@ -345,7 +412,10 @@ class _NextcloudSettingsScreenState
                     ),
                   ),
                 ],
+
                 const SizedBox(height: 16),
+
+                // ── Actions ──────────────────────────────────────────────────
                 OutlinedButton(
                   onPressed: busy ? null : _testConnection,
                   child: _isTesting
@@ -360,7 +430,8 @@ class _NextcloudSettingsScreenState
                 OutlinedButton.icon(
                   onPressed: busy
                       ? null
-                      : () => ref.read(nextcloudSyncProvider.notifier).syncNow(),
+                      : () =>
+                          ref.read(nextcloudSyncProvider.notifier).syncNow(),
                   icon: syncState.status == SyncStatus.syncing
                       ? const SizedBox(
                           width: 18,
@@ -372,11 +443,25 @@ class _NextcloudSettingsScreenState
                 ),
                 const SizedBox(height: 8),
                 FilledButton(
-                  onPressed: busy ? null : _save,
+                  onPressed: busy || !_connectionVerified ? null : _save,
                   child: _isSaving
-                      ? const CircularProgressIndicator()
-                      : const Text('Save'),
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Confirm & connect'),
                 ),
+                if (!_connectionVerified) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Test the connection before saving',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
             ),
           );
