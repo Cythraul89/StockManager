@@ -29,6 +29,9 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   final _nameCtrl = TextEditingController();
   final _exchangeCtrl = TextEditingController();
 
+  final _currencyFieldKey = GlobalKey<FormFieldState<String>>();
+  final _brokerFieldKey = GlobalKey<FormFieldState<String>>();
+
   String? _selectedBrokerId;
   String? _selectedCurrency;
   bool _dripEnabled = false;
@@ -116,6 +119,9 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
           chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
       _selectedCurrency = chosen.currency.toUpperCase();
       _symbolUnverified = !priceLabels.containsKey(chosen.symbol);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _currencyFieldKey.currentState?.didChange(_selectedCurrency);
     });
   }
 
@@ -305,6 +311,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
             ),
             const SizedBox(height: 8),
             FormField<String>(
+              key: _currencyFieldKey,
               initialValue: _selectedCurrency,
               validator: (v) => v == null ? 'Required' : null,
               builder: (field) => InputDecorator(
@@ -343,10 +350,14 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                   ref.read(secureStorageProvider).read(key: _lastBrokerKey).then((id) {
                     if (mounted && id != null && brokers.any((b) => b.id == id)) {
                       setState(() => _selectedBrokerId = id);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _brokerFieldKey.currentState?.didChange(id);
+                      });
                     }
                   });
                 }
                 return DropdownButtonFormField<String>(
+                  key: _brokerFieldKey,
                   initialValue: _selectedBrokerId,
                   decoration: const InputDecoration(labelText: 'Broker'),
                   items: [

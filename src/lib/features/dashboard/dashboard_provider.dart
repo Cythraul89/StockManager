@@ -118,8 +118,9 @@ PortfolioSummary _buildSummary(
       sharesHeld: pos.sharesHeld,
     );
 
-    final rate = _findRate(rates, stock.currency, preferred);
-    final missingRate = stock.currency != preferred && rate == null;
+    final priceCurrency = quote?.currency ?? stock.currency;
+    final rate = _findRate(rates, priceCurrency, preferred);
+    final missingRate = priceCurrency != preferred && rate == null;
     final convertedPnl = rate != null ? PnlCalculator.convert(pnl, rate) : pnl;
     final convertedDiv = rate != null
         ? DividendCalculator.convert(divSummary, rate)

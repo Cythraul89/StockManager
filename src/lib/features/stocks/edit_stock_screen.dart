@@ -18,9 +18,16 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
   final _symbolCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _exchangeCtrl = TextEditingController();
+  String? _selectedCurrency;
   bool _dripEnabled = false;
   bool _loaded = false;
   bool _isSaving = false;
+
+  static const _currencies = [
+    'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
+    'HKD', 'HUF', 'INR', 'JPY', 'KRW', 'MXN', 'NOK', 'NZD',
+    'PLN', 'SEK', 'SGD', 'USD', 'ZAR',
+  ];
 
   @override
   void dispose() {
@@ -47,6 +54,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
           _symbolCtrl.text = stock.symbol;
           _nameCtrl.text = stock.name;
           _exchangeCtrl.text = stock.exchange;
+          _selectedCurrency = stock.currency;
           _dripEnabled = stock.dripEnabled;
           _loaded = true;
         }
@@ -85,6 +93,21 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                   textCapitalization: TextCapitalization.characters,
                 ),
                 const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedCurrency,
+                  decoration: const InputDecoration(labelText: 'Currency'),
+                  items: [
+                    ..._currencies,
+                    if (_selectedCurrency != null &&
+                        !_currencies.contains(_selectedCurrency))
+                      _selectedCurrency!,
+                  ]
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _selectedCurrency = v),
+                  validator: (v) => v == null ? 'Required' : null,
+                ),
+                const SizedBox(height: 8),
                 SwitchListTile(
                   title: const Text('Dividend Reinvestment (DRIP)'),
                   value: _dripEnabled,
@@ -105,6 +128,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                                     symbol: _symbolCtrl.text.trim().toUpperCase(),
                                     name: _nameCtrl.text.trim(),
                                     exchange: _exchangeCtrl.text.trim().toUpperCase(),
+                                    currency: _selectedCurrency!,
                                     dripEnabled: _dripEnabled,
                                   ),
                                 );
