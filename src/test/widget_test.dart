@@ -10,7 +10,7 @@ import 'package:stock_manager/features/settings/nextcloud_sync_provider.dart';
 import 'package:stock_manager/features/settings/settings_provider.dart';
 import 'package:stock_manager/features/stocks/stocks_provider.dart';
 
-class _NoOpSyncNotifier extends Notifier<NextcloudSyncState> {
+class _NoOpSyncNotifier extends NextcloudSyncNotifier {
   @override
   NextcloudSyncState build() => const NextcloudSyncState();
 }
