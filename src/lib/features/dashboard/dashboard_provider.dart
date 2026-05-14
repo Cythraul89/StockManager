@@ -49,6 +49,7 @@ class StockSummaryItem {
     required this.unrealisedPnlPct,
     required this.annualYieldPct,
     required this.isStale,
+    required this.hasPrice,
   });
 
   final Stock stock;
@@ -61,6 +62,7 @@ class StockSummaryItem {
   final Decimal unrealisedPnlPct;
   final Decimal annualYieldPct;
   final bool isStale;
+  final bool hasPrice;
 }
 
 final portfolioSummaryProvider =
@@ -137,6 +139,7 @@ PortfolioSummary _buildSummary(
       unrealisedPnlPct: pnl.unrealisedPnlPct,
       annualYieldPct: divSummary.annualYieldPct,
       isStale: quote?.withStaleness().isStale ?? true,
+      hasPrice: quote != null,
     ));
   }
 

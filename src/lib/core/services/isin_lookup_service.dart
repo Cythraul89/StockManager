@@ -42,10 +42,28 @@ class IsinLookupService {
       final dataList = first['data'] as List?;
       if (dataList == null || dataList.isEmpty) return null;
 
-      final item = dataList.first as Map<String, dynamic>;
+      // Prefer equity entries with a recognized exchange; fall back to first.
+      Map<String, dynamic>? chosen;
+      for (final raw in dataList.cast<Map<String, dynamic>>()) {
+        final ec = (raw['exchCode'] as String?) ?? '';
+        final st = ((raw['securityType'] as String?) ?? '').toLowerCase();
+        final isEquity = st.contains('common') ||
+            st.contains('ordinary') ||
+            st.contains('share');
+        if (isEquity && _yahooSuffix(ec).isNotEmpty) {
+          chosen = raw;
+          break;
+        }
+        chosen ??= raw;
+      }
+      final item = chosen!;
+
       final ticker = (item['ticker'] as String?) ?? '';
       final exchCode = (item['exchCode'] as String?) ?? '';
-      final suffix = _yahooSuffix(exchCode);
+      // Use exchCode suffix first; fall back to ISIN country code.
+      final suffix = _yahooSuffix(exchCode).isNotEmpty
+          ? _yahooSuffix(exchCode)
+          : _suffixFromIsin(isin);
       return IsinLookupResult(
         symbol: suffix.isEmpty ? ticker : '$ticker$suffix',
         name: (item['name'] as String?) ?? '',
@@ -83,4 +101,16 @@ class IsinLookupService {
         'PW': '.WA', // Warsaw
       }[exchCode] ??
       '';
+
+  // Falls back to Yahoo Finance suffix derived from the ISIN country prefix.
+  static String _suffixFromIsin(String isin) {
+    if (isin.length < 2) return '';
+    return const {
+      'DE': '.DE', 'AT': '.VI', 'GB': '.L',  'FR': '.PA',
+      'NL': '.AS', 'BE': '.BR', 'ES': '.MC', 'IT': '.MI',
+      'CH': '.SW', 'DK': '.CO', 'SE': '.ST', 'FI': '.HE',
+      'NO': '.OL', 'PT': '.LS', 'PL': '.WA', 'JP': '.T',
+      'HK': '.HK', 'AU': '.AX', 'CA': '.TO',
+    }[isin.substring(0, 2)] ?? '';
+  }
 }

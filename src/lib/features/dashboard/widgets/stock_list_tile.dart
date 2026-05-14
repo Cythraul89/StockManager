@@ -13,12 +13,13 @@ class StockListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final pnlColor = item.unrealisedPnlPct.isNegative
-        ? theme.colorScheme.error
+    final noPrice = !item.hasPrice;
+    final pnlColor = noPrice || item.unrealisedPnlPct.isNegative
+        ? (noPrice ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.error)
         : Colors.green;
 
     return ListTile(
-      onTap: () => context.push('/stocks/${item.stock.id}'),
+      onTap: () => context.push('/stocks/\${item.stock.id}'),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       title: Row(
         children: [
@@ -41,12 +42,15 @@ class StockListTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                CurrencyFormatter.format(item.currentValue, item.stock.currency),
+                noPrice
+                    ? '—'
+                    : CurrencyFormatter.format(
+                        item.currentValue, item.stock.currency),
                 style: theme.textTheme.bodyMedium,
               ),
               Row(
                 children: [
-                  if (item.isStale)
+                  if (item.isStale && !noPrice)
                     Padding(
                       padding: const EdgeInsets.only(right: 4),
                       child: Icon(Icons.warning_amber_rounded,
@@ -54,7 +58,10 @@ class StockListTile extends StatelessWidget {
                           color: theme.colorScheme.onSurfaceVariant),
                     ),
                   Text(
-                    CurrencyFormatter.formatPercent(item.unrealisedPnlPct),
+                    noPrice
+                        ? 'No price data'
+                        : CurrencyFormatter.formatPercent(
+                            item.unrealisedPnlPct),
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: pnlColor),
                   ),
@@ -65,8 +72,10 @@ class StockListTile extends StatelessWidget {
         ],
       ),
       subtitle: Text(
-        '${item.sharesHeld.toStringAsFixed(4)} shares '
-        '@ ${CurrencyFormatter.format(item.currentPrice, item.stock.currency)}',
+        noPrice
+            ? '\${item.sharesHeld.toStringAsFixed(4)} shares'
+            : '\${item.sharesHeld.toStringAsFixed(4)} shares '
+                '@ \${CurrencyFormatter.format(item.currentPrice, item.stock.currency)}',
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
