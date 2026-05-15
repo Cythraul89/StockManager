@@ -21,6 +21,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - Each stock is identified by its **ISIN** (International Securities Identification Number).
 - The stock name, ticker symbol, exchange, and currency are **automatically resolved** from the ISIN via a lookup service when adding a stock; the user does not need to enter these manually.
 - Resolved fields can be reviewed and corrected by the user before saving.
+- On the Edit Stock screen, a **Research** button re-runs the ISIN lookup at any time, allowing the user to update the symbol, name, exchange, and currency in one step (e.g. after a ticker change or delisting migration).
 - Stocks can be held in **different currencies**.
 - Stocks can be added and removed in the app.
 
@@ -71,6 +72,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 - Current prices are fetched in **real-time from the Internet** (e.g. via a public market data API).
 - Live data is used solely for display; the app functions without it (see Section 7).
+- For securities not covered by any market data source, the user can set a **manual price override** directly from the stock detail screen. Manual prices are stored locally, never expire, and take precedence over live quotes. They can be cleared at any time to resume live data fetching.
 
 ### 4.4 Buy Price Overview
 
@@ -176,7 +178,14 @@ Features confirmed for a future version. Not in scope for the initial release.
 ### 10.1 Analyst Target Price and Rating ✓ *(delivered)*
 - Each stock detail view displays the **consensus analyst target price** (fetched from Yahoo Finance) alongside the current price.
 - The **analyst consensus rating** (Strong Buy / Buy / Hold / Underperform / Sell) is shown as a coloured chip, including the number of analysts contributing to the consensus.
-- The target price range (low / mean / high) is shown on the stock detail screen.
+- The target price range (low / mean / high) is shown as a gradient range bar with the current price marked.
+- Upside / downside percentage relative to the current price is shown next to the mean target, colour-coded green (upside) or red (downside).
+- A **consensus breakdown bar** shows the proportion of Strong Buy / Buy / Hold / Sell / Strong Sell ratings visually.
+- **52-week high/low** range bar is shown on the same card.
+- **Valuation metrics** — trailing P/E, forward P/E, EPS (TTM) — are shown in the stock's trading currency.
+- All analyst prices are converted from the stock's trading currency to the stock's base currency for display; currency conversion uses the same exchange rate mechanism as portfolio values.
+- A **refresh button** on the analysis card allows the user to force a re-fetch at any time.
+- Data is cached for 10 minutes per stock (no network round-trip on quick navigation away and back).
 
 ### 10.2 Configurable Market Data Provider
 - The user can choose the **market data provider** for analyst consensus data in Settings → Market Data.

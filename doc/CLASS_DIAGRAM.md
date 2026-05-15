@@ -97,7 +97,18 @@ classDiagram
         +Decimal? targetHighPrice
         +String? recommendationKey
         +int? numberOfAnalysts
-        +String? currency
+        +String? financialCurrency
+        +int? strongBuyCount
+        +int? buyCount
+        +int? holdCount
+        +int? sellCount
+        +int? strongSellCount
+        +Decimal? fiftyTwoWeekLow
+        +Decimal? fiftyTwoWeekHigh
+        +Decimal? trailingPE
+        +Decimal? forwardPE
+        +Decimal? trailingEps
+        +copyWith() AnalystData
     }
 
     class PriceQuote {
@@ -105,7 +116,7 @@ classDiagram
         +Decimal price
         +String currency
         +DateTime fetchedAt
-        +bool isStale
+        +bool isManualOverride
         +withStaleness() PriceQuote
     }
 
@@ -463,10 +474,15 @@ nextcloudSyncProvider (NotifierProvider)
         ├── error: String?
         └── pendingRestore: RemoteBackupInfo?
 
-analystDataProvider(stockId)  (FutureProvider.family)
+analystRefreshProvider(stockId)  (StateProvider.family&lt;int, String&gt;)
+  └── incremented by the refresh button on StockDetailScreen
+
+analystDataProvider(stockId)  (FutureProvider.family, keepAlive 10 min)
+  ├── analystRefreshProvider(stockId)  ← re-fetches on increment
   └── marketDataServiceProvider → MarketDataService.fetchAnalystData()
 
 isinLookupServiceProvider  ── IsinLookupService  (must be overridden in ProviderScope)
+  └── used by AddStockScreen and EditStockScreen (ISIN lookup / Research button)
 ```
 
 ---
