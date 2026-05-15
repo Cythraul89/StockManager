@@ -301,7 +301,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 error: (_, __) => _buildAnalystUnavailableCard(context),
                 data: (data) => data != null
                     ? _buildAnalystCard(
-                        context, data, stock.currency, currentPrice)
+                        context, data, stock.currency, currentPrice, rates)
                     : _buildAnalystUnavailableCard(context),
               ),
               const SizedBox(height: 16),
@@ -469,17 +469,47 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     AnalystData data,
     String stockCurrency,
     Decimal? currentPrice,
+    List<ExchangeRate> rates,
   ) {
-    final currency = data.currency ?? stockCurrency;
+    // Convert analyst prices to stockCurrency when Yahoo reports them in a
+    // different currency (e.g. USD for ARM ADR, NOK for Norwegian stocks).
+    final analysisCurrency = data.currency;
+    final ExchangeRate? convRate =
+        (analysisCurrency != null && analysisCurrency != stockCurrency)
+            ? ExchangeRate.find(rates, analysisCurrency, stockCurrency)
+            : null;
+
+    // Prices are comparable to currentPrice (always in stockCurrency) when:
+    //   • currencies already match, OR
+    //   • a conversion rate was found.
+    final pricesInStockCurrency = analysisCurrency == stockCurrency ||
+        (analysisCurrency != null && convRate != null);
+    final currency =
+        pricesInStockCurrency ? stockCurrency : (analysisCurrency ?? stockCurrency);
+
+    // Convert a single price from analysisCurrency → stockCurrency.
+    Decimal conv(Decimal price) =>
+        convRate != null ? convRate.convert(price) : price;
+
+    final targetMean = conv(data.targetMeanPrice);
+    final targetLow =
+        data.targetLowPrice != null ? conv(data.targetLowPrice!) : null;
+    final targetHigh =
+        data.targetHighPrice != null ? conv(data.targetHighPrice!) : null;
+    final fiftyTwoLow =
+        data.fiftyTwoWeekLow != null ? conv(data.fiftyTwoWeekLow!) : null;
+    final fiftyTwoHigh =
+        data.fiftyTwoWeekHigh != null ? conv(data.fiftyTwoWeekHigh!) : null;
+    final epsConverted =
+        data.trailingEps != null ? conv(data.trailingEps!) : null;
+
     final theme = Theme.of(context);
     final (recLabel, recColor) = _recommendationStyle(data.recommendationKey);
 
-    // Upside/downside % vs current price — only when currencies match.
-    final canCompare = currentPrice != null &&
-        currentPrice.isPositive &&
-        (data.currency == null || data.currency == stockCurrency);
+    final canCompare =
+        currentPrice != null && currentPrice.isPositive && pricesInStockCurrency;
     final upside =
-        canCompare ? data.targetMeanPrice.percentChangeFrom(currentPrice) : null;
+        canCompare ? targetMean.percentChangeFrom(currentPrice) : null;
     final upsideColor = upside == null
         ? null
         : (upside.isNegative ? theme.colorScheme.error : Colors.green.shade600);
@@ -493,9 +523,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final hasConsensus = totalConsensus > 0;
 
     final hasValuation =
-        data.trailingPE != null || data.forwardPE != null || data.trailingEps != null;
-    final has52Week =
-        data.fiftyTwoWeekLow != null && data.fiftyTwoWeekHigh != null;
+        data.trailingPE != null || data.forwardPE != null || epsConverted != null;
+    final has52Week = fiftyTwoLow != null && fiftyTwoHigh != null;
 
     return Card(
       child: Padding(
@@ -545,7 +574,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        CurrencyFormatter.format(data.targetMeanPrice, currency),
+                        CurrencyFormatter.format(targetMean, currency),
                         style: theme.textTheme.bodyMedium
                             ?.copyWith(color: upsideColor),
                       ),
@@ -565,11 +594,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
             ),
 
             // ── Analyst target range bar ───────────────────────────────────
-            if (data.targetLowPrice != null && data.targetHighPrice != null)
+            if (targetLow != null && targetHigh != null)
               _buildRangeBar(
                 context,
-                low: data.targetLowPrice!,
-                high: data.targetHighPrice!,
+                low: targetLow,
+                high: targetHigh,
                 current: canCompare ? currentPrice : null,
                 currency: currency,
               ),
@@ -580,8 +609,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               _analyticsSubheader(context, '52-Week Range'),
               _buildRangeBar(
                 context,
-                low: data.fiftyTwoWeekLow!,
-                high: data.fiftyTwoWeekHigh!,
+                low: fiftyTwoLow!,
+                high: fiftyTwoHigh!,
                 current: canCompare ? currentPrice : null,
                 currency: currency,
               ),
@@ -604,9 +633,9 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               if (data.forwardPE != null)
                 _kv(context, 'P/E (forward)',
                     '${data.forwardPE!.toStringFixed(1)}×'),
-              if (data.trailingEps != null)
+              if (epsConverted != null)
                 _kv(context, 'EPS (TTM)',
-                    CurrencyFormatter.format(data.trailingEps!, currency)),
+                    CurrencyFormatter.format(epsConverted, currency)),
             ],
           ],
         ),
