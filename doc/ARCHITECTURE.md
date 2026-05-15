@@ -344,13 +344,42 @@ Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchD
 
 ### 5.9 Analyst Consensus Data
 
-`MarketDataService.fetchAnalystData(symbol)` fetches the `financialData` module from Yahoo Finance's `quoteSummary` API and returns an `AnalystData` model containing:
-- `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`
-- `recommendationKey` (one of `strongBuy` / `buy` / `hold` / `underperform` / `sell`)
-- `numberOfAnalysts`
-- `currency`
+`MarketDataService.fetchAnalystData(symbol)` fetches four modules from Yahoo Finance's v10 `quoteSummary` API in a single request:
 
-The result is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen, showing the recommendation as a coloured chip and the target price range. The provider re-fetches on every navigation to the screen; data is not persisted locally.
+| Module | Fields extracted |
+|---|---|
+| `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency` |
+| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE` |
+| `defaultKeyStatistics` | `trailingEps` |
+| `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
+
+The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen. Data is not persisted locally; the provider re-fetches on every navigation to the screen.
+
+#### Yahoo Finance session (GDPR)
+
+Accessing the quoteSummary API requires a valid session cookie set (`GUC`, `A1`, `A3`, etc.) and a `crumb` query parameter. EU users are redirected through a GDPR consent flow before reaching `finance.yahoo.com`. `_ensureSession()` handles this by:
+
+1. Following the `finance.yahoo.com → guce.yahoo.com → consent.yahoo.com` redirect chain manually (`followRedirects: false`) and collecting `Set-Cookie` headers at each hop.
+2. If the landing page contains a GDPR consent form, POSTing `csrfToken + sessionId + agree=agree` and following the post-consent redirect chain, again gathering cookies.
+3. Fetching the crumb from `query2.finance.yahoo.com/v1/test/getcrumb` using the accumulated cookies.
+
+Cookies are extracted directly from `Set-Cookie` response headers (not via a cookie jar) because the GDPR flow sets cookies on `consent.yahoo.com`, which a domain-scoped jar would not return for `finance.yahoo.com` requests. The session (cookie string + crumb) is cached for 55 minutes.
+
+#### Analyst price currency conversion
+
+Yahoo Finance returns analyst price targets in the stock's **trading currency** (the same denomination as the live price quote), regardless of what the `financialCurrency` field says. `financialCurrency` reflects the company's financial-reporting currency and is unreliable as a conversion key (e.g. CADLR.OL reports `financialCurrency=EUR` but all prices are in NOK).
+
+`_buildAnalystCard` therefore uses `quoteCurrency` (the currency of the cached `PriceQuote`) as the effective analyst currency. If `quoteCurrency ≠ stock.currency`, it calls `ExchangeRate.find(rates, quoteCurrency, stockCurrency)` to convert all monetary fields (target mean/low/high, 52-week range, EPS) before display. The `canCompare` flag controls whether upside/downside % and the position marker on range bars are shown (they require a successful conversion so that `currentPrice` and the analyst targets are in the same unit).
+
+#### Analysis card UI
+
+| Section | Details |
+|---|---|
+| Recommendation chip | Coloured chip: Strong Buy (dark green) · Buy (green) · Hold (amber) · Underperform (orange) · Sell/Strong Sell (red) |
+| Target price | Mean target with upside/downside % in matching colour; low–high gradient range bar with current-price marker |
+| 52-Week Range | Same gradient bar widget, same current-price marker |
+| Consensus | Stacked colour bar (proportional to analyst counts) with a text legend |
+| Valuation | Trailing P/E · Forward P/E · EPS (TTM), converted to stock currency |
 
 ### 5.10 Manual Price Override
 
