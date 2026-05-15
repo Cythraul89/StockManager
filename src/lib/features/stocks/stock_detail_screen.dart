@@ -493,8 +493,9 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               icon: const Icon(Icons.refresh, size: 20),
               tooltip: 'Refresh analysis',
               visualDensity: VisualDensity.compact,
-              onPressed: () =>
-                  ref.invalidate(analystDataProvider(widget.id)),
+              onPressed: () => ref
+                  .read(analystRefreshProvider(widget.id).notifier)
+                  .update((n) => n + 1),
             ),
           ],
         ),

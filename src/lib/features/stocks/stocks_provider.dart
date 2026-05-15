@@ -100,8 +100,17 @@ final allDividendsProvider = FutureProvider<List<Dividend>>((ref) async {
 
 // ── Analyst data (fetched on demand, keyed by stockId) ───────────────────────────
 
+// Incrementing this counter forces analystDataProvider to re-fetch.
+// Using a StateProvider rather than ref.invalidate avoids interference with
+// the keepAlive link inside the FutureProvider.
+final analystRefreshProvider =
+    StateProvider.family<int, String>((ref, stockId) => 0);
+
 final analystDataProvider =
     FutureProvider.family<AnalystData?, String>((ref, stockId) async {
+  // Re-run whenever the manual refresh counter is incremented.
+  ref.watch(analystRefreshProvider(stockId));
+
   // Keep the result alive for 10 minutes so navigating away and back does not
   // trigger a full Yahoo Finance round-trip on every visit.
   final link = ref.keepAlive();

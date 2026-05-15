@@ -148,8 +148,8 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
     );
   }
 
-  // Fire-and-forget: fetches a fresh quote after a symbol/currency change and
-  // writes it into the in-memory cache so the detail screen sees it immediately.
+  // Fetches a fresh quote for the new symbol and updates the in-memory cache.
+  // Must be awaited before router.pop() — using ref after disposal is unsafe.
   Future<void> _refreshPriceAfterSave(
       String stockId, String symbol, String currency) async {
     try {
@@ -307,12 +307,24 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                                   ),
                                 );
                             // When symbol or currency changed, the cached price
-                            // and analyst data are stale — refresh both.
+                            // and analyst data are stale — refresh both before
+                            // popping so ref is still valid during the fetch.
                             if (newSymbol != stock.symbol ||
                                 newCurrency != stock.currency) {
-                              ref.invalidate(analystDataProvider(stock.id));
-                              _refreshPriceAfterSave(
+                              // Clear the stale price immediately so the
+                              // detail screen never shows a wrong-symbol value.
+                              final notifier =
+                                  ref.read(priceQuotesProvider.notifier);
+                              notifier.state =
+                                  Map.from(notifier.state)..remove(stock.id);
+                              // Await fetch — must complete before pop() disposes ref.
+                              await _refreshPriceAfterSave(
                                   stock.id, newSymbol, newCurrency);
+                              // Trigger analyst re-fetch via the refresh counter.
+                              ref
+                                  .read(analystRefreshProvider(stock.id)
+                                      .notifier)
+                                  .update((n) => n + 1);
                             }
                             if (mounted) router.pop();
                           } finally {
