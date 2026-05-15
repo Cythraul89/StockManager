@@ -280,9 +280,25 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               const SizedBox(height: 16),
 
               // Analysis card
-              if (analystAsync.value != null)
-                _buildAnalystCard(context, analystAsync.value!, stock.currency),
-              if (analystAsync.value != null) const SizedBox(height: 16),
+              analystAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+                error: (_, __) => const SizedBox.shrink(),
+                data: (data) => data != null
+                    ? Column(children: [
+                        _buildAnalystCard(context, data, stock.currency),
+                        const SizedBox(height: 16),
+                      ])
+                    : const SizedBox.shrink(),
+              ),
 
               _sectionHeader(
                 context,
