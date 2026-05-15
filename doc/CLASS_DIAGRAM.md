@@ -61,11 +61,14 @@ classDiagram
         +String stockId
         +DividendType type
         +DateTime date
-        +Decimal? amountPerShare
-        +Decimal totalAmount
+        +Decimal amountPerShare
+        +Decimal? totalAmount
         +String currency
-        +Decimal withholdingTax
+        +Decimal? withholdingTax
         +String? notes
+        +DividendSource source
+        +bool confirmed
+        +isPendingConfirmation() bool
         +netAmount() Decimal
         +copyWith() Dividend
     }
@@ -74,6 +77,27 @@ classDiagram
         <<enumeration>>
         paid
         expected
+    }
+
+    class DividendSource {
+        <<enumeration>>
+        manual
+        auto
+    }
+
+    class FetchedDividend {
+        +DateTime date
+        +Decimal amountPerShare
+        +bool isPaid
+    }
+
+    class AnalystData {
+        +Decimal targetMeanPrice
+        +Decimal? targetLowPrice
+        +Decimal? targetHighPrice
+        +String? recommendationKey
+        +int? numberOfAnalysts
+        +String? currency
     }
 
     class PriceQuote {
@@ -125,6 +149,7 @@ classDiagram
     StockSplit "many" --> "1" Stock : belongs to
     Dividend "many" --> "1" Stock : belongs to
     Dividend --> DividendType
+    Dividend --> DividendSource
     PriceQuote --> Stock : cached for
     AppSettings --> AppTheme
 
@@ -134,6 +159,7 @@ classDiagram
 
     class PortfolioCalculator {
         +calculate(txs, splits) PositionSummary$
+        +sharesAtDate(txs, splits, asOf) Decimal$
         +splitMultiplierAfter(txDate, splits) Decimal$
     }
 
@@ -188,8 +214,11 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class MarketDataService {
-        +fetchQuote(symbol, stockId) PriceQuote
+        +fetchQuote(symbol, stockId) PriceQuote?
         +fetchQuotes(symbolMap) Map
+        +fetchHistoricalPrice(symbol, date) Decimal?
+        +fetchDividends(symbol) List~FetchedDividend~
+        +fetchAnalystData(symbol) AnalystData?
     }
 
     class CurrencyService {
@@ -278,6 +307,8 @@ classDiagram
 
     %% Service outputs
     MarketDataService --> PriceQuote : produces
+    MarketDataService --> FetchedDividend : produces
+    MarketDataService --> AnalystData : produces
     CurrencyService --> ExchangeRate : produces
     IsinLookupService --> IsinLookupResult : produces
     NotificationService ..> Stock : alerts on
@@ -289,7 +320,7 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 1
+        +schemaVersion = 3
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
@@ -338,6 +369,8 @@ classDiagram
         +getPaid() Future~List~Dividend~~
         +getExpected() Future~List~Dividend~~
         +getAll() Future~List~Dividend~~
+        +findById(id) Future~DividendRow~~
+        +findByStockAndDate(stockId, date) Future~DividendRow~~
         +insert(div) Future
         +updateRow(div) Future
         +deleteById(id) Future
@@ -407,8 +440,11 @@ portfolioSummaryProvider (FutureProvider)
        └── DividendCalculator.calculate() + convert()
 
 stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStock,
-                                         addTransaction, deleteTransaction,
-                                         addDividend, deleteDividend)
+                                         addTransaction, updateTransaction, deleteTransaction,
+                                         addDividend, updateDividend, deleteDividend,
+                                         syncDividends, confirmDividend,
+                                         setManualPrice, clearManualPrice, cacheMarketPrice,
+                                         loadManualPrices)
 
 settingsActionsProvider ─ SettingsActions (saveSettings, setManualRate,
                                            deleteRate, cacheRates)
@@ -427,6 +463,9 @@ nextcloudSyncProvider (NotifierProvider)
         ├── error: String?
         └── pendingRestore: RemoteBackupInfo?
 
+analystDataProvider(stockId)  (FutureProvider.family)
+  └── marketDataServiceProvider → MarketDataService.fetchAnalystData()
+
 isinLookupServiceProvider  ── IsinLookupService  (must be overridden in ProviderScope)
 ```
 
@@ -442,9 +481,11 @@ ShellRoute (AdaptiveShell)
 ├── /stocks                        StocksScreen
 │   ├── /stocks/add                AddStockScreen
 │   └── /stocks/:id                StockDetailScreen
-│       ├── /stocks/:id/edit       EditStockScreen
-│       ├── /stocks/:id/transactions/add   AddTransactionScreen
-│       └── /stocks/:id/dividends/add      AddDividendScreen
+│       ├── /stocks/:id/edit                          EditStockScreen
+│       ├── /stocks/:id/transactions/add              AddTransactionScreen
+│       ├── /stocks/:id/transactions/:txId/edit       EditTransactionScreen
+│       ├── /stocks/:id/dividends/add                 AddDividendScreen
+│       └── /stocks/:id/dividends/:divId/edit         EditDividendScreen
 │
 ├── /dividends                     DividendsScreen
 │

@@ -120,10 +120,12 @@ features/<name>/
 | type | ENUM | paid \| expected |
 | date | DATE | payment date or expected date |
 | amount_per_share | DECIMAL | |
-| total_amount | DECIMAL? | null for expected (calculated on read) |
+| total_amount | DECIMAL? | null for expected (estimated on display) |
 | currency | TEXT | |
-| withholding_tax | DECIMAL? | |
+| withholding_tax | DECIMAL? | pre-filled from ISIN country; user-adjustable |
 | notes | TEXT? | |
+| source | ENUM | manual \| auto; default manual |
+| confirmed | BOOL | false = awaiting user confirmation (auto paid only); default true |
 
 **price_cache**
 | Column | Type | Notes |
@@ -193,6 +195,8 @@ At **≥ 600 dp** the `adaptive_shell` switches to the desktop shell (persistent
 
 ### 5.2 Split-Adjusted Calculations
 Raw transaction rows are never modified when a stock split is recorded. `PortfolioCalculator.calculate()` applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable. The helper `PortfolioCalculator.splitMultiplierAfter(txDate, splits)` is a public static method so that `PnlCalculator` can share the same logic without duplication.
+
+For historical queries (e.g. "how many shares did the user hold on dividend date D?"), `PortfolioCalculator.sharesAtDate(transactions, splits, asOf)` computes the position at a past date by filtering transactions to those on or before `asOf` and applying only the splits that occurred between each transaction date and `asOf`. This is used by `StockActions.syncDividends` to filter out dividends for periods when no shares were held.
 
 ### 5.3 Currency Conversion
 Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline, the most recent cached rate is used with a staleness indicator shown in the UI. Manual overrides stored in the database bypass the TTL entirely.
@@ -321,7 +325,34 @@ Key-value pairs, no fixed column count.
 | D | Source | `live` or `manual override` |
 | E | Fetched / set at | ISO 8601 timestamp |
 
-### 5.8 Manual Price Override
+### 5.8 Auto-Fetched Dividends
+
+Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchDividends(symbol)`, which queries two Yahoo Finance endpoints:
+1. **Paid history** (`chart/{symbol}?events=dividends&range=5y`) — returns up to 5 years of ex-dividend events.
+2. **Expected next dividend** (`quoteSummary/{symbol}?modules=calendarEvents`) — returns the next declared dividend date; the amount is estimated from the most recent paid dividend.
+
+`StockActions.syncDividends` filters the results:
+- Skips dates already present in the database (deduplication by stock ID + date).
+- Skips dates when `PortfolioCalculator.sharesAtDate()` returns zero (the user held no shares).
+- Pre-fills `totalAmount` as `amountPerShare × sharesAtDate` and `withholdingTax` from `withholdingTaxRate(isin)` (see below).
+- Paid auto-fetched dividends are inserted with `confirmed = false` and shown in a "Pending confirmation" section requiring user review before inclusion in calculations.
+- Expected dividends are inserted immediately as `confirmed = true` (they are estimates, not real cash flows).
+
+#### Withholding tax pre-fill
+
+`withholdingTaxRate(isin)` uses the two-character ISO 3166-1 country code embedded in the ISIN to look up standard dividend withholding tax (DBA) rates. Values are estimates based on common treaty rates for German retail investors and should be verified against broker tax documents. The function returns `Decimal.zero` for unrecognised country codes; users should manually enter the correct rate in that case.
+
+### 5.9 Analyst Consensus Data
+
+`MarketDataService.fetchAnalystData(symbol)` fetches the `financialData` module from Yahoo Finance's `quoteSummary` API and returns an `AnalystData` model containing:
+- `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`
+- `recommendationKey` (one of `strongBuy` / `buy` / `hold` / `underperform` / `sell`)
+- `numberOfAnalysts`
+- `currency`
+
+The result is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen, showing the recommendation as a coloured chip and the target price range. The provider re-fetches on every navigation to the screen; data is not persisted locally.
+
+### 5.10 Manual Price Override
 
 For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded funds), the user can set a price manually from the Stock Detail screen. Manual prices:
 
@@ -333,7 +364,7 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 
 `MarketDataService.fetchQuote()` accepts an optional `stockCurrency` parameter used for the Stooq fallback. `fetchQuotes()` accepts an optional `currencyByStockId` map so `DashboardScreen` can pass currencies in bulk.
 
-### 5.9 Nextcloud Sync Strategy
+### 5.11 Nextcloud Sync Strategy
 
 #### Backup format
 Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
@@ -371,7 +402,7 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 | `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
-### 5.9 Self-Signed Certificate Support
+### 5.12 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
 2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
@@ -390,8 +421,10 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /stocks/:id              → Stock detail
 /stocks/:id/edit         → Edit stock
 /stocks/add              → Add stock
-/stocks/:id/transactions/add   → Add transaction
-/stocks/:id/dividends/add      → Add dividend (paid or expected)
+/stocks/:id/transactions/add              → Add transaction
+/stocks/:id/transactions/:txId/edit       → Edit / delete transaction
+/stocks/:id/dividends/add                 → Add dividend (paid or expected)
+/stocks/:id/dividends/:divId/edit         → Edit / delete dividend
 /dividends               → Dividend overview
 /brokers                 → Broker list
 /brokers/add             → Add broker
