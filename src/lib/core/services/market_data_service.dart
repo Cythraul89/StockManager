@@ -1,7 +1,5 @@
-import 'package:cookie_jar/cookie_jar.dart';
 import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
-import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/analyst_data.dart';
@@ -10,10 +8,10 @@ import '../models/price_quote.dart';
 
 class MarketDataService {
   MarketDataService(this._dio) {
-    _cookieJar = CookieJar();
     // Dedicated Dio instance for authenticated Yahoo Finance requests.
-    // The CookieManager stores cookies from every response (including
-    // redirects) automatically — required for the EU GDPR consent flow.
+    // followRedirects is left at the default (true) for normal requests;
+    // _ensureSession overrides it per-request to collect Set-Cookie headers
+    // from every hop in the GDPR consent redirect chain.
     _yahooDio = Dio(BaseOptions(
       headers: {
         'User-Agent': _userAgent,
@@ -23,11 +21,10 @@ class MarketDataService {
       },
       sendTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
-    ))..interceptors.add(CookieManager(_cookieJar));
+    ));
   }
 
   final Dio _dio;
-  late final CookieJar _cookieJar;
   late final Dio _yahooDio;
 
   static const _yahooBaseUrl =
@@ -45,9 +42,12 @@ class MarketDataService {
   String? _sessionCookie; // finance.yahoo.com cookies sent explicitly with quoteSummary
   DateTime? _sessionInitAt;
 
-  /// Ensures a valid Yahoo Finance session (crumb).
-  /// The cookie jar on [_yahooDio] handles all cookie management, including
-  /// the EU GDPR consent redirect, automatically.
+  /// Ensures a valid Yahoo Finance session (crumb + session cookies).
+  ///
+  /// Cookies are extracted directly from Set-Cookie response headers at every
+  /// redirect hop rather than relying on a cookie jar.  This is necessary
+  /// because the EU GDPR consent flow sets cookies on consent.yahoo.com (not
+  /// finance.yahoo.com), so domain-based jar lookups would return nothing.
   Future<void> _ensureSession() async {
     if (_crumb != null &&
         _sessionInitAt != null &&
@@ -56,24 +56,54 @@ class MarketDataService {
     }
 
     try {
-      // Step 1: visit Yahoo Finance. EU users are redirected to the GDPR
-      // consent page; the cookie jar stores cookies from every hop.
-      final homeResp = await _yahooDio.get<String>(
-        'https://finance.yahoo.com/',
-        options: Options(responseType: ResponseType.plain),
-      );
+      // name→value map built from every Set-Cookie header we encounter.
+      final cookieMap = <String, String>{};
+      void gather(Response<dynamic> response) {
+        for (final sc in response.headers.map['set-cookie'] ?? <String>[]) {
+          final nv = sc.split(';').first.trim();
+          final eq = nv.indexOf('=');
+          if (eq > 0) {
+            cookieMap[nv.substring(0, eq).trim()] =
+                nv.substring(eq + 1).trim();
+          }
+        }
+      }
 
-      final body = homeResp.data ?? '';
-      debugPrint(
-          'MarketDataService: homepage status=${homeResp.statusCode} '
-          'body_len=${body.length} '
-          'has_csrfToken=${body.contains('csrfToken')}');
+      // ── Step 1: reach Yahoo Finance, following redirects manually ─────────
+      // EU users are redirected to consent.yahoo.com.  We use
+      // followRedirects: false at every hop so Set-Cookie headers from
+      // intermediate 302 responses are visible and captured.
+      var nextUrl = 'https://finance.yahoo.com/';
+      String pageBody = '';
+      for (var hop = 0; hop < 8 && nextUrl.isNotEmpty; hop++) {
+        final resp = await _yahooDio.get<String>(
+          nextUrl,
+          options: Options(
+            responseType: ResponseType.plain,
+            followRedirects: false,
+            validateStatus: (s) => s != null && s < 400,
+          ),
+        );
+        gather(resp);
+        final status = resp.statusCode ?? 0;
+        final location = resp.headers['location']?.first;
+        debugPrint('MarketDataService: GET $nextUrl → $status');
+        if (status >= 300 && location != null) {
+          nextUrl = location;
+        } else {
+          pageBody = resp.data ?? '';
+          nextUrl = '';
+        }
+      }
+      debugPrint('MarketDataService: landing page '
+          'has_csrfToken=${pageBody.contains('csrfToken')} '
+          'cookies_so_far=${cookieMap.length}');
 
-      // EU/GDPR: if we landed on the consent page, submit acceptance.
-      if (body.contains('csrfToken')) {
-        final csrfToken = _extractHidden(body, 'csrfToken');
-        final sessionId = _extractHidden(body, 'sessionId');
-        final originalDoneUrl = _extractHidden(body, 'originalDoneUrl');
+      // ── Step 2: GDPR consent flow ─────────────────────────────────────────
+      if (pageBody.contains('csrfToken')) {
+        final csrfToken = _extractHidden(pageBody, 'csrfToken');
+        final sessionId = _extractHidden(pageBody, 'sessionId');
+        final originalDoneUrl = _extractHidden(pageBody, 'originalDoneUrl');
         debugPrint('MarketDataService: GDPR consent page — '
             'csrfToken=${csrfToken != null} sessionId=${sessionId != null}');
 
@@ -88,11 +118,6 @@ class MarketDataService {
             'agree=agree',
           ].join('&');
 
-          // Do NOT auto-follow the redirect: Yahoo sets the session cookies
-          // in the 302 response's Set-Cookie headers. The CookieManager
-          // only sees the final response when Dio auto-follows, so those
-          // cookies would be lost. By disabling redirect-following here the
-          // interceptor captures the 302 cookies, then we follow manually.
           final consentResp = await _yahooDio.post<String>(
             'https://consent.yahoo.com/v2/collectConsent',
             data: payload,
@@ -103,40 +128,39 @@ class MarketDataService {
               validateStatus: (s) => s != null && s < 400,
             ),
           );
+          gather(consentResp);
           debugPrint('MarketDataService: consent POST '
               'status=${consentResp.statusCode}');
 
-          // Follow the redirect so the cookie jar also captures any
-          // yahoo.com session cookies set by finance.yahoo.com.
-          final location = consentResp.headers['location']?.first;
-          if (location != null) {
-            await _yahooDio.get<void>(
-              location,
+          // Follow the post-consent redirect chain, gathering cookies at
+          // each hop (Yahoo typically redirects back to finance.yahoo.com).
+          var postConsentUrl = consentResp.headers['location']?.first;
+          for (var hop = 0; postConsentUrl != null && hop < 5; hop++) {
+            final resp = await _yahooDio.get<String>(
+              postConsentUrl,
               options: Options(
-                followRedirects: true,
+                responseType: ResponseType.plain,
+                followRedirects: false,
                 validateStatus: (s) => s != null && s < 400,
               ),
             );
+            gather(resp);
+            final status = resp.statusCode ?? 0;
+            debugPrint(
+                'MarketDataService: post-consent hop $hop → $status');
+            postConsentUrl =
+                status >= 300 ? resp.headers['location']?.first : null;
           }
         }
       }
 
-      // Extract finance.yahoo.com cookies explicitly. The cookie jar stores
-      // them under that domain, but they may not match query2.finance.yahoo.com
-      // due to domain-scoping rules in the jar's RFC 6265 implementation.
-      // We send them manually on every quoteSummary request instead.
-      final yahooFinanceCookies = await _cookieJar.loadForRequest(
-          Uri.parse('https://finance.yahoo.com/'));
-      _sessionCookie = yahooFinanceCookies.isEmpty
+      _sessionCookie = cookieMap.isEmpty
           ? null
-          : yahooFinanceCookies.map((c) => '${c.name}=${c.value}').join('; ');
-      debugPrint(
-          'MarketDataService: finance.yahoo.com cookies '
-          '(${yahooFinanceCookies.length}): '
-          '${yahooFinanceCookies.map((c) => c.name).toList()}');
+          : cookieMap.entries.map((e) => '${e.key}=${e.value}').join('; ');
+      debugPrint('MarketDataService: gathered ${cookieMap.length} session '
+          'cookies: ${cookieMap.keys.toList()}');
 
-      // Step 2: fetch the crumb. We send the finance.yahoo.com cookies
-      // explicitly here too, since the jar may not forward them automatically.
+      // ── Step 3: fetch crumb ───────────────────────────────────────────────
       final crumbResp = await _yahooDio.get<String>(
         'https://query2.finance.yahoo.com/v1/test/getcrumb',
         options: Options(
