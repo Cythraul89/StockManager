@@ -87,17 +87,36 @@ class MarketDataService {
             'agree=agree',
           ].join('&');
 
-          // The cookie jar captures cookies from the POST and from every
-          // redirect hop back to finance.yahoo.com.
-          final consentResp = await _yahooDio.post<void>(
+          // Do NOT auto-follow the redirect: Yahoo sets the session cookies
+          // in the 302 response's Set-Cookie headers. The CookieManager
+          // only sees the final response when Dio auto-follows, so those
+          // cookies would be lost. By disabling redirect-following here the
+          // interceptor captures the 302 cookies, then we follow manually.
+          final consentResp = await _yahooDio.post<String>(
             'https://consent.yahoo.com/v2/collectConsent',
             data: payload,
             options: Options(
               contentType: 'application/x-www-form-urlencoded',
+              responseType: ResponseType.plain,
+              followRedirects: false,
+              validateStatus: (s) => s != null && s < 400,
             ),
           );
           debugPrint('MarketDataService: consent POST '
               'status=${consentResp.statusCode}');
+
+          // Follow the redirect so the cookie jar also captures any
+          // yahoo.com session cookies set by finance.yahoo.com.
+          final location = consentResp.headers['location']?.first;
+          if (location != null) {
+            await _yahooDio.get<void>(
+              location,
+              options: Options(
+                followRedirects: true,
+                validateStatus: (s) => s != null && s < 400,
+              ),
+            );
+          }
         }
       }
 
