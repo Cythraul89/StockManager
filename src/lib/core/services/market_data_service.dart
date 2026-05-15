@@ -30,7 +30,7 @@ class MarketDataService {
   static const _yahooBaseUrl =
       'https://query1.finance.yahoo.com/v8/finance/chart/';
   static const _yahooQuoteSummaryUrl =
-      'https://query2.finance.yahoo.com/v11/finance/quoteSummary/';
+      'https://query2.finance.yahoo.com/v10/finance/quoteSummary/';
   static const _stooqBaseUrl = 'https://stooq.com/q/l/';
   static const _stooqHistUrl = 'https://stooq.com/q/d/l/';
 
@@ -195,6 +195,9 @@ class MarketDataService {
   Map<String, dynamic> _quoteSummaryParams(Map<String, dynamic> base) => {
         ...base,
         if (_crumb != null) 'crumb': _crumb!,
+        'corsDomain': 'finance.yahoo.com',
+        'lang': 'en-US',
+        'region': 'US',
       };
 
   Future<PriceQuote?> fetchQuote(
