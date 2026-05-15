@@ -31,6 +31,35 @@ class StockDetailScreen extends ConsumerStatefulWidget {
 class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   bool _isSyncingDividends = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchPriceOnLoad();
+  }
+
+  // Fetches a fresh quote for this stock when the screen opens. Skipped when a
+  // non-stale quote is already in the in-memory cache (e.g. put there by the
+  // Dashboard). This ensures the price shows correctly when navigating directly
+  // from the stock list without visiting the Dashboard first.
+  Future<void> _fetchPriceOnLoad() async {
+    final stock = await ref.read(stockByIdProvider(widget.id).future);
+    if (stock == null || !mounted) return;
+    final existing = ref.read(priceQuotesProvider)[stock.id];
+    if (existing != null && !existing.withStaleness().isStale) return;
+    try {
+      final quote = await ref
+          .read(marketDataServiceProvider)
+          .fetchQuote(stock.symbol, stock.id, stockCurrency: stock.currency);
+      if (quote == null || !mounted) return;
+      await ref.read(stockActionsProvider).cacheMarketPrice(quote);
+      if (!mounted) return;
+      final notifier = ref.read(priceQuotesProvider.notifier);
+      notifier.state = Map.from(notifier.state)..[stock.id] = quote;
+    } catch (e) {
+      debugPrint('StockDetail: fetchPrice failed: $e');
+    }
+  }
+
   Future<void> _syncDividends(Stock stock) async {
     if (_isSyncingDividends) return;
     setState(() => _isSyncingDividends = true);
