@@ -40,7 +40,8 @@ class MarketDataService {
     }
 
     try {
-      // Step 1: load the Yahoo Finance homepage to receive session cookies.
+      // Step 1: load the Yahoo Finance homepage.
+      // EU users are redirected to consent.yahoo.com (GDPR).
       final homeResp = await _dio.get<String>(
         'https://finance.yahoo.com/',
         options: Options(
@@ -56,16 +57,14 @@ class MarketDataService {
       String cookie = _cookiesFromHeaders(homeResp.headers['set-cookie'] ?? []);
       final body = homeResp.data ?? '';
 
-      // EU/GDPR: Yahoo redirects to consent.yahoo.com. Detect this by looking
-      // for the consent form's hidden csrfToken field in the response body.
+      // EU/GDPR: detect the consent page by the presence of the csrfToken field.
       if (body.contains('csrfToken')) {
         final csrfToken = _extractHidden(body, 'csrfToken');
         final sessionId = _extractHidden(body, 'sessionId');
         final originalDoneUrl = _extractHidden(body, 'originalDoneUrl');
 
         if (csrfToken != null && sessionId != null) {
-          // POST consent acceptance — mirrors what yfinance does for EU users.
-          final consentBody = [
+          final consentPayload = [
             'csrfToken=${Uri.encodeComponent(csrfToken)}',
             'sessionId=${Uri.encodeComponent(sessionId)}',
             if (originalDoneUrl != null)
@@ -75,9 +74,12 @@ class MarketDataService {
             'agree=agree',
           ].join('&');
 
+          // Do NOT auto-follow the redirect: Yahoo sets the session cookies
+          // in the 302 response itself. Dio silently drops per-hop cookies
+          // when it auto-follows, so we collect them manually here.
           final consentResp = await _dio.post<String>(
             'https://consent.yahoo.com/v2/collectConsent',
-            data: consentBody,
+            data: consentPayload,
             options: Options(
               headers: {
                 'User-Agent': _userAgent,
@@ -87,19 +89,39 @@ class MarketDataService {
               responseType: ResponseType.plain,
               sendTimeout: const Duration(seconds: 15),
               receiveTimeout: const Duration(seconds: 15),
-              followRedirects: true,
-              maxRedirects: 5,
+              followRedirects: false,
+              validateStatus: (s) => s != null && s < 400,
             ),
           );
+          cookie = _mergeCookies(
+            cookie,
+            _cookiesFromHeaders(consentResp.headers['set-cookie'] ?? []),
+          );
 
-          // Collect cookies from the consent POST response and merge them.
-          final consentCookies = _cookiesFromHeaders(
-              consentResp.headers['set-cookie'] ?? []);
-          cookie = _mergeCookies(cookie, consentCookies);
+          // Follow the redirect manually to collect the yahoo.com session cookies.
+          final location = consentResp.headers['location']?.first;
+          if (location != null) {
+            final afterConsentResp = await _dio.get<String>(
+              location,
+              options: Options(
+                headers: {'User-Agent': _userAgent, 'Cookie': cookie},
+                responseType: ResponseType.plain,
+                sendTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 15),
+                followRedirects: false,
+                validateStatus: (s) => s != null && s < 400,
+              ),
+            );
+            cookie = _mergeCookies(
+              cookie,
+              _cookiesFromHeaders(
+                  afterConsentResp.headers['set-cookie'] ?? []),
+            );
+          }
         }
       }
 
-      // Step 2: exchange the session cookies for a crumb.
+      // Step 2: exchange the cookies for a crumb.
       final crumbResp = await _dio.get<String>(
         'https://query2.finance.yahoo.com/v1/test/getcrumb',
         options: Options(
@@ -115,6 +137,8 @@ class MarketDataService {
         _sessionCookie = cookie;
         _crumb = crumb;
         _sessionInitAt = DateTime.now();
+      } else {
+        debugPrint('MarketDataService: crumb invalid or empty: "$crumb"');
       }
     } catch (e) {
       debugPrint('MarketDataService: Yahoo session init failed: $e');
@@ -147,13 +171,19 @@ class MarketDataService {
   }
 
   /// Extracts the value of an HTML hidden input field by [name].
+  /// Handles any attribute ordering within the <input> tag.
   String? _extractHidden(String html, String name) {
-    final pattern = RegExp(
-      'name=["\']${RegExp.escape(name)}["\']\\s+value=["\']([^"\']*)["\']|'
-      'value=["\']([^"\']*)["\']\\s+name=["\']${RegExp.escape(name)}["\']',
+    // First find the full <input> tag that contains name="<name>".
+    final tagPattern = RegExp(
+      r'<input\b[^>]*\bname=["\']' + RegExp.escape(name) + r'["\'][^>]*>',
+      caseSensitive: false,
+      dotAll: true,
     );
-    final m = pattern.firstMatch(html);
-    return m?.group(1) ?? m?.group(2);
+    final tagMatch = tagPattern.firstMatch(html);
+    if (tagMatch == null) { return null; }
+    // Then pull the value attribute out of that tag.
+    final valuePattern = RegExp(r'\bvalue=["\']([^"\']*)["\']');
+    return valuePattern.firstMatch(tagMatch.group(0)!)?.group(1);
   }
 
   Map<String, String> get _quoteSummaryHeaders => {
