@@ -8,7 +8,7 @@ class AnalystData extends Equatable {
     this.targetHighPrice,
     this.recommendationKey,
     this.numberOfAnalysts,
-    this.currency,
+    this.financialCurrency,
     this.strongBuyCount,
     this.buyCount,
     this.holdCount,
