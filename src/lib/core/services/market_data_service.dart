@@ -173,16 +173,17 @@ class MarketDataService {
   /// Extracts the value of an HTML hidden input field by [name].
   /// Handles any attribute ordering within the <input> tag.
   String? _extractHidden(String html, String name) {
+    // Non-raw strings: \\ → \ in the regex, \' → ' in the Dart string literal.
     // First find the full <input> tag that contains name="<name>".
     final tagPattern = RegExp(
-      r'<input\b[^>]*\bname=["\']' + RegExp.escape(name) + r'["\'][^>]*>',
+      '<input\\b[^>]*\\bname=["\']' + RegExp.escape(name) + '["\'][^>]*>',
       caseSensitive: false,
       dotAll: true,
     );
     final tagMatch = tagPattern.firstMatch(html);
     if (tagMatch == null) { return null; }
     // Then pull the value attribute out of that tag.
-    final valuePattern = RegExp(r'\bvalue=["\']([^"\']*)["\']');
+    final valuePattern = RegExp('\\bvalue=["\']([^"\']*)["\']');
     return valuePattern.firstMatch(tagMatch.group(0)!)?.group(1);
   }
 
