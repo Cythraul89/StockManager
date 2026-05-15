@@ -176,7 +176,7 @@ class MarketDataService {
     // Non-raw strings: \\ → \ in the regex, \' → ' in the Dart string literal.
     // First find the full <input> tag that contains name="<name>".
     final tagPattern = RegExp(
-      '<input\\b[^>]*\\bname=["\']' + RegExp.escape(name) + '["\'][^>]*>',
+      '<input\\b[^>]*\\bname=["\']${RegExp.escape(name)}["\'][^>]*>',
       caseSensitive: false,
       dotAll: true,
     );
