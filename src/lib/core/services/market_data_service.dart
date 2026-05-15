@@ -309,6 +309,8 @@ class MarketDataService {
       final numRaw = (fd?['numberOfAnalystOpinions']
               as Map<String, dynamic>?)?['raw'];
       final currency = fd?['financialCurrency'] as String?;
+      debugPrint('MarketDataService: quoteSummary[$symbol] '
+          'financialCurrency=$currency');
 
       // ── summaryDetail ─────────────────────────────────────────────────────
       final sd = result['summaryDetail'] as Map<String, dynamic>?;

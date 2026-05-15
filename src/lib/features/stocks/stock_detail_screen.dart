@@ -301,7 +301,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 error: (_, __) => _buildAnalystUnavailableCard(context),
                 data: (data) => data != null
                     ? _buildAnalystCard(
-                        context, data, stock.currency, currentPrice, rates)
+                        context, data, stock.currency, quoteCurrency,
+                        currentPrice, rates)
                     : _buildAnalystUnavailableCard(context),
               ),
               const SizedBox(height: 16),
@@ -468,24 +469,25 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     BuildContext context,
     AnalystData data,
     String stockCurrency,
+    String quoteCurrency,
     Decimal? currentPrice,
     List<ExchangeRate> rates,
   ) {
     // Convert analyst prices to stockCurrency when Yahoo reports them in a
     // different currency (e.g. USD for ARM ADR, NOK for Norwegian stocks).
-    final analysisCurrency = data.currency;
-    final ExchangeRate? convRate =
-        (analysisCurrency != null && analysisCurrency != stockCurrency)
-            ? ExchangeRate.find(rates, analysisCurrency, stockCurrency)
-            : null;
+    // Fall back to quoteCurrency when Yahoo omits financialCurrency — analyst
+    // targets are always denominated in the stock's primary trading currency.
+    final analysisCurrency = data.currency ?? quoteCurrency;
+    final ExchangeRate? convRate = analysisCurrency != stockCurrency
+        ? ExchangeRate.find(rates, analysisCurrency, stockCurrency)
+        : null;
 
     // Prices are comparable to currentPrice (always in stockCurrency) when:
     //   • currencies already match, OR
     //   • a conversion rate was found.
-    final pricesInStockCurrency = analysisCurrency == stockCurrency ||
-        (analysisCurrency != null && convRate != null);
-    final currency =
-        pricesInStockCurrency ? stockCurrency : (analysisCurrency ?? stockCurrency);
+    final pricesInStockCurrency =
+        analysisCurrency == stockCurrency || convRate != null;
+    final currency = pricesInStockCurrency ? stockCurrency : analysisCurrency;
 
     // Convert a single price from analysisCurrency → stockCurrency.
     Decimal conv(Decimal price) =>
