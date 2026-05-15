@@ -9,6 +9,7 @@ import 'app.dart';
 import 'core/database/app_database.dart';
 import 'core/services/currency_service.dart';
 import 'core/services/isin_lookup_service.dart';
+import 'core/services/log_service.dart';
 import 'core/services/market_data_service.dart';
 import 'core/services/notification_service.dart';
 import 'features/settings/settings_provider.dart';
@@ -17,6 +18,15 @@ import 'features/stocks/stocks_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final logService = await LogService.create();
+
+  // Route all debugPrint calls to both the console and the log file.
+  final originalDebugPrint = debugPrint;
+  debugPrint = (String? message, {int? wrapWidth}) {
+    originalDebugPrint(message, wrapWidth: wrapWidth);
+    logService.log(message);
+  };
 
   LicenseRegistry.addLicense(() async* {
     yield const LicenseEntryWithLineBreaks(
@@ -63,6 +73,7 @@ void main() async {
         marketDataServiceProvider.overrideWithValue(marketDataService),
         currencyServiceProvider.overrideWithValue(currencyService),
         isinLookupServiceProvider.overrideWithValue(isinLookupService),
+        logServiceProvider.overrideWithValue(logService),
       ],
       child: const StockManagerApp(),
     ),
