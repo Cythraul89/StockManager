@@ -56,10 +56,11 @@ final stocksStreamProvider = StreamProvider<List<Stock>>((ref) {
 });
 
 final stockByIdProvider =
-    FutureProvider.family<Stock?, String>((ref, id) async {
+    StreamProvider.family<Stock?, String>((ref, id) {
   final db = ref.watch(databaseProvider);
-  final row = await db.stocksDao.findById(id);
-  return row == null ? null : _stockFromRow(row);
+  return db.stocksDao
+      .watchById(id)
+      .map((row) => row == null ? null : _stockFromRow(row));
 });
 
 // ── Transaction providers ──────────────────────────────────────────────────────────────────

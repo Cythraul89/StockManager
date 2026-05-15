@@ -24,6 +24,9 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
   Future<StockRow?> findById(String id) =>
       (select(stocks)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  Stream<StockRow?> watchById(String id) =>
+      (select(stocks)..where((t) => t.id.equals(id))).watchSingleOrNull();
+
   Future<StockRow?> findByIsin(String isin) =>
       (select(stocks)..where((t) => t.isin.equals(isin))).getSingleOrNull();
 
