@@ -30,7 +30,7 @@ class AnalystData extends Equatable {
   // Yahoo's financial-reporting currency — kept for diagnostics only.
   // Analyst price targets are always in the trading currency (quoteCurrency);
   // do not use this field for price conversion.
-  final String? currency;
+  final String? financialCurrency;
 
   // Recommendation consensus breakdown (recommendationTrend, most recent period)
   final int? strongBuyCount;
@@ -54,7 +54,7 @@ class AnalystData extends Equatable {
     Decimal? targetHighPrice,
     String? recommendationKey,
     int? numberOfAnalysts,
-    String? currency,
+    String? financialCurrency,
     int? strongBuyCount,
     int? buyCount,
     int? holdCount,
@@ -72,7 +72,7 @@ class AnalystData extends Equatable {
       targetHighPrice: targetHighPrice ?? this.targetHighPrice,
       recommendationKey: recommendationKey ?? this.recommendationKey,
       numberOfAnalysts: numberOfAnalysts ?? this.numberOfAnalysts,
-      currency: currency ?? this.currency,
+      financialCurrency: financialCurrency ?? this.financialCurrency,
       strongBuyCount: strongBuyCount ?? this.strongBuyCount,
       buyCount: buyCount ?? this.buyCount,
       holdCount: holdCount ?? this.holdCount,
@@ -93,7 +93,7 @@ class AnalystData extends Equatable {
         targetHighPrice,
         recommendationKey,
         numberOfAnalysts,
-        currency,
+        financialCurrency,
         strongBuyCount,
         buyCount,
         holdCount,

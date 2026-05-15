@@ -145,8 +145,9 @@ class StockActions {
       _ref.read(dataVersionProvider.notifier).update((n) => n + 1);
 
   Future<String> addStock(Stock stock) async {
+    final id = stock.id.isEmpty ? _uuid.v4() : stock.id;
     await _db.stocksDao.upsert(StocksCompanion.insert(
-      id: stock.id.isEmpty ? _uuid.v4() : stock.id,
+      id: id,
       brokerId: stock.brokerId,
       isin: stock.isin,
       symbol: stock.symbol,
@@ -156,7 +157,7 @@ class StockActions {
       dripEnabled: Value(stock.dripEnabled),
     ));
     _notifyChange();
-    return stock.id;
+    return id;
   }
 
   Future<void> updateStock(Stock stock) async {

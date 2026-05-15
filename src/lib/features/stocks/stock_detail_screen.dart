@@ -474,31 +474,36 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     );
   }
 
+  Widget _analystCardHeader(BuildContext context, {String? subtitle}) {
+    return Row(
+      children: [
+        Text('Analysis', style: Theme.of(context).textTheme.titleMedium),
+        if (subtitle != null) ...[
+          const SizedBox(width: 8),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.refresh, size: 20),
+          tooltip: 'Refresh analysis',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => ref
+              .read(analystRefreshProvider(widget.id).notifier)
+              .update((n) => n + 1),
+        ),
+      ],
+    );
+  }
+
   Widget _buildAnalystUnavailableCard(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Text('Analysis',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(width: 8),
-            Text(
-              'No data available',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.refresh, size: 20),
-              tooltip: 'Refresh analysis',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => ref
-                  .read(analystRefreshProvider(widget.id).notifier)
-                  .update((n) => n + 1),
-            ),
-          ],
-        ),
+        child: _analystCardHeader(context, subtitle: 'No data available'),
       ),
     );
   }
@@ -573,26 +578,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Header ─────────────────────────────────────────────────────
-            Row(
-              children: [
-                Text('Analysis', style: theme.textTheme.titleMedium),
-                if (data.numberOfAnalysts != null) ...[
-                  const SizedBox(width: 8),
-                  Text(
-                    '${data.numberOfAnalysts} analysts',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.refresh, size: 20),
-                  tooltip: 'Refresh analysis',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () =>
-                      ref.invalidate(analystDataProvider(widget.id)),
-                ),
-              ],
+            _analystCardHeader(
+              context,
+              subtitle: data.numberOfAnalysts != null
+                  ? '${data.numberOfAnalysts} analysts'
+                  : null,
             ),
             const SizedBox(height: 12),
 

@@ -353,7 +353,11 @@ Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchD
 | `defaultKeyStatistics` | `trailingEps` |
 | `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
 
-The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen. Data is not persisted locally; the provider re-fetches on every navigation to the screen.
+The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen. Data is not persisted locally.
+
+#### Caching and manual refresh
+
+`analystDataProvider` uses `ref.keepAlive()` with a 10-minute TTL, so navigating away and back does not trigger a full Yahoo round-trip on every visit. A `StateProvider.family<int, String>` counter (`analystRefreshProvider`) is used to force a re-fetch: `analystDataProvider` watches it, and the refresh button on the Analysis card increments it. `ref.invalidate()` is intentionally **not** used here because it interferes with the `keepAlive` link.
 
 #### Yahoo Finance session (GDPR)
 
@@ -363,11 +367,13 @@ Accessing the quoteSummary API requires a valid session cookie set (`GUC`, `A1`,
 2. If the landing page contains a GDPR consent form, POSTing `csrfToken + sessionId + agree=agree` and following the post-consent redirect chain, again gathering cookies.
 3. Fetching the crumb from `query2.finance.yahoo.com/v1/test/getcrumb` using the accumulated cookies.
 
-Cookies are extracted directly from `Set-Cookie` response headers (not via a cookie jar) because the GDPR flow sets cookies on `consent.yahoo.com`, which a domain-scoped jar would not return for `finance.yahoo.com` requests. The session (cookie string + crumb) is cached for 55 minutes.
+Cookies are extracted directly from `Set-Cookie` response headers (not via a cookie jar) because the GDPR flow sets cookies on `consent.yahoo.com`, which a domain-scoped jar would not return for `finance.yahoo.com` requests. The session (cookie string + crumb) is cached for 55 minutes. A `Completer<void>` gate ensures concurrent callers wait on a single in-flight init rather than racing through the GDPR flow in parallel.
+
+All authenticated `quoteSummary` requests (analyst data, expected dividend) use `_withYahooRetry` for automatic backoff on HTTP 429 (rate-limit) responses.
 
 #### Analyst price currency conversion
 
-Yahoo Finance returns analyst price targets in the stock's **trading currency** (the same denomination as the live price quote), regardless of what the `financialCurrency` field says. `financialCurrency` reflects the company's financial-reporting currency and is unreliable as a conversion key (e.g. CADLR.OL reports `financialCurrency=EUR` but all prices are in NOK).
+Yahoo Finance returns analyst price targets in the stock's **trading currency** (the same denomination as the live price quote), regardless of what the `financialCurrency` field says. `financialCurrency` reflects the company's financial-reporting currency and is unreliable as a conversion key (e.g. CADLR.OL reports `financialCurrency=EUR` but all prices are in NOK). `AnalystData.financialCurrency` is stored for diagnostics only; it must not be used for currency conversion.
 
 `_buildAnalystCard` therefore uses `quoteCurrency` (the currency of the cached `PriceQuote`) as the effective analyst currency. If `quoteCurrency ≠ stock.currency`, it calls `ExchangeRate.find(rates, quoteCurrency, stockCurrency)` to convert all monetary fields (target mean/low/high, 52-week range, EPS) before display. The `canCompare` flag controls whether upside/downside % and the position marker on range bars are shown (they require a successful conversion so that `currentPrice` and the analyst targets are in the same unit).
 

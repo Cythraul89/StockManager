@@ -63,6 +63,9 @@ class MarketDataService {
     try {
       await _doInitSession();
       completer.complete();
+    } catch (e) {
+      completer.completeError(e);
+      rethrow;
     } finally {
       _sessionInit = null;
     }
@@ -284,7 +287,7 @@ class MarketDataService {
   Future<AnalystData?> fetchAnalystData(String symbol) async {
     await _ensureSession();
     try {
-      final response = await _yahooDio.get<Map<String, dynamic>>(
+      final response = await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
         queryParameters: _quoteSummaryParams({
           'modules':
@@ -299,7 +302,7 @@ class MarketDataService {
             'Referer': 'https://finance.yahoo.com/quote/$symbol/',
           },
         ),
-      );
+      ));
 
       debugPrint('MarketDataService: quoteSummary[$symbol] '
           'status=${response.statusCode}');
@@ -346,7 +349,7 @@ class MarketDataService {
         targetHighPrice: raw(fd, 'targetHighPrice'),
         recommendationKey: recKey?.isNotEmpty == true ? recKey : null,
         numberOfAnalysts: numRaw is int ? numRaw : null,
-        currency: currency,
+        financialCurrency: currency,
         // Consensus breakdown
         strongBuyCount: trend?['strongBuy'] as int?,
         buyCount: trend?['buy'] as int?,
@@ -623,7 +626,7 @@ class MarketDataService {
       String symbol, List<FetchedDividend> recentPaid) async {
     await _ensureSession();
     try {
-      final response = await _yahooDio.get<Map<String, dynamic>>(
+      final response = await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
         queryParameters: _quoteSummaryParams({'modules': 'calendarEvents'}),
         options: Options(
@@ -635,7 +638,7 @@ class MarketDataService {
             'Referer': 'https://finance.yahoo.com/quote/$symbol/',
           },
         ),
-      );
+      ));
 
       final result =
           (response.data?['quoteSummary']?['result'] as List?)?.firstOrNull
