@@ -11,7 +11,8 @@ final logServiceProvider = Provider<LogService>((ref) {
 class LogService {
   LogService._();
 
-  File? _logFile;
+  File? _file;
+  IOSink? _sink;
 
   static Future<LogService> create() async {
     final service = LogService._();
@@ -26,30 +27,34 @@ class LogService {
   Future<void> _init() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      _logFile = File('${dir.path}/stockmanager_debug.log');
-      // Start each session with a fresh file so it never grows unbounded.
-      await _logFile!.writeAsString(
-        '=== StockManager debug log — ${DateTime.now().toIso8601String()} ===\n',
+      _file = File('${dir.path}/stockmanager_debug.log');
+      // Truncate at session start so the file never grows unbounded.
+      _sink = _file!.openWrite();
+      _sink!.writeln(
+        '=== StockManager debug log — ${DateTime.now().toIso8601String()} ===',
       );
     } catch (_) {
-      // If we can't open the file, logging silently no-ops.
-      _logFile = null;
+      _file = null;
+      _sink = null;
     }
   }
 
   /// Appends [message] to the log file with a timestamp prefix.
-  /// Fire-and-forget — never throws.
+  /// IOSink serialises concurrent writes so entries never interleave.
   void log(String? message) {
-    if (message == null || message.isEmpty || _logFile == null) { return; }
-    final entry = '[${DateTime.now().toIso8601String()}] $message\n';
-    _logFile!.writeAsString(entry, mode: FileMode.append).ignore();
+    if (message == null || message.isEmpty || _sink == null) { return; }
+    _sink!.writeln('[${DateTime.now().toIso8601String()}] $message');
   }
 
   /// Absolute path to the log file, for sharing.
-  String get filePath => _logFile?.path ?? '';
+  String get filePath => _file?.path ?? '';
 
   /// Clears the log file content.
   Future<void> clear() async {
-    await _logFile?.writeAsString('');
+    await _sink?.flush();
+    await _sink?.close();
+    if (_file != null) {
+      _sink = _file!.openWrite();
+    }
   }
 }

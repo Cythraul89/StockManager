@@ -167,16 +167,25 @@ class MarketDataService {
           responseType: ResponseType.plain,
           headers: {
             if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://finance.yahoo.com/',
           },
         ),
       );
+      // Capture any additional cookies the crumb endpoint sets, then rebuild
+      // _sessionCookie so subsequent API calls carry the full cookie set.
+      gather(crumbResp);
+      _sessionCookie = cookieMap.isEmpty
+          ? null
+          : cookieMap.entries.map((e) => '${e.key}=${e.value}').join('; ');
+
       final crumb = crumbResp.data?.trim();
-      debugPrint('MarketDataService: crumb response '
-          'status=${crumbResp.statusCode} crumb="$crumb"');
+      debugPrint('MarketDataService: crumb status=${crumbResp.statusCode} '
+          'len=${crumb?.length} crumb="$crumb"');
       if (crumb != null && crumb.isNotEmpty && !crumb.startsWith('{')) {
         _crumb = crumb;
         _sessionInitAt = DateTime.now();
-        debugPrint('MarketDataService: session established, crumb set');
+        debugPrint('MarketDataService: session established');
       }
     } catch (e) {
       debugPrint('MarketDataService: Yahoo session init failed: $e');
@@ -263,11 +272,14 @@ class MarketDataService {
           receiveTimeout: const Duration(seconds: 10),
           headers: {
             if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://finance.yahoo.com/quote/$symbol/',
           },
         ),
       );
 
-      debugPrint('MarketDataService: quoteSummary status=${response.statusCode} '
+      debugPrint('MarketDataService: quoteSummary[$symbol] '
+          'status=${response.statusCode} '
           'keys=${response.data?.keys.toList()}');
       final result =
           (response.data?['quoteSummary']?['result'] as List?)?.firstOrNull
@@ -302,8 +314,10 @@ class MarketDataService {
         currency: currency,
       );
     } on DioException catch (e) {
-      debugPrint('MarketDataService: quoteSummary DioException for $symbol: '
-          'status=${e.response?.statusCode} msg=${e.message}');
+      final body = e.response?.data?.toString() ?? '';
+      debugPrint('MarketDataService: quoteSummary[$symbol] error '
+          'status=${e.response?.statusCode} '
+          'body=${body.length > 400 ? body.substring(0, 400) : body}');
       return null;
     } catch (e) {
       debugPrint('MarketDataService: analyst data fetch failed for $symbol: $e');
@@ -538,6 +552,8 @@ class MarketDataService {
           receiveTimeout: const Duration(seconds: 10),
           headers: {
             if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://finance.yahoo.com/quote/$symbol/',
           },
         ),
       );
