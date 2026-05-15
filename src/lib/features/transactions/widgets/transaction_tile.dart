@@ -10,10 +10,12 @@ class TransactionTile extends StatelessWidget {
     super.key,
     required this.transaction,
     required this.currency,
+    this.onTap,
   });
 
   final StockTransaction transaction;
   final String currency;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -22,6 +24,7 @@ class TransactionTile extends StatelessWidget {
     final typeColor = isBuy ? Colors.green : theme.colorScheme.error;
 
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
         backgroundColor: typeColor.withValues(alpha: 0.15),
         child: Text(

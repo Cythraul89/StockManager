@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/utils/date_helpers.dart';
 import '../stocks/stocks_provider.dart';
@@ -59,6 +60,8 @@ class DividendsScreen extends ConsumerWidget {
                     children: pending
                         .map((d) => DividendTile(
                               dividend: d,
+                              onTap: () => context.push(
+                                  '/stocks/${d.stockId}/dividends/${d.id}/edit'),
                               onConfirm: () => _confirmDividend(context, ref, d),
                             ))
                         .toList(),
@@ -74,7 +77,11 @@ class DividendsScreen extends ConsumerWidget {
                   clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: upcomingExpected
-                        .map((d) => DividendTile(dividend: d))
+                        .map((d) => DividendTile(
+                              dividend: d,
+                              onTap: () => context.push(
+                                  '/stocks/${d.stockId}/dividends/${d.id}/edit'),
+                            ))
                         .toList(),
                   ),
                 ),
@@ -93,7 +100,11 @@ class DividendsScreen extends ConsumerWidget {
                   clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: paid
-                        .map((d) => DividendTile(dividend: d))
+                        .map((d) => DividendTile(
+                              dividend: d,
+                              onTap: () => context.push(
+                                  '/stocks/${d.stockId}/dividends/${d.id}/edit'),
+                            ))
                         .toList(),
                   ),
                 ),

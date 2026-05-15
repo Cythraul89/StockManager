@@ -164,6 +164,19 @@ class StockActions {
     return id;
   }
 
+  Future<void> updateTransaction(StockTransaction tx) async {
+    await _db.transactionsDao.updateRow(TransactionsCompanion(
+      id: Value(tx.id),
+      type: Value(tx.type.name),
+      executedAt: Value(tx.executedAt),
+      shares: Value(tx.shares),
+      pricePerShare: Value(tx.pricePerShare),
+      fees: Value(tx.fees),
+      notes: Value(tx.notes),
+    ));
+    _notifyChange();
+  }
+
   Future<void> deleteTransaction(String txId) async {
     await _db.transactionsDao.deleteById(txId);
     _notifyChange();
@@ -186,6 +199,21 @@ class StockActions {
     ));
     _notifyChange();
     return id;
+  }
+
+  Future<void> updateDividend(Dividend div) async {
+    await _db.dividendsDao.updateRow(DividendsCompanion(
+      id: Value(div.id),
+      type: Value(div.type.name),
+      date: Value(div.date),
+      amountPerShare: Value(div.amountPerShare),
+      totalAmount: Value(div.totalAmount),
+      currency: Value(div.currency),
+      withholdingTax: Value(div.withholdingTax),
+      notes: Value(div.notes),
+      confirmed: Value(div.confirmed),
+    ));
+    _notifyChange();
   }
 
   Future<void> deleteDividend(String divId) async {

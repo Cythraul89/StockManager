@@ -1,0 +1,286 @@
+import 'package:decimal/decimal.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/models/dividend.dart';
+import '../stocks/stocks_provider.dart';
+
+class EditDividendScreen extends ConsumerStatefulWidget {
+  const EditDividendScreen({
+    super.key,
+    required this.stockId,
+    required this.dividendId,
+  });
+
+  final String stockId;
+  final String dividendId;
+
+  @override
+  ConsumerState<EditDividendScreen> createState() =>
+      _EditDividendScreenState();
+}
+
+class _EditDividendScreenState extends ConsumerState<EditDividendScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _amountPerShareCtrl = TextEditingController();
+  final _totalAmountCtrl = TextEditingController();
+  final _whtCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  DividendType _type = DividendType.paid;
+  DateTime _date = DateTime.now();
+  bool _isSaving = false;
+  bool _isDeleting = false;
+  bool _initialised = false;
+  bool _isPendingAutoFetch = false;
+
+  @override
+  void dispose() {
+    _amountPerShareCtrl.dispose();
+    _totalAmountCtrl.dispose();
+    _whtCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  void _populateFrom(Dividend div) {
+    if (_initialised) return;
+    _initialised = true;
+    _type = div.type;
+    _date = div.date;
+    _isPendingAutoFetch = div.source == DividendSource.auto && !div.confirmed;
+    _amountPerShareCtrl.text = div.amountPerShare.toString();
+    _totalAmountCtrl.text = div.totalAmount?.toString() ?? '';
+    _whtCtrl.text = div.withholdingTax?.toString() ?? '';
+    _notesCtrl.text = div.notes ?? '';
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(1990),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Decimal? _parseDecimal(String text) {
+    if (text.trim().isEmpty) return null;
+    try {
+      return Decimal.parse(text.trim().replaceAll(',', '.'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _save(Dividend original) async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final router = GoRouter.of(context);
+    final updated = original.copyWith(
+      type: _type,
+      date: _date,
+      amountPerShare: _parseDecimal(_amountPerShareCtrl.text)!,
+      totalAmount: _type == DividendType.paid
+          ? _parseDecimal(_totalAmountCtrl.text)
+          : null,
+      withholdingTax: _type == DividendType.paid
+          ? _parseDecimal(_whtCtrl.text)
+          : null,
+      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      confirmed: true,
+    );
+
+    setState(() => _isSaving = true);
+    try {
+      await ref.read(stockActionsProvider).updateDividend(updated);
+      if (mounted) router.pop();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete dividend?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final router = GoRouter.of(context);
+    setState(() => _isDeleting = true);
+    try {
+      await ref
+          .read(stockActionsProvider)
+          .deleteDividend(widget.dividendId);
+      if (mounted) router.pop();
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: ref
+          .read(databaseProvider)
+          .dividendsDao
+          .findById(widget.dividendId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        }
+        final row = snapshot.data;
+        if (row == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Edit Dividend')),
+            body: const Center(child: Text('Dividend not found')),
+          );
+        }
+
+        final original = Dividend(
+          id: row.id,
+          stockId: row.stockId,
+          type: DividendType.values.byName(row.type),
+          date: row.date,
+          amountPerShare: row.amountPerShare,
+          totalAmount: row.totalAmount,
+          currency: row.currency,
+          withholdingTax: row.withholdingTax,
+          notes: row.notes,
+          source: DividendSource.values.byName(row.source),
+          confirmed: row.confirmed,
+        );
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _populateFrom(original));
+        });
+
+        final busy = _isSaving || _isDeleting;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Edit Dividend'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: busy ? null : _delete,
+              ),
+            ],
+          ),
+          body: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (_isPendingAutoFetch)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'Auto-fetched — review and save to confirm',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.orange,
+                          ),
+                    ),
+                  ),
+                SegmentedButton<DividendType>(
+                  segments: const [
+                    ButtonSegment(
+                        value: DividendType.paid, label: Text('Paid')),
+                    ButtonSegment(
+                        value: DividendType.expected,
+                        label: Text('Expected')),
+                  ],
+                  selected: {_type},
+                  onSelectionChanged: (s) =>
+                      setState(() => _type = s.first),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_type == DividendType.paid
+                      ? 'Payment date'
+                      : 'Expected date'),
+                  subtitle:
+                      Text(_date.toIso8601String().substring(0, 10)),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: busy ? null : _pickDate,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _amountPerShareCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Amount per share'),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Required';
+                    if (_parseDecimal(v) == null) return 'Invalid number';
+                    return null;
+                  },
+                ),
+                if (_type == DividendType.paid) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _totalAmountCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Total amount received (optional)'),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      if (_parseDecimal(v) == null) return 'Invalid number';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _whtCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Withholding tax (optional)'),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      if (_parseDecimal(v) == null) return 'Invalid number';
+                      return null;
+                    },
+                  ),
+                ],
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _notesCtrl,
+                  decoration:
+                      const InputDecoration(labelText: 'Notes (optional)'),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: busy ? null : () => _save(original),
+                  child: _isSaving
+                      ? const CircularProgressIndicator()
+                      : const Text('Save'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

@@ -286,7 +286,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     : Column(
                         children: txs
                             .map((tx) => TransactionTile(
-                                transaction: tx, currency: stock.currency))
+                                  transaction: tx,
+                                  currency: stock.currency,
+                                  onTap: () => context.push(
+                                      '/stocks/${widget.id}/transactions/${tx.id}/edit'),
+                                ))
                             .toList(),
                       ),
               ),
@@ -313,6 +317,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                         children: divs
                             .map((d) => DividendTile(
                                   dividend: d,
+                                  onTap: () => context.push(
+                                      '/stocks/${widget.id}/dividends/${d.id}/edit'),
                                   onConfirm: d.isPendingConfirmation
                                       ? () => _confirmDividend(d)
                                       : null,

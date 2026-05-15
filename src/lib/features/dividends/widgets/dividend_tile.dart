@@ -10,11 +10,13 @@ class DividendTile extends StatelessWidget {
     super.key,
     required this.dividend,
     this.onConfirm,
+    this.onTap,
   });
 
   final Dividend dividend;
   // If provided and the dividend isPendingConfirmation, a confirm button is shown.
   final VoidCallback? onConfirm;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +39,7 @@ class DividendTile extends StatelessWidget {
     }
 
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
         backgroundColor: leadingColor.withValues(alpha: 0.15),
         child: Icon(leadingIcon, size: 20, color: leadingColor),

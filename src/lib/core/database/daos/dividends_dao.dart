@@ -43,6 +43,9 @@ class DividendsDao extends DatabaseAccessor<AppDatabase>
   Future<List<DividendRow>> getAll() =>
       (select(dividends)..orderBy([(t) => OrderingTerm.desc(t.date)])).get();
 
+  Future<DividendRow?> findById(String id) =>
+      (select(dividends)..where((t) => t.id.equals(id))).getSingleOrNull();
+
   Future<DividendRow?> findByStockAndDate(String stockId, DateTime date) =>
       (select(dividends)
             ..where((t) =>
