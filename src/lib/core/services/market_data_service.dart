@@ -10,17 +10,24 @@ import '../models/price_quote.dart';
 
 class MarketDataService {
   MarketDataService(this._dio) {
-    // Dedicated Dio instance for all Yahoo Finance requests.
-    // The CookieManager stores cookies from every redirect hop automatically,
-    // which is required for the EU GDPR consent flow to work correctly.
+    _cookieJar = CookieJar();
+    // Dedicated Dio instance for authenticated Yahoo Finance requests.
+    // The CookieManager stores cookies from every response (including
+    // redirects) automatically — required for the EU GDPR consent flow.
     _yahooDio = Dio(BaseOptions(
-      headers: {'User-Agent': _userAgent},
+      headers: {
+        'User-Agent': _userAgent,
+        'Accept':
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+      },
       sendTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
-    ))..interceptors.add(CookieManager(CookieJar()));
+    ))..interceptors.add(CookieManager(_cookieJar));
   }
 
   final Dio _dio;
+  late final CookieJar _cookieJar;
   late final Dio _yahooDio;
 
   static const _yahooBaseUrl =
@@ -56,12 +63,18 @@ class MarketDataService {
       );
 
       final body = homeResp.data ?? '';
+      debugPrint(
+          'MarketDataService: homepage status=${homeResp.statusCode} '
+          'body_len=${body.length} '
+          'has_csrfToken=${body.contains('csrfToken')}');
 
       // EU/GDPR: if we landed on the consent page, submit acceptance.
       if (body.contains('csrfToken')) {
         final csrfToken = _extractHidden(body, 'csrfToken');
         final sessionId = _extractHidden(body, 'sessionId');
         final originalDoneUrl = _extractHidden(body, 'originalDoneUrl');
+        debugPrint('MarketDataService: GDPR consent page — '
+            'csrfToken=${csrfToken != null} sessionId=${sessionId != null}');
 
         if (csrfToken != null && sessionId != null) {
           final payload = [
@@ -76,15 +89,25 @@ class MarketDataService {
 
           // The cookie jar captures cookies from the POST and from every
           // redirect hop back to finance.yahoo.com.
-          await _yahooDio.post<void>(
+          final consentResp = await _yahooDio.post<void>(
             'https://consent.yahoo.com/v2/collectConsent',
             data: payload,
             options: Options(
               contentType: 'application/x-www-form-urlencoded',
             ),
           );
+          debugPrint('MarketDataService: consent POST '
+              'status=${consentResp.statusCode}');
         }
       }
+
+      // Log what cookies the jar holds for the query2 domain.
+      final jarCookies = await _cookieJar.loadForRequest(
+          Uri.parse('https://query2.finance.yahoo.com/'));
+      debugPrint(
+          'MarketDataService: jar has ${jarCookies.length} cookies for '
+          'query2.finance.yahoo.com: '
+          '${jarCookies.map((c) => c.name).toList()}');
 
       // Step 2: fetch the crumb — cookie jar sends the right session cookies.
       final crumbResp = await _yahooDio.get<String>(
@@ -92,11 +115,12 @@ class MarketDataService {
         options: Options(responseType: ResponseType.plain),
       );
       final crumb = crumbResp.data?.trim();
+      debugPrint('MarketDataService: crumb response '
+          'status=${crumbResp.statusCode} crumb="$crumb"');
       if (crumb != null && crumb.isNotEmpty && !crumb.startsWith('{')) {
         _crumb = crumb;
         _sessionInitAt = DateTime.now();
-      } else {
-        debugPrint('MarketDataService: crumb invalid or empty: "$crumb"');
+        debugPrint('MarketDataService: session established, crumb set');
       }
     } catch (e) {
       debugPrint('MarketDataService: Yahoo session init failed: $e');
@@ -184,10 +208,16 @@ class MarketDataService {
         ),
       );
 
+      debugPrint('MarketDataService: quoteSummary status=${response.statusCode} '
+          'keys=${response.data?.keys.toList()}');
       final result =
           (response.data?['quoteSummary']?['result'] as List?)?.firstOrNull
               as Map<String, dynamic>?;
-      if (result == null) { return null; }
+      if (result == null) {
+        debugPrint('MarketDataService: quoteSummary result=null, '
+            'error=${response.data?['quoteSummary']?['error']}');
+        return null;
+      }
 
       final fd = result['financialData'] as Map<String, dynamic>?;
       if (fd == null) { return null; }
