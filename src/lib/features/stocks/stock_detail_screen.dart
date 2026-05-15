@@ -300,7 +300,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 ),
                 error: (_, __) => _buildAnalystUnavailableCard(context),
                 data: (data) => data != null
-                    ? _buildAnalystCard(context, data, stock.currency)
+                    ? _buildAnalystCard(
+                        context, data, stock.currency, currentPrice)
                     : _buildAnalystUnavailableCard(context),
               ),
               const SizedBox(height: 16),
@@ -464,10 +465,24 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   }
 
   Widget _buildAnalystCard(
-      BuildContext context, AnalystData data, String stockCurrency) {
+    BuildContext context,
+    AnalystData data,
+    String stockCurrency,
+    Decimal? currentPrice,
+  ) {
     final currency = data.currency ?? stockCurrency;
     final theme = Theme.of(context);
     final (recLabel, recColor) = _recommendationStyle(data.recommendationKey);
+
+    // Upside/downside % vs current price — only when currencies match.
+    final canCompare = currentPrice != null &&
+        currentPrice.isPositive &&
+        (data.currency == null || data.currency == stockCurrency);
+    final upside =
+        canCompare ? data.targetMeanPrice.percentChangeFrom(currentPrice!) : null;
+    final upsideColor = upside == null
+        ? null
+        : (upside.isNegative ? theme.colorScheme.error : Colors.green.shade600);
 
     return Card(
       child: Padding(
@@ -475,20 +490,22 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Analysis',
-                    style: theme.textTheme.titleMedium),
+                Text('Analysis', style: theme.textTheme.titleMedium),
                 if (data.numberOfAnalysts != null)
                   Text(
                     '${data.numberOfAnalysts} analysts',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
               ],
             ),
             const SizedBox(height: 12),
+
+            // Recommendation chip
             if (recLabel != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -503,14 +520,49 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
-            _kv(context, 'Target price',
-                CurrencyFormatter.format(data.targetMeanPrice, currency)),
+
+            // Target price with upside/downside % coloured green or red
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Target price',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        CurrencyFormatter.format(data.targetMeanPrice, currency),
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: upsideColor),
+                      ),
+                      if (upside != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Text(
+                            '${upside.isNegative ? '' : '+'}${upside.toStringFixed(1)}%',
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: upsideColor),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Range bar — shows low/high targets with a marker for current price
             if (data.targetLowPrice != null && data.targetHighPrice != null)
-              _kv(
+              _buildTargetRangeBar(
                 context,
-                'Target range',
-                '${CurrencyFormatter.format(data.targetLowPrice!, currency)}'
-                    ' – ${CurrencyFormatter.format(data.targetHighPrice!, currency)}',
+                data.targetLowPrice!,
+                data.targetHighPrice!,
+                canCompare ? currentPrice : null,
+                currency,
               ),
           ],
         ),
@@ -518,13 +570,97 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     );
   }
 
+  /// Horizontal gradient bar (red → green) showing the analyst target range.
+  /// A small marker indicates where the current price sits in that range.
+  Widget _buildTargetRangeBar(
+    BuildContext context,
+    Decimal low,
+    Decimal high,
+    Decimal? current,
+    String currency,
+  ) {
+    final theme = Theme.of(context);
+    final rangeDouble = (high - low).toDouble();
+    final fraction = (current != null && rangeDouble > 0)
+        ? ((current - low).toDouble() / rangeDouble).clamp(0.0, 1.0)
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(builder: (context, constraints) {
+            const markerW = 10.0;
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  height: 6,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [
+                      Colors.red.shade400,
+                      Colors.amber.shade400,
+                      Colors.green.shade500,
+                    ]),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                if (fraction != null)
+                  Positioned(
+                    left: (constraints.maxWidth * fraction - markerW / 2)
+                        .clamp(0.0, constraints.maxWidth - markerW),
+                    top: -3,
+                    child: Container(
+                      width: markerW,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface,
+                        borderRadius: BorderRadius.circular(2),
+                        border: Border.all(
+                            color: theme.colorScheme.surface, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          }),
+          const SizedBox(height: 5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                CurrencyFormatter.format(low, currency),
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              if (current != null)
+                Text(
+                  CurrencyFormatter.format(current, currency),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              Text(
+                CurrencyFormatter.format(high, currency),
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   (String?, Color) _recommendationStyle(String? key) {
     return switch (key?.toLowerCase()) {
-      'strongbuy' => ('Strong Buy', Colors.green.shade700),
-      'buy' => ('Buy', Colors.green),
+      'strongbuy' || 'strong_buy' => ('Strong Buy', Colors.green.shade800),
+      'buy' => ('Buy', Colors.green.shade600),
       'hold' => ('Hold', Colors.amber.shade700),
-      'underperform' => ('Underperform', Colors.orange),
-      'sell' => ('Sell', Colors.red),
+      'underperform' => ('Underperform', Colors.orange.shade700),
+      'sell' || 'strongsell' || 'strong_sell' => ('Sell', Colors.red),
       _ => (null, Colors.transparent),
     };
   }
