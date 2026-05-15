@@ -262,17 +262,20 @@ class MarketDataService {
     return _fetchHistoricalFromStooq(symbol, date);
   }
 
-  /// Fetches analyst consensus data (target price range + recommendation) from
-  /// Yahoo Finance quoteSummary/financialData.  Returns null when unavailable.
+  /// Fetches analyst consensus, 52-week range, valuation, and recommendation
+  /// breakdown from Yahoo Finance quoteSummary in a single request.
   Future<AnalystData?> fetchAnalystData(String symbol) async {
     await _ensureSession();
     try {
       final response = await _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
-        queryParameters: _quoteSummaryParams({'modules': 'financialData'}),
+        queryParameters: _quoteSummaryParams({
+          'modules':
+              'financialData,summaryDetail,defaultKeyStatistics,recommendationTrend',
+        }),
         options: Options(
-          sendTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
           headers: {
             if (_sessionCookie != null) 'Cookie': _sessionCookie!,
             'Accept': 'application/json, text/plain, */*',
@@ -282,8 +285,7 @@ class MarketDataService {
       );
 
       debugPrint('MarketDataService: quoteSummary[$symbol] '
-          'status=${response.statusCode} '
-          'keys=${response.data?.keys.toList()}');
+          'status=${response.statusCode}');
       final result =
           (response.data?['quoteSummary']?['result'] as List?)?.firstOrNull
               as Map<String, dynamic>?;
@@ -293,28 +295,52 @@ class MarketDataService {
         return null;
       }
 
+      // Helper: extract the 'raw' numeric value from a Yahoo formatted object.
+      Decimal? raw(Map<String, dynamic>? section, String key) {
+        final v = (section?[key] as Map<String, dynamic>?)?['raw'];
+        return v != null ? Decimal.tryParse(v.toString()) : null;
+      }
+
+      // ── financialData ─────────────────────────────────────────────────────
       final fd = result['financialData'] as Map<String, dynamic>?;
-      if (fd == null) { return null; }
+      final meanPrice = raw(fd, 'targetMeanPrice');
+      if (meanPrice == null) { return null; }
+      final recKey = fd?['recommendationKey'] as String?;
+      final numRaw = (fd?['numberOfAnalystOpinions']
+              as Map<String, dynamic>?)?['raw'];
+      final currency = fd?['financialCurrency'] as String?;
 
-      final meanRaw = (fd['targetMeanPrice'] as Map<String, dynamic>?)?['raw'];
-      if (meanRaw == null) { return null; }
+      // ── summaryDetail ─────────────────────────────────────────────────────
+      final sd = result['summaryDetail'] as Map<String, dynamic>?;
 
-      final lowRaw = (fd['targetLowPrice'] as Map<String, dynamic>?)?['raw'];
-      final highRaw = (fd['targetHighPrice'] as Map<String, dynamic>?)?['raw'];
-      final recKey = fd['recommendationKey'] as String?;
-      final numRaw =
-          (fd['numberOfAnalystOpinions'] as Map<String, dynamic>?)?['raw'];
-      final currency = fd['financialCurrency'] as String?;
+      // ── defaultKeyStatistics ──────────────────────────────────────────────
+      final dks = result['defaultKeyStatistics'] as Map<String, dynamic>?;
+
+      // ── recommendationTrend — use the most recent (first) period ──────────
+      final trends = (result['recommendationTrend']?['trend'] as List?)
+          ?.cast<Map<String, dynamic>>();
+      final trend = trends?.firstOrNull;
 
       return AnalystData(
-        targetMeanPrice: Decimal.parse(meanRaw.toString()),
-        targetLowPrice:
-            lowRaw != null ? Decimal.parse(lowRaw.toString()) : null,
-        targetHighPrice:
-            highRaw != null ? Decimal.parse(highRaw.toString()) : null,
+        targetMeanPrice: meanPrice,
+        targetLowPrice: raw(fd, 'targetLowPrice'),
+        targetHighPrice: raw(fd, 'targetHighPrice'),
         recommendationKey: recKey?.isNotEmpty == true ? recKey : null,
         numberOfAnalysts: numRaw is int ? numRaw : null,
         currency: currency,
+        // Consensus breakdown
+        strongBuyCount: trend?['strongBuy'] as int?,
+        buyCount: trend?['buy'] as int?,
+        holdCount: trend?['hold'] as int?,
+        sellCount: trend?['sell'] as int?,
+        strongSellCount: trend?['strongSell'] as int?,
+        // 52-week range
+        fiftyTwoWeekLow: raw(sd, 'fiftyTwoWeekLow'),
+        fiftyTwoWeekHigh: raw(sd, 'fiftyTwoWeekHigh'),
+        // Valuation
+        trailingPE: raw(sd, 'trailingPE'),
+        forwardPE: raw(sd, 'forwardPE'),
+        trailingEps: raw(dks, 'trailingEps'),
       );
     } on DioException catch (e) {
       final body = e.response?.data?.toString() ?? '';

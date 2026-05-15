@@ -484,13 +484,26 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
         ? null
         : (upside.isNegative ? theme.colorScheme.error : Colors.green.shade600);
 
+    // Consensus counts
+    final totalConsensus = (data.strongBuyCount ?? 0) +
+        (data.buyCount ?? 0) +
+        (data.holdCount ?? 0) +
+        (data.sellCount ?? 0) +
+        (data.strongSellCount ?? 0);
+    final hasConsensus = totalConsensus > 0;
+
+    final hasValuation =
+        data.trailingPE != null || data.forwardPE != null || data.trailingEps != null;
+    final has52Week =
+        data.fiftyTwoWeekLow != null && data.fiftyTwoWeekHigh != null;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row
+            // ── Header ─────────────────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -505,33 +518,29 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Recommendation chip
+            // ── Recommendation chip ────────────────────────────────────────
             if (recLabel != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Chip(
-                  label: Text(
-                    recLabel,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
+                  label: Text(recLabel,
+                      style: const TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w600)),
                   backgroundColor: recColor,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
 
-            // Target price with upside/downside % coloured green or red
+            // ── Target price with % upside/downside ───────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 3),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Target price',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
-                  ),
+                  Text('Target price',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -555,30 +564,122 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               ),
             ),
 
-            // Range bar — shows low/high targets with a marker for current price
+            // ── Analyst target range bar ───────────────────────────────────
             if (data.targetLowPrice != null && data.targetHighPrice != null)
-              _buildTargetRangeBar(
+              _buildRangeBar(
                 context,
-                data.targetLowPrice!,
-                data.targetHighPrice!,
-                canCompare ? currentPrice : null,
-                currency,
+                low: data.targetLowPrice!,
+                high: data.targetHighPrice!,
+                current: canCompare ? currentPrice : null,
+                currency: currency,
               ),
+
+            // ── 52-week range bar ──────────────────────────────────────────
+            if (has52Week) ...[
+              const SizedBox(height: 14),
+              _analyticsSubheader(context, '52-Week Range'),
+              _buildRangeBar(
+                context,
+                low: data.fiftyTwoWeekLow!,
+                high: data.fiftyTwoWeekHigh!,
+                current: canCompare ? currentPrice : null,
+                currency: currency,
+              ),
+            ],
+
+            // ── Analyst consensus breakdown bar ────────────────────────────
+            if (hasConsensus) ...[
+              const SizedBox(height: 14),
+              _analyticsSubheader(context, 'Consensus'),
+              _buildConsensusBar(context, data, totalConsensus),
+            ],
+
+            // ── Valuation ──────────────────────────────────────────────────
+            if (hasValuation) ...[
+              const SizedBox(height: 14),
+              _analyticsSubheader(context, 'Valuation'),
+              if (data.trailingPE != null)
+                _kv(context, 'P/E (trailing)',
+                    '${data.trailingPE!.toStringFixed(1)}×'),
+              if (data.forwardPE != null)
+                _kv(context, 'P/E (forward)',
+                    '${data.forwardPE!.toStringFixed(1)}×'),
+              if (data.trailingEps != null)
+                _kv(context, 'EPS (TTM)',
+                    CurrencyFormatter.format(data.trailingEps!, currency)),
+            ],
           ],
         ),
       ),
     );
   }
 
-  /// Horizontal gradient bar (red → green) showing the analyst target range.
-  /// A small marker indicates where the current price sits in that range.
-  Widget _buildTargetRangeBar(
-    BuildContext context,
-    Decimal low,
-    Decimal high,
-    Decimal? current,
-    String currency,
-  ) {
+  Widget _analyticsSubheader(BuildContext context, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _buildConsensusBar(
+      BuildContext context, AnalystData data, int total) {
+    final theme = Theme.of(context);
+
+    final segments = [
+      (count: data.strongBuyCount ?? 0, color: Colors.green.shade800),
+      (count: data.buyCount ?? 0, color: Colors.green.shade500),
+      (count: data.holdCount ?? 0, color: Colors.amber.shade600),
+      (count: data.sellCount ?? 0, color: Colors.orange.shade700),
+      (count: data.strongSellCount ?? 0, color: Colors.red.shade700),
+    ].where((s) => s.count > 0).toList();
+
+    final parts = [
+      if ((data.strongBuyCount ?? 0) > 0) '${data.strongBuyCount} Str.Buy',
+      if ((data.buyCount ?? 0) > 0) '${data.buyCount} Buy',
+      if ((data.holdCount ?? 0) > 0) '${data.holdCount} Hold',
+      if ((data.sellCount ?? 0) > 0) '${data.sellCount} Sell',
+      if ((data.strongSellCount ?? 0) > 0) '${data.strongSellCount} Str.Sell',
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: SizedBox(
+            height: 8,
+            child: Row(
+              children: segments
+                  .map((s) => Expanded(
+                        flex: s.count,
+                        child: Container(color: s.color),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          parts.join(' · '),
+          style: theme.textTheme.labelSmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  /// Horizontal gradient bar (red → green) showing a price range.
+  /// A small marker indicates where [current] sits within [low]..[high].
+  Widget _buildRangeBar(
+    BuildContext context, {
+    required Decimal low,
+    required Decimal high,
+    required Decimal? current,
+    required String currency,
+  }) {
     final theme = Theme.of(context);
     final rangeDouble = (high - low).toDouble();
     final fraction = (current != null && rangeDouble > 0)
