@@ -479,7 +479,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
         currentPrice.isPositive &&
         (data.currency == null || data.currency == stockCurrency);
     final upside =
-        canCompare ? data.targetMeanPrice.percentChangeFrom(currentPrice!) : null;
+        canCompare ? data.targetMeanPrice.percentChangeFrom(currentPrice) : null;
     final upsideColor = upside == null
         ? null
         : (upside.isNegative ? theme.colorScheme.error : Colors.green.shade600);
