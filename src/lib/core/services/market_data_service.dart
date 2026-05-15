@@ -386,16 +386,43 @@ class MarketDataService {
     return [...paid, if (expected != null) expected];
   }
 
+  // Backoff durations for HTTP 429 retries: 2 s, 4 s, 8 s.
+  static const _retryDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+  ];
+
+  /// Calls [fn] and retries with exponential backoff on HTTP 429 (rate limit).
+  /// Every other [DioException] is re-thrown immediately so callers can handle
+  /// it as they normally would.
+  Future<T> _withYahooRetry<T>(Future<T> Function() fn) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await fn();
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 429 && attempt < _retryDelays.length) {
+          final delay = _retryDelays[attempt];
+          debugPrint('MarketDataService: rate limited (429), '
+              'retry ${attempt + 1} in ${delay.inSeconds}s');
+          await Future.delayed(delay);
+          continue;
+        }
+        rethrow;
+      }
+    }
+  }
+
   Future<PriceQuote?> _fetchFromYahoo(String symbol, String stockId) async {
     try {
-      final response = await _dio.get<Map<String, dynamic>>(
+      final response = await _withYahooRetry(() => _dio.get<Map<String, dynamic>>(
         '$_yahooBaseUrl$symbol',
         queryParameters: {'interval': '1d', 'range': '1d'},
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
         ),
-      );
+      ));
 
       final chart = response.data?['chart'] as Map<String, dynamic>?;
       final result =
@@ -470,7 +497,7 @@ class MarketDataService {
       final period2 =
           utc.add(const Duration(days: 1)).millisecondsSinceEpoch ~/ 1000;
 
-      final response = await _dio.get<Map<String, dynamic>>(
+      final response = await _withYahooRetry(() => _dio.get<Map<String, dynamic>>(
         '$_yahooBaseUrl$symbol',
         queryParameters: {
           'interval': '1d',
@@ -481,7 +508,7 @@ class MarketDataService {
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
         ),
-      );
+      ));
 
       final chart = response.data?['chart'] as Map<String, dynamic>?;
       final result =
