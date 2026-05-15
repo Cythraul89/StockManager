@@ -609,8 +609,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               _analyticsSubheader(context, '52-Week Range'),
               _buildRangeBar(
                 context,
-                low: fiftyTwoLow!,
-                high: fiftyTwoHigh!,
+                low: fiftyTwoLow,
+                high: fiftyTwoHigh,
                 current: canCompare ? currentPrice : null,
                 currency: currency,
               ),
