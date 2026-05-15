@@ -281,24 +281,29 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
               // Analysis card
               analystAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                loading: () => Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Text('Analysis',
+                            style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(width: 12),
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                error: (_, __) => const SizedBox.shrink(),
+                error: (_, __) => _buildAnalystUnavailableCard(context),
                 data: (data) => data != null
-                    ? Column(children: [
-                        _buildAnalystCard(context, data, stock.currency),
-                        const SizedBox(height: 16),
-                      ])
-                    : const SizedBox.shrink(),
+                    ? _buildAnalystCard(context, data, stock.currency)
+                    : _buildAnalystUnavailableCard(context),
               ),
+              const SizedBox(height: 16),
 
               _sectionHeader(
                 context,
@@ -434,6 +439,26 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               style:
                   theme.textTheme.bodyMedium?.copyWith(color: valueColor)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAnalystUnavailableCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Analysis',
+                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'No data available',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
       ),
     );
   }

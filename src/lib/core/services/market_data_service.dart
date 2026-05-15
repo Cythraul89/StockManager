@@ -14,7 +14,7 @@ class MarketDataService {
   static const _yahooBaseUrl =
       'https://query1.finance.yahoo.com/v8/finance/chart/';
   static const _yahooQuoteSummaryUrl =
-      'https://query1.finance.yahoo.com/v11/finance/quoteSummary/';
+      'https://query2.finance.yahoo.com/v11/finance/quoteSummary/';
   static const _stooqBaseUrl = 'https://stooq.com/q/l/';
   static const _stooqHistUrl = 'https://stooq.com/q/d/l/';
 

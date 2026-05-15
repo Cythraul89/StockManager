@@ -35,7 +35,12 @@ class _EditTransactionScreenState
   bool _notFound = false;
   bool _isSaving = false;
   bool _isDeleting = false;
+  bool _isFetchingPrice = false;
+  bool _priceAutoFilled = false;
   StockTransaction? _original;
+
+  String? _symbol;
+  String? _stockCurrency;
 
   @override
   void initState() {
@@ -44,28 +49,34 @@ class _EditTransactionScreenState
   }
 
   Future<void> _loadData() async {
-    final row = await ref
-        .read(databaseProvider)
-        .transactionsDao
-        .findById(widget.transactionId);
+    final db = ref.read(databaseProvider);
+    final txRow = await db.transactionsDao.findById(widget.transactionId);
     if (!mounted) return;
-    if (row == null) {
+    if (txRow == null) {
       setState(() {
         _loading = false;
         _notFound = true;
       });
       return;
     }
+
+    final stockRow = await db.stocksDao.findById(widget.stockId);
+    if (!mounted) return;
+    if (stockRow != null) {
+      _symbol = stockRow.symbol;
+      _stockCurrency = stockRow.currency;
+    }
+
     final tx = StockTransaction(
-      id: row.id,
-      stockId: row.stockId,
-      type: TransactionType.values.byName(row.type),
-      executedAt: row.executedAt,
-      shares: row.shares,
-      pricePerShare: row.pricePerShare,
-      currency: row.currency,
-      fees: row.fees,
-      notes: row.notes,
+      id: txRow.id,
+      stockId: txRow.stockId,
+      type: TransactionType.values.byName(txRow.type),
+      executedAt: txRow.executedAt,
+      shares: txRow.shares,
+      pricePerShare: txRow.pricePerShare,
+      currency: txRow.currency,
+      fees: txRow.fees,
+      notes: txRow.notes,
     );
     _type = tx.type;
     _executedAt = tx.executedAt;
@@ -110,6 +121,43 @@ class _EditTransactionScreenState
         time?.minute ?? _executedAt.minute,
       );
     });
+    // Re-fetch price when the date changes and the field is empty or was auto-filled.
+    if (_priceCtrl.text.isEmpty || _priceAutoFilled) {
+      await _autoFetchPrice();
+    }
+  }
+
+  Future<void> _autoFetchPrice() async {
+    if (_symbol == null) return;
+    if (!mounted) return;
+    setState(() {
+      _isFetchingPrice = true;
+      _priceAutoFilled = false;
+    });
+    try {
+      final price = await ref
+          .read(marketDataServiceProvider)
+          .fetchHistoricalPrice(
+            _symbol!,
+            _executedAt,
+            stockCurrency: _stockCurrency,
+          );
+      if (!mounted) return;
+      if (price != null) {
+        final formatted = price
+            .toStringAsFixed(4)
+            .replaceAll(RegExp(r'0+$'), '')
+            .replaceAll(RegExp(r'\.$'), '');
+        setState(() {
+          _priceCtrl.text = formatted;
+          _priceAutoFilled = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('EditTransaction: price fetch failed: $e');
+    } finally {
+      if (mounted) setState(() => _isFetchingPrice = false);
+    }
   }
 
   Decimal? _parseDecimal(String text) {
@@ -243,10 +291,27 @@ class _EditTransactionScreenState
             const SizedBox(height: 8),
             TextFormField(
               controller: _priceCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Price per share'),
+              decoration: InputDecoration(
+                labelText: 'Price per share',
+                helperText: _priceAutoFilled
+                    ? 'Auto-filled from market data · edit to adjust'
+                    : null,
+                suffixIcon: _isFetchingPrice
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : null,
+              ),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) {
+                if (_priceAutoFilled) setState(() => _priceAutoFilled = false);
+              },
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Required';
                 if (_parseDecimal(v) == null) return 'Invalid number';
