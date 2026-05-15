@@ -34,7 +34,9 @@ class MarketDataService {
   Future<void> _ensureSession() async {
     if (_crumb != null &&
         _sessionInitAt != null &&
-        DateTime.now().difference(_sessionInitAt!).inMinutes < 55) return;
+        DateTime.now().difference(_sessionInitAt!).inMinutes < 55) {
+      return;
+    }
 
     try {
       // Step 1: load the Yahoo Finance homepage to receive session cookies.
