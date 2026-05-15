@@ -712,6 +712,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     required String currency,
   }) {
     final theme = Theme.of(context);
+    // toDouble() is intentional here — this value is used only for pixel
+    // positioning, not for monetary arithmetic.
     final rangeDouble = (high - low).toDouble();
     final fraction = (current != null && rangeDouble > 0)
         ? ((current - low).toDouble() / rangeDouble).clamp(0.0, 1.0)
@@ -766,7 +768,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
-              if (current != null)
+              // Hide the current-price label when it is within 10 % of either
+              // end to avoid overlapping with the low / high labels.
+              if (current != null &&
+                  fraction != null &&
+                  fraction > 0.1 &&
+                  fraction < 0.9)
                 Text(
                   CurrencyFormatter.format(current, currency),
                   style: theme.textTheme.labelSmall?.copyWith(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -41,20 +43,35 @@ class MarketDataService {
   String? _crumb;
   String? _sessionCookie; // finance.yahoo.com cookies sent explicitly with quoteSummary
   DateTime? _sessionInitAt;
+  // Prevents concurrent callers from each running the full GDPR flow in parallel.
+  Completer<void>? _sessionInit;
+
+  bool _isSessionValid() =>
+      _crumb != null &&
+      _sessionInitAt != null &&
+      DateTime.now().difference(_sessionInitAt!).inMinutes < 55;
 
   /// Ensures a valid Yahoo Finance session (crumb + session cookies).
-  ///
-  /// Cookies are extracted directly from Set-Cookie response headers at every
-  /// redirect hop rather than relying on a cookie jar.  This is necessary
-  /// because the EU GDPR consent flow sets cookies on consent.yahoo.com (not
-  /// finance.yahoo.com), so domain-based jar lookups would return nothing.
+  /// Concurrent callers wait on the same in-flight init rather than each
+  /// running the GDPR redirect chain simultaneously.
   Future<void> _ensureSession() async {
-    if (_crumb != null &&
-        _sessionInitAt != null &&
-        DateTime.now().difference(_sessionInitAt!).inMinutes < 55) {
-      return;
-    }
+    if (_isSessionValid()) return;
+    if (_sessionInit != null) return _sessionInit!.future;
 
+    final completer = Completer<void>();
+    _sessionInit = completer;
+    try {
+      await _doInitSession();
+      completer.complete();
+    } finally {
+      _sessionInit = null;
+    }
+  }
+
+  /// Performs the actual Yahoo Finance GDPR consent flow + crumb fetch.
+  /// Errors are swallowed and logged; callers proceed and will fail gracefully
+  /// on the subsequent API call (where 401/403 triggers session invalidation).
+  Future<void> _doInitSession() async {
     try {
       // name→value map built from every Set-Cookie header we encounter.
       final cookieMap = <String, String>{};
@@ -345,9 +362,13 @@ class MarketDataService {
         trailingEps: raw(dks, 'trailingEps'),
       );
     } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      // Stale session — force re-auth on the next call rather than waiting
+      // out the 55-minute TTL with a known-bad crumb.
+      if (status == 401 || status == 403) _crumb = null;
       final body = e.response?.data?.toString() ?? '';
       debugPrint('MarketDataService: quoteSummary[$symbol] error '
-          'status=${e.response?.statusCode} '
+          'status=$status '
           'body=${body.length > 400 ? body.substring(0, 400) : body}');
       return null;
     } catch (e) {

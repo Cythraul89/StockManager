@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -95,6 +97,11 @@ final allDividendsProvider = FutureProvider<List<Dividend>>((ref) async {
 
 final analystDataProvider =
     FutureProvider.family<AnalystData?, String>((ref, stockId) async {
+  // Keep the result alive for 10 minutes so navigating away and back does not
+  // trigger a full Yahoo Finance round-trip on every visit.
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 10), link.close);
+
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
   return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
