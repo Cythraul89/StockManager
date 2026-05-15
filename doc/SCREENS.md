@@ -122,57 +122,68 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 
 ## 3. Stock Detail
 
-**Purpose:** Full view of one stock — price, positions, P&L, transactions, dividends.
+**Purpose:** Full view of one stock — price, position, P&L, analyst data, transactions, dividends.
 
-### Mobile (tabbed)
+### Mobile (scrollable)
 ```
 ┌─────────────────────────────┐
-│  ← AAPL — Apple Inc.   [✏] │
-│  NASDAQ · USD · Scalable    │
+│  ← AAPL                [✏] │
 │                             │
-│  $ 189.40  ▲ +3.2% today   │
-│  € 174.28 (preferred)       │
+│  ┌─────────────────────────┐│
+│  │ Apple Inc.              ││
+│  │ NASDAQ · US0378331005   ││
+│  │ ─────────────────────── ││
+│  │ Shares held    10.000000││
+│  │ Avg buy price   $ 145.20││
+│  │ Invested        $ 1,452 ││
+│  │ Current price   $ 189.40││  ← fetched on open if not in cache
+│  │ Unrealised P&L  +$ 442  ││  ← coloured green / red
+│  │ Realised P&L    +$  80  ││
+│  └─────────────────────────┘│
 │                             │
-│  ┌────────┬────────┬───────┐ │
-│  │Overview│Transact│Divid. │ │
-│  └────────┴────────┴───────┘ │
+│  ┌─────────────────────────┐│  ← Analysis card
+│  │ Analysis  14 analysts [↺]││  ← ↺ refresh button
+│  │ ┌────────────────────┐  ││
+│  │ │ Strong Buy         │  ││  ← coloured chip
+│  │ └────────────────────┘  ││
+│  │ Target price  $ 230 +21%││  ← mean ± % upside in colour
+│  │ ▓░░░░░░░░│░░░░░░░░░░░░░ ││  ← range bar (low·current·high)
+│  │ $ 180          $ 260    ││
+│  │                         ││
+│  │ 52-Week Range           ││
+│  │ ▓░░░░░░░│░░░░░░░░░░░░░░ ││
+│  │ $ 164          $ 201    ││
+│  │                         ││
+│  │ Consensus               ││
+│  │ ████████▒▒▒░░░──        ││  ← proportional colour bar
+│  │ 8 Str.Buy · 5 Buy · … ││
+│  │                         ││
+│  │ Valuation               ││
+│  │ P/E (trailing)  28.4×   ││
+│  │ P/E (forward)   24.1×   ││
+│  │ EPS (TTM)       $ 6.73  ││
+│  └─────────────────────────┘│
 │                             │
-│  ── Overview tab ──         │
-│  Shares held      10.00     │
-│  Avg buy price  $ 145.20    │
-│  Total invested € 1,337     │
-│  Current value  € 1,743     │
-│  Unrealised P&L  +€ 406 ▲  │
-│  Realised P&L    +€  80 ▲  │
-│  Dividend yield    0.52%    │
-│  DRIP             OFF  [⚙] │
+│  Transactions       [+ Add] │
+│  BUY  01 Jan 2024           │
+│  5 shares @ $ 142.00        │
+│                             │
+│  Dividends    [⟳] [+ Add]  │
+│  PAID  15 Feb 2024          │
+│  $ 0.24/share · Total $2.40 │
+│  EXPECTED  15 May 2026      │
+│  $ 0.25/share · Est. $2.30  │
 └─────────────────────────────┘
 ```
 
-**Transactions tab**
-```
-│  Transactions          [+ Add] │
-│  ─────────────────────────     │
-│  BUY  01 Jan 2024              │
-│  5 shares @ $ 142.00  – $ 4.99 │
-│  ─────────────────────────     │
-│  BUY  15 Mar 2024              │
-│  5 shares @ $ 148.40  – $ 4.99 │
-```
+**Price display:** When the screen opens, `_fetchPriceOnLoad()` checks the in-memory cache. If no quote exists or the cached quote is stale, a fresh quote is fetched from Yahoo Finance / Stooq and written to both the DB cache and `priceQuotesProvider`. This ensures the price shows correctly when navigating directly from the stock list without visiting the Dashboard first.
 
-**Dividends tab**
-```
-│  Dividends                [+ Add] │
-│  ────────────────────────────────   │
-│  PAID  15 Feb 2024                │
-│  $ 0.24/share · Total $ 2.40      │
-│  ────────────────────────────────   │
-│  EXPECTED  15 May 2026            │
-│  $ 0.25/share · Est. € 2.30       │
-```
+**Manual price override:** When no market price is available (e.g. OTC or unlisted securities), a **Set price** link replaces the missing price row. Once set, a **(manual)** tag is appended to the price and a **Clear manual price** button appears. Manual prices are never marked stale.
+
+**Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails.
 
 ### Desktop
-All three sections (Overview, Transactions, Dividends) displayed simultaneously in a three-column layout without tabs.
+All sections (stock info, analysis, transactions, dividends) displayed in a single scrollable column; no tabs.
 
 ---
 
@@ -213,7 +224,25 @@ ISIN lookup auto-fills symbol, name, exchange, and currency. If multiple listing
 ```
 
 ### Edit Stock
-Same fields as Add, but ISIN is read-only. Currency can be corrected here if the wrong value was stored at creation time.
+Same fields as Add, but ISIN is read-only. A **Research** button next to the ISIN field re-runs the OpenFIGI lookup and shows the same listing picker as Add Stock, letting the user update symbol, name, exchange, and currency in one step. Currency can also be corrected directly in the dropdown.
+
+```
+┌─────────────────────────────┐
+│  ← Edit AAPL                │
+│                             │
+│  ISIN                       │
+│  US0378331005 [Research]    │
+│                             │
+│  Ticker symbol              │
+│  [ AAPL                   ] │
+│                             │
+│  … (same fields as Add) …   │
+│                             │
+│  [ Save ]  [ Delete stock ] │
+└─────────────────────────────┘
+```
+
+When symbol or currency changes on save, the cached price is cleared and re-fetched immediately (before navigating back), and the analyst data refresh counter is incremented so stale analyst targets are not shown.
 
 ---
 

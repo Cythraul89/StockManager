@@ -1,16 +1,27 @@
+import 'dart:async';
+
 import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
+import '../../core/models/analyst_data.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/dividend.dart';
+import '../../core/models/fetched_dividend.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
+import '../../core/services/isin_lookup_service.dart';
 import '../../core/services/market_data_service.dart';
+import '../../core/utils/withholding_tax.dart';
+
+final isinLookupServiceProvider = Provider<IsinLookupService>((ref) {
+  throw UnimplementedError('isinLookupServiceProvider must be overridden');
+});
 
 // ── Database provider ──────────────────────────────────────────────────────────────────────────
 
@@ -45,10 +56,11 @@ final stocksStreamProvider = StreamProvider<List<Stock>>((ref) {
 });
 
 final stockByIdProvider =
-    FutureProvider.family<Stock?, String>((ref, id) async {
+    StreamProvider.family<Stock?, String>((ref, id) {
   final db = ref.watch(databaseProvider);
-  final row = await db.stocksDao.findById(id);
-  return row == null ? null : _stockFromRow(row);
+  return db.stocksDao
+      .watchById(id)
+      .map((row) => row == null ? null : _stockFromRow(row));
 });
 
 // ── Transaction providers ──────────────────────────────────────────────────────────────────
@@ -81,9 +93,33 @@ final dividendsByStockProvider =
 });
 
 final allDividendsProvider = FutureProvider<List<Dividend>>((ref) async {
+  ref.watch(dataVersionProvider); // Refresh on any data mutation
   final db = ref.watch(databaseProvider);
   final rows = await db.dividendsDao.getAll();
   return rows.map(_dividendFromRow).toList();
+});
+
+// ── Analyst data (fetched on demand, keyed by stockId) ───────────────────────────
+
+// Incrementing this counter forces analystDataProvider to re-fetch.
+// Using a StateProvider rather than ref.invalidate avoids interference with
+// the keepAlive link inside the FutureProvider.
+final analystRefreshProvider =
+    StateProvider.family<int, String>((ref, stockId) => 0);
+
+final analystDataProvider =
+    FutureProvider.family<AnalystData?, String>((ref, stockId) async {
+  // Re-run whenever the manual refresh counter is incremented.
+  ref.watch(analystRefreshProvider(stockId));
+
+  // Keep the result alive for 10 minutes so navigating away and back does not
+  // trigger a full Yahoo Finance round-trip on every visit.
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 10), link.close);
+
+  final stock = await ref.watch(stockByIdProvider(stockId).future);
+  if (stock == null) return null;
+  return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
 });
 
 // ── Price quote cache (in-memory, refreshed on demand) ───────────────────────────
@@ -110,8 +146,9 @@ class StockActions {
       _ref.read(dataVersionProvider.notifier).update((n) => n + 1);
 
   Future<String> addStock(Stock stock) async {
+    final id = stock.id.isEmpty ? _uuid.v4() : stock.id;
     await _db.stocksDao.upsert(StocksCompanion.insert(
-      id: stock.id.isEmpty ? _uuid.v4() : stock.id,
+      id: id,
       brokerId: stock.brokerId,
       isin: stock.isin,
       symbol: stock.symbol,
@@ -121,7 +158,7 @@ class StockActions {
       dripEnabled: Value(stock.dripEnabled),
     ));
     _notifyChange();
-    return stock.id;
+    return id;
   }
 
   Future<void> updateStock(Stock stock) async {
@@ -162,6 +199,19 @@ class StockActions {
     return id;
   }
 
+  Future<void> updateTransaction(StockTransaction tx) async {
+    await _db.transactionsDao.updateRow(TransactionsCompanion(
+      id: Value(tx.id),
+      type: Value(tx.type.name),
+      executedAt: Value(tx.executedAt),
+      shares: Value(tx.shares),
+      pricePerShare: Value(tx.pricePerShare),
+      fees: Value(tx.fees),
+      notes: Value(tx.notes),
+    ));
+    _notifyChange();
+  }
+
   Future<void> deleteTransaction(String txId) async {
     await _db.transactionsDao.deleteById(txId);
     _notifyChange();
@@ -179,13 +229,101 @@ class StockActions {
       currency: div.currency,
       withholdingTax: Value(div.withholdingTax),
       notes: Value(div.notes),
+      source: Value(div.source.name),
+      confirmed: Value(div.confirmed),
     ));
     _notifyChange();
     return id;
   }
 
+  Future<void> updateDividend(Dividend div) async {
+    await _db.dividendsDao.updateRow(DividendsCompanion(
+      id: Value(div.id),
+      type: Value(div.type.name),
+      date: Value(div.date),
+      amountPerShare: Value(div.amountPerShare),
+      totalAmount: Value(div.totalAmount),
+      currency: Value(div.currency),
+      withholdingTax: Value(div.withholdingTax),
+      notes: Value(div.notes),
+      confirmed: Value(div.confirmed),
+    ));
+    _notifyChange();
+  }
+
   Future<void> deleteDividend(String divId) async {
     await _db.dividendsDao.deleteById(divId);
+    _notifyChange();
+  }
+
+  /// Inserts auto-fetched dividends for dates when shares were actually held,
+  /// skipping dates already in the database.  Pre-fills totalAmount from the
+  /// share count at the dividend date and withholdingTax from the treaty rate
+  /// for the ISIN's source country (both are estimates; user can adjust).
+  Future<void> syncDividends(
+    String stockId,
+    String currency,
+    String isin,
+    List<FetchedDividend> fetched,
+    List<StockTransaction> transactions,
+    List<StockSplit> splits,
+  ) async {
+    final taxRate = withholdingTaxRate(isin);
+
+    for (final d in fetched) {
+      final existing =
+          await _db.dividendsDao.findByStockAndDate(stockId, d.date);
+      if (existing != null) continue;
+
+      // Skip if no shares were held on the dividend date.
+      final sharesHeld =
+          PortfolioCalculator.sharesAtDate(transactions, splits, d.date);
+      if (sharesHeld <= Decimal.zero) continue;
+
+      final type = d.isPaid ? DividendType.paid : DividendType.expected;
+      // Paid auto-fetched dividends need user confirmation; expected do not.
+      final needsConfirmation = d.isPaid;
+
+      Decimal? totalAmount;
+      Decimal? withholdingTax;
+      if (d.isPaid) {
+        totalAmount = d.amountPerShare * sharesHeld;
+        if (taxRate > Decimal.zero) {
+          withholdingTax =
+              (totalAmount.toRational() * taxRate.toRational())
+                  .toDecimal(scaleOnInfinitePrecision: 4);
+        }
+      }
+
+      await _db.dividendsDao.insert(DividendsCompanion.insert(
+        id: _uuid.v4(),
+        stockId: stockId,
+        type: type.name,
+        date: d.date,
+        amountPerShare: d.amountPerShare,
+        totalAmount: Value(totalAmount),
+        currency: currency,
+        withholdingTax: Value(withholdingTax),
+        source: const Value('auto'),
+        confirmed: Value(!needsConfirmation),
+      ));
+    }
+    _notifyChange();
+  }
+
+  /// Marks a pending auto-fetched paid dividend as confirmed with user-adjusted values.
+  Future<void> confirmDividend(Dividend div) async {
+    await _db.dividendsDao.updateRow(DividendsCompanion(
+      id: Value(div.id),
+      type: Value(div.type.name),
+      date: Value(div.date),
+      amountPerShare: Value(div.amountPerShare),
+      totalAmount: Value(div.totalAmount),
+      currency: Value(div.currency),
+      withholdingTax: Value(div.withholdingTax),
+      notes: Value(div.notes),
+      confirmed: const Value(true),
+    ));
     _notifyChange();
   }
 
@@ -281,4 +419,6 @@ Dividend _dividendFromRow(DividendRow r) => Dividend(
       currency: r.currency,
       withholdingTax: r.withholdingTax,
       notes: r.notes,
+      source: DividendSource.values.byName(r.source),
+      confirmed: r.confirmed,
     );

@@ -132,7 +132,9 @@ PortfolioSummary _buildSummary(
       currentPrice: currentPrice,
     );
     final divSummary = DividendCalculator.calculate(
-      paidDividends: dividends.where((d) => d.type == DividendType.paid).toList(),
+      paidDividends: dividends
+          .where((d) => d.type == DividendType.paid && d.confirmed)
+          .toList(),
       currentPrice: currentPrice,
       sharesHeld: pos.sharesHeld,
     );

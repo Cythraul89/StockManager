@@ -21,6 +21,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - Each stock is identified by its **ISIN** (International Securities Identification Number).
 - The stock name, ticker symbol, exchange, and currency are **automatically resolved** from the ISIN via a lookup service when adding a stock; the user does not need to enter these manually.
 - Resolved fields can be reviewed and corrected by the user before saving.
+- On the Edit Stock screen, a **Research** button re-runs the ISIN lookup at any time, allowing the user to update the symbol, name, exchange, and currency in one step (e.g. after a ticker change or delisting migration).
 - Stocks can be held in **different currencies**.
 - Stocks can be added and removed in the app.
 
@@ -71,6 +72,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 - Current prices are fetched in **real-time from the Internet** (e.g. via a public market data API).
 - Live data is used solely for display; the app functions without it (see Section 7).
+- For securities not covered by any market data source, the user can set a **manual price override** directly from the stock detail screen. Manual prices are stored locally, never expire, and take precedence over live quotes. They can be cleared at any time to resume live data fetching.
 
 ### 4.4 Buy Price Overview
 
@@ -173,37 +175,53 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 Features confirmed for a future version. Not in scope for the initial release.
 
-### 10.1 Analyst Target Price and Rating
-- Each stock detail view displays the **consensus analyst target price** (fetched from market data) alongside the current price.
-- The **distance to target** is shown as a percentage (e.g. +18% upside).
-- The **analyst consensus rating** (Buy / Hold / Sell) is shown per stock, including the number of analysts contributing to the consensus.
+### 10.1 Analyst Target Price and Rating ✓ *(delivered)*
+- Each stock detail view displays the **consensus analyst target price** (fetched from Yahoo Finance) alongside the current price.
+- The **analyst consensus rating** (Strong Buy / Buy / Hold / Underperform / Sell) is shown as a coloured chip, including the number of analysts contributing to the consensus.
+- The target price range (low / mean / high) is shown as a gradient range bar with the current price marked.
+- Upside / downside percentage relative to the current price is shown next to the mean target, colour-coded green (upside) or red (downside).
+- A **consensus breakdown bar** shows the proportion of Strong Buy / Buy / Hold / Sell / Strong Sell ratings visually.
+- **52-week high/low** range bar is shown on the same card.
+- **Valuation metrics** — trailing P/E, forward P/E, EPS (TTM) — are shown in the stock's trading currency.
+- All analyst prices are converted from the stock's trading currency to the stock's base currency for display; currency conversion uses the same exchange rate mechanism as portfolio values.
+- A **refresh button** on the analysis card allows the user to force a re-fetch at any time.
+- Data is cached for 10 minutes per stock (no network round-trip on quick navigation away and back).
 
-### 10.2 Trailing Stop-Loss Notification
+### 10.2 Configurable Market Data Provider
+- The user can choose the **market data provider** for analyst consensus data in Settings → Market Data.
+- Supported providers:
+  - **Yahoo Finance** (default) — no account or API key required; unofficial API, subject to rate-limiting.
+  - **Finnhub** (optional) — requires a free Finnhub API key entered by the user; provides more reliable and structured analyst data (price targets, consensus ratings, EPS estimates).
+- The API key for Finnhub is stored in `flutter_secure_storage` alongside the Nextcloud credentials.
+- Switching providers invalidates any cached analyst data so the next screen open re-fetches from the new source.
+- A link to the Finnhub free registration page is shown next to the API key field.
+
+### 10.3 Trailing Stop-Loss Notification
 - The user can set a **trailing stop-loss threshold** per stock (e.g. −10%).
 - The threshold tracks the stock's highest recorded price since the alert was enabled.
 - A notification is triggered when the current price falls more than the threshold percentage below that peak.
 - The trailing high-water mark is updated automatically as the price rises.
 - Configurable per stock; displayed alongside the current price on the stock detail screen.
 
-### 10.3 Watchlist (Monitoring-Only Stocks)
+### 10.4 Watchlist (Monitoring-Only Stocks)
 - Stocks can be added in **monitoring mode** — no broker assignment, no transactions required.
 - Watchlist stocks appear in a dedicated section separate from held positions.
 - All live price, target price, rating, and news features apply to watchlist stocks.
 - A watchlist stock can be promoted to a held position at any time by assigning a broker and adding a transaction.
 
-### 10.4 Price History Chart
+### 10.5 Price History Chart
 - Each stock detail view includes a **price history chart** showing closing prices over selectable time ranges (1W, 1M, 3M, 1Y, 5Y).
 - The chart highlights the user's buy and sell transactions as overlaid markers.
 - The dashboard shows a **mini sparkline** per stock in the stock list.
 - Charts are rendered from cached historical data and work offline for the last fetched range.
 
-### 10.5 Stock News
+### 10.6 Stock News
 - Each stock detail view includes a **news feed** of recent articles related to that stock.
 - News is fetched from a public financial news API (e.g. Finnhub free tier) using the stock's ticker symbol.
 - Articles open in the device's default browser.
 - News requires an Internet connection; a “no connection” placeholder is shown offline.
 
-### 10.6 Broker Import / Export
+### 10.7 Broker Import / Export
 - The app can **import transaction history** from spreadsheet files exported by supported brokers, automatically creating stocks and transactions from the imported data.
 - The app can **export the full transaction history** in a format compatible with supported brokers (e.g. for re-importing into a broker's portfolio tool).
 - Supported file formats: CSV and XLSX (the most common broker export formats).

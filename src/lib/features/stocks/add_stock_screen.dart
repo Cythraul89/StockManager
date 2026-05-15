@@ -10,11 +10,6 @@ import '../../core/utils/isin_validator.dart';
 import '../settings/settings_provider.dart';
 import 'stocks_provider.dart';
 
-// Exposed so main.dart can override with the real service instance.
-final isinLookupServiceProvider = Provider<IsinLookupService>((ref) {
-  throw UnimplementedError('isinLookupServiceProvider must be overridden');
-});
-
 class AddStockScreen extends ConsumerStatefulWidget {
   const AddStockScreen({super.key});
 

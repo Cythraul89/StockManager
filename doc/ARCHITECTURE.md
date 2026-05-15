@@ -120,10 +120,12 @@ features/<name>/
 | type | ENUM | paid \| expected |
 | date | DATE | payment date or expected date |
 | amount_per_share | DECIMAL | |
-| total_amount | DECIMAL? | null for expected (calculated on read) |
+| total_amount | DECIMAL? | null for expected (estimated on display) |
 | currency | TEXT | |
-| withholding_tax | DECIMAL? | |
+| withholding_tax | DECIMAL? | pre-filled from ISIN country; user-adjustable |
 | notes | TEXT? | |
+| source | ENUM | manual \| auto; default manual |
+| confirmed | BOOL | false = awaiting user confirmation (auto paid only); default true |
 
 **price_cache**
 | Column | Type | Notes |
@@ -193,6 +195,8 @@ At **≥ 600 dp** the `adaptive_shell` switches to the desktop shell (persistent
 
 ### 5.2 Split-Adjusted Calculations
 Raw transaction rows are never modified when a stock split is recorded. `PortfolioCalculator.calculate()` applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable. The helper `PortfolioCalculator.splitMultiplierAfter(txDate, splits)` is a public static method so that `PnlCalculator` can share the same logic without duplication.
+
+For historical queries (e.g. "how many shares did the user hold on dividend date D?"), `PortfolioCalculator.sharesAtDate(transactions, splits, asOf)` computes the position at a past date by filtering transactions to those on or before `asOf` and applying only the splits that occurred between each transaction date and `asOf`. This is used by `StockActions.syncDividends` to filter out dividends for periods when no shares were held.
 
 ### 5.3 Currency Conversion
 Exchange rates are fetched on demand and cached with a 1-hour TTL. When offline, the most recent cached rate is used with a staleness indicator shown in the UI. Manual overrides stored in the database bypass the TTL entirely.
@@ -321,7 +325,69 @@ Key-value pairs, no fixed column count.
 | D | Source | `live` or `manual override` |
 | E | Fetched / set at | ISO 8601 timestamp |
 
-### 5.8 Manual Price Override
+### 5.8 Auto-Fetched Dividends
+
+Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchDividends(symbol)`, which queries two Yahoo Finance endpoints:
+1. **Paid history** (`chart/{symbol}?events=dividends&range=5y`) — returns up to 5 years of ex-dividend events.
+2. **Expected next dividend** (`quoteSummary/{symbol}?modules=calendarEvents`) — returns the next declared dividend date; the amount is estimated from the most recent paid dividend.
+
+`StockActions.syncDividends` filters the results:
+- Skips dates already present in the database (deduplication by stock ID + date).
+- Skips dates when `PortfolioCalculator.sharesAtDate()` returns zero (the user held no shares).
+- Pre-fills `totalAmount` as `amountPerShare × sharesAtDate` and `withholdingTax` from `withholdingTaxRate(isin)` (see below).
+- Paid auto-fetched dividends are inserted with `confirmed = false` and shown in a "Pending confirmation" section requiring user review before inclusion in calculations.
+- Expected dividends are inserted immediately as `confirmed = true` (they are estimates, not real cash flows).
+
+#### Withholding tax pre-fill
+
+`withholdingTaxRate(isin)` uses the two-character ISO 3166-1 country code embedded in the ISIN to look up standard dividend withholding tax (DBA) rates. Values are estimates based on common treaty rates for German retail investors and should be verified against broker tax documents. The function returns `Decimal.zero` for unrecognised country codes; users should manually enter the correct rate in that case.
+
+### 5.9 Analyst Consensus Data
+
+`MarketDataService.fetchAnalystData(symbol)` fetches four modules from Yahoo Finance's v10 `quoteSummary` API in a single request:
+
+| Module | Fields extracted |
+|---|---|
+| `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency` |
+| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE` |
+| `defaultKeyStatistics` | `trailingEps` |
+| `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
+
+The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen. Data is not persisted locally.
+
+#### Caching and manual refresh
+
+`analystDataProvider` uses `ref.keepAlive()` with a 10-minute TTL, so navigating away and back does not trigger a full Yahoo round-trip on every visit. A `StateProvider.family<int, String>` counter (`analystRefreshProvider`) is used to force a re-fetch: `analystDataProvider` watches it, and the refresh button on the Analysis card increments it. `ref.invalidate()` is intentionally **not** used here because it interferes with the `keepAlive` link.
+
+#### Yahoo Finance session (GDPR)
+
+Accessing the quoteSummary API requires a valid session cookie set (`GUC`, `A1`, `A3`, etc.) and a `crumb` query parameter. EU users are redirected through a GDPR consent flow before reaching `finance.yahoo.com`. `_ensureSession()` handles this by:
+
+1. Following the `finance.yahoo.com → guce.yahoo.com → consent.yahoo.com` redirect chain manually (`followRedirects: false`) and collecting `Set-Cookie` headers at each hop.
+2. If the landing page contains a GDPR consent form, POSTing `csrfToken + sessionId + agree=agree` and following the post-consent redirect chain, again gathering cookies.
+3. Fetching the crumb from `query2.finance.yahoo.com/v1/test/getcrumb` using the accumulated cookies.
+
+Cookies are extracted directly from `Set-Cookie` response headers (not via a cookie jar) because the GDPR flow sets cookies on `consent.yahoo.com`, which a domain-scoped jar would not return for `finance.yahoo.com` requests. The session (cookie string + crumb) is cached for 55 minutes. A `Completer<void>` gate ensures concurrent callers wait on a single in-flight init rather than racing through the GDPR flow in parallel.
+
+All authenticated `quoteSummary` requests (analyst data, expected dividend) use `_withYahooRetry` for automatic backoff on HTTP 429 (rate-limit) responses.
+
+#### Analyst price currency conversion
+
+Yahoo Finance returns analyst price targets in the stock's **trading currency** (the same denomination as the live price quote), regardless of what the `financialCurrency` field says. `financialCurrency` reflects the company's financial-reporting currency and is unreliable as a conversion key (e.g. CADLR.OL reports `financialCurrency=EUR` but all prices are in NOK). `AnalystData.financialCurrency` is stored for diagnostics only; it must not be used for currency conversion.
+
+`_buildAnalystCard` therefore uses `quoteCurrency` (the currency of the cached `PriceQuote`) as the effective analyst currency. If `quoteCurrency ≠ stock.currency`, it calls `ExchangeRate.find(rates, quoteCurrency, stockCurrency)` to convert all monetary fields (target mean/low/high, 52-week range, EPS) before display. The `canCompare` flag controls whether upside/downside % and the position marker on range bars are shown (they require a successful conversion so that `currentPrice` and the analyst targets are in the same unit).
+
+#### Analysis card UI
+
+| Section | Details |
+|---|---|
+| Recommendation chip | Coloured chip: Strong Buy (dark green) · Buy (green) · Hold (amber) · Underperform (orange) · Sell/Strong Sell (red) |
+| Target price | Mean target with upside/downside % in matching colour; low–high gradient range bar with current-price marker |
+| 52-Week Range | Same gradient bar widget, same current-price marker |
+| Consensus | Stacked colour bar (proportional to analyst counts) with a text legend |
+| Valuation | Trailing P/E · Forward P/E · EPS (TTM), converted to stock currency |
+
+### 5.10 Manual Price Override
 
 For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded funds), the user can set a price manually from the Stock Detail screen. Manual prices:
 
@@ -333,7 +399,7 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 
 `MarketDataService.fetchQuote()` accepts an optional `stockCurrency` parameter used for the Stooq fallback. `fetchQuotes()` accepts an optional `currencyByStockId` map so `DashboardScreen` can pass currencies in bulk.
 
-### 5.9 Nextcloud Sync Strategy
+### 5.11 Nextcloud Sync Strategy
 
 #### Backup format
 Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
@@ -371,7 +437,7 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 | `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
-### 5.9 Self-Signed Certificate Support
+### 5.12 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
 2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
@@ -390,8 +456,10 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /stocks/:id              → Stock detail
 /stocks/:id/edit         → Edit stock
 /stocks/add              → Add stock
-/stocks/:id/transactions/add   → Add transaction
-/stocks/:id/dividends/add      → Add dividend (paid or expected)
+/stocks/:id/transactions/add              → Add transaction
+/stocks/:id/transactions/:txId/edit       → Edit / delete transaction
+/stocks/:id/dividends/add                 → Add dividend (paid or expected)
+/stocks/:id/dividends/:divId/edit         → Edit / delete dividend
 /dividends               → Dividend overview
 /brokers                 → Broker list
 /brokers/add             → Add broker

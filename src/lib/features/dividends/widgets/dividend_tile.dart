@@ -6,34 +6,73 @@ import '../../../core/utils/date_helpers.dart';
 import '../../../core/utils/decimal_math.dart';
 
 class DividendTile extends StatelessWidget {
-  const DividendTile({super.key, required this.dividend});
+  const DividendTile({
+    super.key,
+    required this.dividend,
+    this.onConfirm,
+    this.onTap,
+  });
 
   final Dividend dividend;
+  // If provided and the dividend isPendingConfirmation, a confirm button is shown.
+  final VoidCallback? onConfirm;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isPaid = dividend.type == DividendType.paid;
-    final daysUntil =
-        isPaid ? null : DateHelpers.daysUntil(dividend.date);
+    final isPending = dividend.isPendingConfirmation;
+    final daysUntil = isPaid ? null : DateHelpers.daysUntil(dividend.date);
+
+    final leadingColor =
+        isPending ? Colors.orange : (isPaid ? Colors.green : theme.colorScheme.primary);
+    final leadingIcon =
+        isPending ? Icons.pending_outlined : (isPaid ? Icons.payments : Icons.schedule);
+
+    Widget? trailingWidget;
+    if (isPending && onConfirm != null) {
+      trailingWidget = TextButton(
+        onPressed: onConfirm,
+        child: const Text('Review'),
+      );
+    }
 
     return ListTile(
+      onTap: onTap,
       leading: CircleAvatar(
-        backgroundColor: (isPaid ? Colors.green : theme.colorScheme.primary)
-            .withValues(alpha: 0.15),
-        child: Icon(
-          isPaid ? Icons.payments : Icons.schedule,
-          size: 20,
-          color: isPaid ? Colors.green : theme.colorScheme.primary,
-        ),
+        backgroundColor: leadingColor.withValues(alpha: 0.15),
+        child: Icon(leadingIcon, size: 20, color: leadingColor),
       ),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            isPaid ? 'Paid' : 'Expected',
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(fontWeight: FontWeight.w500),
+          Row(
+            children: [
+              Text(
+                isPending
+                    ? 'Pending'
+                    : (isPaid ? 'Paid' : 'Expected'),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w500),
+              ),
+              if (isPending) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'auto',
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(color: Colors.orange),
+                  ),
+                ),
+              ],
+            ],
           ),
           Text(
             dividend.totalAmount != null
@@ -49,10 +88,11 @@ class DividendTile extends StatelessWidget {
         '${DateHelpers.formatDate(dividend.date)}'
         ' · ${CurrencyFormatter.format(dividend.amountPerShare, dividend.currency)}/share'
         '${!isPaid && daysUntil != null ? " · in $daysUntil days" : ""}'
-        '${isPaid && dividend.withholdingTax != null && dividend.withholdingTax!.isPositive ? " · WHT ${CurrencyFormatter.format(dividend.withholdingTax!, dividend.currency)}" : ""}',
+        '${isPaid && !isPending && dividend.withholdingTax != null && dividend.withholdingTax!.isPositive ? " · WHT ${CurrencyFormatter.format(dividend.withholdingTax!, dividend.currency)}" : ""}',
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
+      trailing: trailingWidget,
     );
   }
 }

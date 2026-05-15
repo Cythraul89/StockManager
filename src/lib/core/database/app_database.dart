@@ -48,15 +48,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
         onUpgrade: (m, from, to) async {
           if (from < 2) {
-            await m.addColumn(
-                priceCache, priceCache.manualOverride);
+            await m.addColumn(priceCache, priceCache.manualOverride);
+          }
+          if (from < 3) {
+            await m.addColumn(dividends, dividends.source);
+            await m.addColumn(dividends, dividends.confirmed);
           }
         },
         beforeOpen: (details) async {

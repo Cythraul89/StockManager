@@ -9,6 +9,7 @@ import 'features/brokers/edit_broker_screen.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/dividends/add_dividend_screen.dart';
 import 'features/dividends/dividends_screen.dart';
+import 'features/dividends/edit_dividend_screen.dart';
 import 'features/settings/about_screen.dart';
 import 'features/settings/currency_settings_screen.dart';
 import 'features/settings/local_backup_screen.dart';
@@ -22,6 +23,7 @@ import 'features/stocks/edit_stock_screen.dart';
 import 'features/stocks/stock_detail_screen.dart';
 import 'features/stocks/stocks_screen.dart';
 import 'features/transactions/add_transaction_screen.dart';
+import 'features/transactions/edit_transaction_screen.dart';
 import 'shell/adaptive_shell.dart';
 
 class StockManagerApp extends ConsumerWidget {
@@ -95,9 +97,23 @@ final _router = GoRouter(
                       stockId: state.pathParameters['id']!),
                 ),
                 GoRoute(
+                  path: 'transactions/:txId/edit',
+                  builder: (context, state) => EditTransactionScreen(
+                    stockId: state.pathParameters['id']!,
+                    transactionId: state.pathParameters['txId']!,
+                  ),
+                ),
+                GoRoute(
                   path: 'dividends/add',
                   builder: (context, state) => AddDividendScreen(
                       stockId: state.pathParameters['id']!),
+                ),
+                GoRoute(
+                  path: 'dividends/:divId/edit',
+                  builder: (context, state) => EditDividendScreen(
+                    stockId: state.pathParameters['id']!,
+                    dividendId: state.pathParameters['divId']!,
+                  ),
                 ),
               ],
             ),

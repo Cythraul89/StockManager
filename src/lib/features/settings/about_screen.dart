@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../../core/services/log_service.dart';
 import '../../core/utils/app_version.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends ConsumerWidget {
   const AboutScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('About')),
@@ -41,6 +44,33 @@ class AboutScreen extends StatelessWidget {
               applicationVersion: 'v$appVersion',
               applicationLegalese: _legalese,
             ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Share debug log'),
+            subtitle: const Text('Send log file for troubleshooting'),
+            trailing: const Icon(Icons.share),
+            onTap: () async {
+              final logService = ref.read(logServiceProvider);
+              final path = logService.filePath;
+              if (path.isEmpty) { return; }
+              await Share.shareXFiles(
+                [XFile(path)],
+                subject: 'StockManager debug log',
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('Clear debug log'),
+            onTap: () async {
+              await ref.read(logServiceProvider).clear();
+              if (!context.mounted) { return; }
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Debug log cleared')),
+              );
+            },
           ),
         ],
       ),
