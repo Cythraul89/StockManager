@@ -18,6 +18,73 @@ class MarketDataService {
   static const _stooqBaseUrl = 'https://stooq.com/q/l/';
   static const _stooqHistUrl = 'https://stooq.com/q/d/l/';
 
+  static const _userAgent =
+      'Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0';
+
+  // Yahoo Finance requires a session cookie + crumb for quoteSummary calls.
+  // We fetch the homepage once to get the cookie, then exchange it for a
+  // crumb. Both are cached for 55 minutes.
+  String? _sessionCookie;
+  String? _crumb;
+  DateTime? _sessionInitAt;
+
+  /// Ensures a valid Yahoo Finance session (cookie + crumb).
+  /// Silently no-ops if the session init fails — callers proceed without auth
+  /// and will receive null data from quoteSummary.
+  Future<void> _ensureSession() async {
+    if (_crumb != null &&
+        _sessionInitAt != null &&
+        DateTime.now().difference(_sessionInitAt!).inMinutes < 55) return;
+
+    try {
+      // Step 1: load the Yahoo Finance homepage to receive session cookies.
+      final homeResp = await _dio.get<String>(
+        'https://finance.yahoo.com/',
+        options: Options(
+          headers: {'User-Agent': _userAgent},
+          responseType: ResponseType.plain,
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+      final rawCookies = homeResp.headers['set-cookie'] ?? [];
+      final cookie = rawCookies
+          .map((c) => c.split(';').first.trim())
+          .where((c) => c.isNotEmpty)
+          .join('; ');
+
+      // Step 2: exchange the session cookies for a crumb.
+      final crumbResp = await _dio.get<String>(
+        'https://query2.finance.yahoo.com/v1/test/getcrumb',
+        options: Options(
+          headers: {'User-Agent': _userAgent, 'Cookie': cookie},
+          responseType: ResponseType.plain,
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final crumb = crumbResp.data?.trim();
+      // A valid crumb is a short non-JSON string.
+      if (crumb != null && crumb.isNotEmpty && !crumb.startsWith('{')) {
+        _sessionCookie = cookie;
+        _crumb = crumb;
+        _sessionInitAt = DateTime.now();
+      }
+    } catch (e) {
+      debugPrint('MarketDataService: Yahoo session init failed: $e');
+    }
+  }
+
+  Map<String, String> get _quoteSummaryHeaders => {
+        'User-Agent': _userAgent,
+        if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+      };
+
+  Map<String, dynamic> _quoteSummaryParams(Map<String, dynamic> base) => {
+        ...base,
+        if (_crumb != null) 'crumb': _crumb!,
+      };
+
   Future<PriceQuote?> fetchQuote(
     String symbol,
     String stockId, {
@@ -83,17 +150,15 @@ class MarketDataService {
   /// Fetches analyst consensus data (target price range + recommendation) from
   /// Yahoo Finance quoteSummary/financialData.  Returns null when unavailable.
   Future<AnalystData?> fetchAnalystData(String symbol) async {
+    await _ensureSession();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
-        queryParameters: {'modules': 'financialData'},
+        queryParameters: _quoteSummaryParams({'modules': 'financialData'}),
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
-          headers: {
-            'User-Agent':
-                'Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0',
-          },
+          headers: _quoteSummaryHeaders,
         ),
       );
 
@@ -350,17 +415,15 @@ class MarketDataService {
 
   Future<FetchedDividend?> _fetchExpectedDividendFromYahoo(
       String symbol, List<FetchedDividend> recentPaid) async {
+    await _ensureSession();
     try {
       final response = await _dio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
-        queryParameters: {'modules': 'calendarEvents'},
+        queryParameters: _quoteSummaryParams({'modules': 'calendarEvents'}),
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
-          headers: {
-            'User-Agent':
-                'Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0',
-          },
+          headers: _quoteSummaryHeaders,
         ),
       );
 
