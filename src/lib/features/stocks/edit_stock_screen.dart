@@ -148,6 +148,23 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
     );
   }
 
+  // Fire-and-forget: fetches a fresh quote after a symbol/currency change and
+  // writes it into the in-memory cache so the detail screen sees it immediately.
+  Future<void> _refreshPriceAfterSave(
+      String stockId, String symbol, String currency) async {
+    try {
+      final quote = await ref
+          .read(marketDataServiceProvider)
+          .fetchQuote(symbol, stockId, stockCurrency: currency);
+      if (quote == null) return;
+      await ref.read(stockActionsProvider).cacheMarketPrice(quote);
+      final notifier = ref.read(priceQuotesProvider.notifier);
+      notifier.state = Map.from(notifier.state)..[stockId] = quote;
+    } catch (e) {
+      debugPrint('EditStock: price refresh failed: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final stockAsync = ref.watch(stockByIdProvider(widget.id));
@@ -275,19 +292,28 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                           setState(() => _isSaving = true);
                           final router = GoRouter.of(context);
                           try {
+                            final newSymbol =
+                                _symbolCtrl.text.trim().toUpperCase();
+                            final newCurrency = _selectedCurrency!;
                             await ref.read(stockActionsProvider).updateStock(
                                   stock.copyWith(
-                                    symbol: _symbolCtrl.text
-                                        .trim()
-                                        .toUpperCase(),
+                                    symbol: newSymbol,
                                     name: _nameCtrl.text.trim(),
                                     exchange: _exchangeCtrl.text
                                         .trim()
                                         .toUpperCase(),
-                                    currency: _selectedCurrency!,
+                                    currency: newCurrency,
                                     dripEnabled: _dripEnabled,
                                   ),
                                 );
+                            // When symbol or currency changed, the cached price
+                            // and analyst data are stale — refresh both.
+                            if (newSymbol != stock.symbol ||
+                                newCurrency != stock.currency) {
+                              ref.invalidate(analystDataProvider(stock.id));
+                              _refreshPriceAfterSave(
+                                  stock.id, newSymbol, newCurrency);
+                            }
                             if (mounted) router.pop();
                           } finally {
                             if (mounted) setState(() => _isSaving = false);

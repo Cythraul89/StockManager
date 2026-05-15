@@ -479,14 +479,22 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('Analysis',
                 style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(width: 8),
             Text(
               'No data available',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Refresh analysis',
+              visualDensity: VisualDensity.compact,
+              onPressed: () =>
+                  ref.invalidate(analystDataProvider(widget.id)),
             ),
           ],
         ),
@@ -565,15 +573,24 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
           children: [
             // ── Header ─────────────────────────────────────────────────────
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('Analysis', style: theme.textTheme.titleMedium),
-                if (data.numberOfAnalysts != null)
+                if (data.numberOfAnalysts != null) ...[
+                  const SizedBox(width: 8),
                   Text(
                     '${data.numberOfAnalysts} analysts',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
+                ],
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.refresh, size: 20),
+                  tooltip: 'Refresh analysis',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () =>
+                      ref.invalidate(analystDataProvider(widget.id)),
+                ),
               ],
             ),
             const SizedBox(height: 12),
