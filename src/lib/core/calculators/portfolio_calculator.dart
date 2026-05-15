@@ -87,4 +87,46 @@ class PortfolioCalculator {
     }
     return multiplier;
   }
+
+  // Actual shares held on [asOf], applying only splits that had already
+  // occurred by [asOf].  Used to compute dividend totals at historical dates.
+  static Decimal sharesAtDate(
+    List<StockTransaction> transactions,
+    List<StockSplit> splits,
+    DateTime asOf,
+  ) {
+    final sortedTx = transactions
+        .where((tx) => !tx.executedAt.isAfter(asOf))
+        .toList()
+      ..sort((a, b) => a.executedAt.compareTo(b.executedAt));
+    final sortedSplits = List.of(splits)
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    Decimal sharesHeld = Decimal.zero;
+    for (final tx in sortedTx) {
+      final multiplier =
+          _splitMultiplierBetween(tx.executedAt, asOf, sortedSplits);
+      final adjustedShares = tx.shares * multiplier;
+      if (tx.type == TransactionType.buy) {
+        sharesHeld = sharesHeld + adjustedShares;
+      } else {
+        sharesHeld = DecimalMath.clampMin(sharesHeld - adjustedShares);
+      }
+    }
+    return sharesHeld;
+  }
+
+  static Decimal _splitMultiplierBetween(
+    DateTime from,
+    DateTime asOf,
+    List<StockSplit> splits,
+  ) {
+    var multiplier = Decimal.one;
+    for (final split in splits) {
+      if (split.date.isAfter(from) && !split.date.isAfter(asOf)) {
+        multiplier = multiplier * split.ratio;
+      }
+    }
+    return multiplier;
+  }
 }

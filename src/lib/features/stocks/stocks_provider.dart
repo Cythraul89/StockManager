@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/dividend.dart';
@@ -12,6 +13,7 @@ import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
 import '../../core/services/market_data_service.dart';
+import '../../core/utils/withholding_tax.dart';
 
 // ── Database provider ──────────────────────────────────────────────────────────────────────────
 
@@ -221,21 +223,44 @@ class StockActions {
     _notifyChange();
   }
 
-  /// Inserts auto-fetched dividends, skipping any date that already has an
-  /// entry (manual or confirmed auto) for this stock.
+  /// Inserts auto-fetched dividends for dates when shares were actually held,
+  /// skipping dates already in the database.  Pre-fills totalAmount from the
+  /// share count at the dividend date and withholdingTax from the treaty rate
+  /// for the ISIN's source country (both are estimates; user can adjust).
   Future<void> syncDividends(
     String stockId,
     String currency,
+    String isin,
     List<FetchedDividend> fetched,
+    List<StockTransaction> transactions,
+    List<StockSplit> splits,
   ) async {
+    final taxRate = withholdingTaxRate(isin);
+
     for (final d in fetched) {
       final existing =
           await _db.dividendsDao.findByStockAndDate(stockId, d.date);
       if (existing != null) continue;
 
+      // Skip if no shares were held on the dividend date.
+      final sharesHeld =
+          PortfolioCalculator.sharesAtDate(transactions, splits, d.date);
+      if (sharesHeld <= Decimal.zero) continue;
+
       final type = d.isPaid ? DividendType.paid : DividendType.expected;
-      // Expected auto-fetched dividends don't need confirmation; paid ones do.
+      // Paid auto-fetched dividends need user confirmation; expected do not.
       final needsConfirmation = d.isPaid;
+
+      Decimal? totalAmount;
+      Decimal? withholdingTax;
+      if (d.isPaid) {
+        totalAmount = d.amountPerShare * sharesHeld;
+        if (taxRate > Decimal.zero) {
+          withholdingTax =
+              (totalAmount.toRational() * taxRate.toRational())
+                  .toDecimal(scaleOnInfinitePrecision: 4);
+        }
+      }
 
       await _db.dividendsDao.insert(DividendsCompanion.insert(
         id: _uuid.v4(),
@@ -243,7 +268,9 @@ class StockActions {
         type: type.name,
         date: d.date,
         amountPerShare: d.amountPerShare,
+        totalAmount: Value(totalAmount),
         currency: currency,
+        withholdingTax: Value(withholdingTax),
         source: const Value('auto'),
         confirmed: Value(!needsConfirmation),
       ));

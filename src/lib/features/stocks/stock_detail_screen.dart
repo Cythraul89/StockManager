@@ -34,13 +34,22 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     if (_isSyncingDividends) return;
     setState(() => _isSyncingDividends = true);
     try {
+      final txs =
+          ref.read(transactionsByStockProvider(stock.id)).value ?? [];
+      final splits =
+          ref.read(splitsByStockProvider(stock.id)).value ?? [];
       final fetched = await ref
           .read(marketDataServiceProvider)
           .fetchDividends(stock.symbol);
       if (!mounted) return;
-      await ref
-          .read(stockActionsProvider)
-          .syncDividends(stock.id, stock.currency, fetched);
+      await ref.read(stockActionsProvider).syncDividends(
+            stock.id,
+            stock.currency,
+            stock.isin,
+            fetched,
+            txs,
+            splits,
+          );
     } catch (e) {
       debugPrint('StockDetail: dividend sync failed: $e');
     } finally {
