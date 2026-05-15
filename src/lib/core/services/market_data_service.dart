@@ -29,6 +29,7 @@ class MarketDataService {
   DateTime? _sessionInitAt;
 
   /// Ensures a valid Yahoo Finance session (cookie + crumb).
+  /// Handles the EU/GDPR consent redirect from consent.yahoo.com automatically.
   /// Silently no-ops if the session init fails — callers proceed without auth
   /// and will receive null data from quoteSummary.
   Future<void> _ensureSession() async {
@@ -47,13 +48,56 @@ class MarketDataService {
           responseType: ResponseType.plain,
           sendTimeout: const Duration(seconds: 15),
           receiveTimeout: const Duration(seconds: 15),
+          followRedirects: true,
+          maxRedirects: 5,
         ),
       );
-      final rawCookies = homeResp.headers['set-cookie'] ?? [];
-      final cookie = rawCookies
-          .map((c) => c.split(';').first.trim())
-          .where((c) => c.isNotEmpty)
-          .join('; ');
+
+      String cookie = _cookiesFromHeaders(homeResp.headers['set-cookie'] ?? []);
+      final body = homeResp.data ?? '';
+
+      // EU/GDPR: Yahoo redirects to consent.yahoo.com. Detect this by looking
+      // for the consent form's hidden csrfToken field in the response body.
+      if (body.contains('csrfToken')) {
+        final csrfToken = _extractHidden(body, 'csrfToken');
+        final sessionId = _extractHidden(body, 'sessionId');
+        final originalDoneUrl = _extractHidden(body, 'originalDoneUrl');
+
+        if (csrfToken != null && sessionId != null) {
+          // POST consent acceptance — mirrors what yfinance does for EU users.
+          final consentBody = [
+            'csrfToken=${Uri.encodeComponent(csrfToken)}',
+            'sessionId=${Uri.encodeComponent(sessionId)}',
+            if (originalDoneUrl != null)
+              'originalDoneUrl=${Uri.encodeComponent(originalDoneUrl)}',
+            'namespace=yahoo',
+            'agree=agree',
+            'agree=agree',
+          ].join('&');
+
+          final consentResp = await _dio.post<String>(
+            'https://consent.yahoo.com/v2/collectConsent',
+            data: consentBody,
+            options: Options(
+              headers: {
+                'User-Agent': _userAgent,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                if (cookie.isNotEmpty) 'Cookie': cookie,
+              },
+              responseType: ResponseType.plain,
+              sendTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 15),
+              followRedirects: true,
+              maxRedirects: 5,
+            ),
+          );
+
+          // Collect cookies from the consent POST response and merge them.
+          final consentCookies = _cookiesFromHeaders(
+              consentResp.headers['set-cookie'] ?? []);
+          cookie = _mergeCookies(cookie, consentCookies);
+        }
+      }
 
       // Step 2: exchange the session cookies for a crumb.
       final crumbResp = await _dio.get<String>(
@@ -75,6 +119,41 @@ class MarketDataService {
     } catch (e) {
       debugPrint('MarketDataService: Yahoo session init failed: $e');
     }
+  }
+
+  String _cookiesFromHeaders(List<String> setCookieHeaders) {
+    return setCookieHeaders
+        .map((c) => c.split(';').first.trim())
+        .where((c) => c.isNotEmpty)
+        .join('; ');
+  }
+
+  /// Merges two cookie strings, with [incoming] values overriding [existing]
+  /// for any duplicate cookie name.
+  String _mergeCookies(String existing, String incoming) {
+    if (incoming.isEmpty) { return existing; }
+    if (existing.isEmpty) { return incoming; }
+
+    final map = <String, String>{};
+    for (final part in existing.split('; ')) {
+      final idx = part.indexOf('=');
+      if (idx > 0) { map[part.substring(0, idx)] = part; }
+    }
+    for (final part in incoming.split('; ')) {
+      final idx = part.indexOf('=');
+      if (idx > 0) { map[part.substring(0, idx)] = part; }
+    }
+    return map.values.join('; ');
+  }
+
+  /// Extracts the value of an HTML hidden input field by [name].
+  String? _extractHidden(String html, String name) {
+    final pattern = RegExp(
+      'name=["\']${RegExp.escape(name)}["\']\\s+value=["\']([^"\']*)["\']|'
+      'value=["\']([^"\']*)["\']\\s+name=["\']${RegExp.escape(name)}["\']',
+    );
+    final m = pattern.firstMatch(html);
+    return m?.group(1) ?? m?.group(2);
   }
 
   Map<String, String> get _quoteSummaryHeaders => {
