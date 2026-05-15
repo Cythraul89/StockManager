@@ -473,11 +473,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     Decimal? currentPrice,
     List<ExchangeRate> rates,
   ) {
-    // Convert analyst prices to stockCurrency when Yahoo reports them in a
-    // different currency (e.g. USD for ARM ADR, NOK for Norwegian stocks).
-    // Fall back to quoteCurrency when Yahoo omits financialCurrency — analyst
-    // targets are always denominated in the stock's primary trading currency.
-    final analysisCurrency = data.currency ?? quoteCurrency;
+    // Yahoo analyst price targets are always denominated in the stock's trading
+    // currency (quoteCurrency), not in Yahoo's financialCurrency field which
+    // reflects the company's financial-reporting currency and can differ
+    // (e.g. CADLR.OL reports financialCurrency=EUR but prices are in NOK).
+    final analysisCurrency = quoteCurrency;
     final ExchangeRate? convRate = analysisCurrency != stockCurrency
         ? ExchangeRate.find(rates, analysisCurrency, stockCurrency)
         : null;
