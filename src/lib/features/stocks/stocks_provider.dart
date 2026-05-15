@@ -15,8 +15,13 @@ import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
+import '../../core/services/isin_lookup_service.dart';
 import '../../core/services/market_data_service.dart';
 import '../../core/utils/withholding_tax.dart';
+
+final isinLookupServiceProvider = Provider<IsinLookupService>((ref) {
+  throw UnimplementedError('isinLookupServiceProvider must be overridden');
+});
 
 // ── Database provider ──────────────────────────────────────────────────────────────────────────
 

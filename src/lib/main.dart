@@ -13,7 +13,6 @@ import 'core/services/log_service.dart';
 import 'core/services/market_data_service.dart';
 import 'core/services/notification_service.dart';
 import 'features/settings/settings_provider.dart';
-import 'features/stocks/add_stock_screen.dart';
 import 'features/stocks/stocks_provider.dart';
 
 void main() async {
