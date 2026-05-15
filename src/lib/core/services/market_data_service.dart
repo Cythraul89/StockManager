@@ -2,6 +2,7 @@ import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/analyst_data.dart';
 import '../models/fetched_dividend.dart';
 import '../models/price_quote.dart';
 
@@ -77,6 +78,55 @@ class MarketDataService {
     if (price != null) return price;
 
     return _fetchHistoricalFromStooq(symbol, date);
+  }
+
+  /// Fetches analyst consensus data (target price range + recommendation) from
+  /// Yahoo Finance quoteSummary/financialData.  Returns null when unavailable.
+  Future<AnalystData?> fetchAnalystData(String symbol) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '$_yahooQuoteSummaryUrl$symbol',
+        queryParameters: {'modules': 'financialData'},
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      final result =
+          (response.data?['quoteSummary']?['result'] as List?)?.firstOrNull
+              as Map<String, dynamic>?;
+      if (result == null) return null;
+
+      final fd = result['financialData'] as Map<String, dynamic>?;
+      if (fd == null) return null;
+
+      final meanRaw = (fd['targetMeanPrice'] as Map<String, dynamic>?)?['raw'];
+      if (meanRaw == null) return null;
+
+      final lowRaw = (fd['targetLowPrice'] as Map<String, dynamic>?)?['raw'];
+      final highRaw = (fd['targetHighPrice'] as Map<String, dynamic>?)?['raw'];
+      final recKey = fd['recommendationKey'] as String?;
+      final numRaw =
+          (fd['numberOfAnalystOpinions'] as Map<String, dynamic>?)?['raw'];
+      final currency = fd['financialCurrency'] as String?;
+
+      return AnalystData(
+        targetMeanPrice: Decimal.parse(meanRaw.toString()),
+        targetLowPrice:
+            lowRaw != null ? Decimal.parse(lowRaw.toString()) : null,
+        targetHighPrice:
+            highRaw != null ? Decimal.parse(highRaw.toString()) : null,
+        recommendationKey: recKey?.isNotEmpty == true ? recKey : null,
+        numberOfAnalysts: numRaw is int ? numRaw : null,
+        currency: currency,
+      );
+    } on DioException {
+      return null;
+    } catch (e) {
+      debugPrint('MarketDataService: analyst data fetch failed for $symbol: $e');
+      return null;
+    }
   }
 
   /// Fetches dividend history (paid, up to 5 years) and the next expected

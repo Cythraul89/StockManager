@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
+import '../../core/models/analyst_data.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_quote.dart';
@@ -104,6 +105,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final txsAsync = ref.watch(transactionsByStockProvider(widget.id));
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
+    final analystAsync = ref.watch(analystDataProvider(widget.id));
     final quotes = ref.watch(priceQuotesProvider);
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
 
@@ -277,6 +279,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               ),
               const SizedBox(height: 16),
 
+              // Analysis card
+              if (analystAsync.value != null)
+                _buildAnalystCard(context, analystAsync.value!, stock.currency),
+              if (analystAsync.value != null) const SizedBox(height: 16),
+
               _sectionHeader(
                 context,
                 'Transactions',
@@ -413,5 +420,71 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildAnalystCard(
+      BuildContext context, AnalystData data, String stockCurrency) {
+    final currency = data.currency ?? stockCurrency;
+    final theme = Theme.of(context);
+    final (recLabel, recColor) = _recommendationStyle(data.recommendationKey);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Analysis',
+                    style: theme.textTheme.titleMedium),
+                if (data.numberOfAnalysts != null)
+                  Text(
+                    '${data.numberOfAnalysts} analysts',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (recLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Chip(
+                  label: Text(
+                    recLabel,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                  backgroundColor: recColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            _kv(context, 'Target price',
+                CurrencyFormatter.format(data.targetMeanPrice, currency)),
+            if (data.targetLowPrice != null && data.targetHighPrice != null)
+              _kv(
+                context,
+                'Target range',
+                '${CurrencyFormatter.format(data.targetLowPrice!, currency)}'
+                    ' – ${CurrencyFormatter.format(data.targetHighPrice!, currency)}',
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  (String?, Color) _recommendationStyle(String? key) {
+    return switch (key?.toLowerCase()) {
+      'strongbuy' => ('Strong Buy', Colors.green.shade700),
+      'buy' => ('Buy', Colors.green),
+      'hold' => ('Hold', Colors.amber.shade700),
+      'underperform' => ('Underperform', Colors.orange),
+      'sell' => ('Sell', Colors.red),
+      _ => (null, Colors.transparent),
+    };
   }
 }

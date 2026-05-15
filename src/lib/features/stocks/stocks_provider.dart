@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
+import '../../core/models/analyst_data.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/fetched_dividend.dart';
@@ -88,6 +89,15 @@ final allDividendsProvider = FutureProvider<List<Dividend>>((ref) async {
   final db = ref.watch(databaseProvider);
   final rows = await db.dividendsDao.getAll();
   return rows.map(_dividendFromRow).toList();
+});
+
+// ── Analyst data (fetched on demand, keyed by stockId) ───────────────────────────
+
+final analystDataProvider =
+    FutureProvider.family<AnalystData?, String>((ref, stockId) async {
+  final stock = await ref.watch(stockByIdProvider(stockId).future);
+  if (stock == null) return null;
+  return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
 });
 
 // ── Price quote cache (in-memory, refreshed on demand) ───────────────────────────
