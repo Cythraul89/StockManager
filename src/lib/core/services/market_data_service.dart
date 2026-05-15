@@ -42,6 +42,7 @@ class MarketDataService {
 
   // Crumb is required as a query param on quoteSummary calls. Cached 55 min.
   String? _crumb;
+  String? _sessionCookie; // finance.yahoo.com cookies sent explicitly with quoteSummary
   DateTime? _sessionInitAt;
 
   /// Ensures a valid Yahoo Finance session (crumb).
@@ -120,18 +121,30 @@ class MarketDataService {
         }
       }
 
-      // Log what cookies the jar holds for the query2 domain.
-      final jarCookies = await _cookieJar.loadForRequest(
-          Uri.parse('https://query2.finance.yahoo.com/'));
+      // Extract finance.yahoo.com cookies explicitly. The cookie jar stores
+      // them under that domain, but they may not match query2.finance.yahoo.com
+      // due to domain-scoping rules in the jar's RFC 6265 implementation.
+      // We send them manually on every quoteSummary request instead.
+      final yahooFinanceCookies = await _cookieJar.loadForRequest(
+          Uri.parse('https://finance.yahoo.com/'));
+      _sessionCookie = yahooFinanceCookies.isEmpty
+          ? null
+          : yahooFinanceCookies.map((c) => '${c.name}=${c.value}').join('; ');
       debugPrint(
-          'MarketDataService: jar has ${jarCookies.length} cookies for '
-          'query2.finance.yahoo.com: '
-          '${jarCookies.map((c) => c.name).toList()}');
+          'MarketDataService: finance.yahoo.com cookies '
+          '(${yahooFinanceCookies.length}): '
+          '${yahooFinanceCookies.map((c) => c.name).toList()}');
 
-      // Step 2: fetch the crumb — cookie jar sends the right session cookies.
+      // Step 2: fetch the crumb. We send the finance.yahoo.com cookies
+      // explicitly here too, since the jar may not forward them automatically.
       final crumbResp = await _yahooDio.get<String>(
         'https://query2.finance.yahoo.com/v1/test/getcrumb',
-        options: Options(responseType: ResponseType.plain),
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {
+            if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+          },
+        ),
       );
       final crumb = crumbResp.data?.trim();
       debugPrint('MarketDataService: crumb response '
@@ -224,6 +237,9 @@ class MarketDataService {
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
+          headers: {
+            if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+          },
         ),
       );
 
@@ -261,7 +277,9 @@ class MarketDataService {
         numberOfAnalysts: numRaw is int ? numRaw : null,
         currency: currency,
       );
-    } on DioException {
+    } on DioException catch (e) {
+      debugPrint('MarketDataService: quoteSummary DioException for $symbol: '
+          'status=${e.response?.statusCode} msg=${e.message}');
       return null;
     } catch (e) {
       debugPrint('MarketDataService: analyst data fetch failed for $symbol: $e');
@@ -494,6 +512,9 @@ class MarketDataService {
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
+          headers: {
+            if (_sessionCookie != null) 'Cookie': _sessionCookie!,
+          },
         ),
       );
 
