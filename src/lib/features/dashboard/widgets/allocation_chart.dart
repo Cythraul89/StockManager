@@ -32,9 +32,12 @@ class _AllocationChartState extends State<AllocationChart> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Only stocks with a known price and positive value contribute.
+    // Only stocks with a known price, no missing exchange rate, and a positive
+    // value in the preferred currency contribute. Stocks with missingRate have
+    // currentValue in their native currency, which would corrupt the percentages.
     final priced = widget.summary.stockItems
-        .where((i) => i.hasPrice && i.currentValue > Decimal.zero)
+        .where((i) =>
+            i.hasPrice && !i.missingRate && i.currentValue > Decimal.zero)
         .toList()
       ..sort((a, b) => b.currentValue.compareTo(a.currentValue));
 

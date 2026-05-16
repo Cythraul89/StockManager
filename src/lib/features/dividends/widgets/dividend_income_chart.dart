@@ -87,9 +87,16 @@ class _DividendIncomeChartState extends ConsumerState<DividendIncomeChart> {
     final map = <String, Decimal>{};
 
     for (final d in paid) {
-      final rate = ExchangeRate.find(rates, d.currency, preferred);
-      final amount =
-          rate != null ? rate.convert(d.netAmount) : d.netAmount;
+      final Decimal amount;
+      if (d.currency == preferred) {
+        amount = d.netAmount;
+      } else {
+        final rate = ExchangeRate.find(rates, d.currency, preferred);
+        // Skip dividends whose currency cannot be converted — including them
+        // with the raw amount would silently mix currencies in the totals.
+        if (rate == null) continue;
+        amount = rate.convert(d.netAmount);
+      }
 
       final key = _period == _Period.monthly
           ? '${d.date.year}-${d.date.month.toString().padLeft(2, '0')}'
