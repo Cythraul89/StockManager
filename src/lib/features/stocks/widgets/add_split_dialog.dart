@@ -50,8 +50,8 @@ class _AddSplitDialogState extends State<AddSplitDialog> {
     String? description;
     if (valid && from != to) {
       description = to > from
-          ? '${to}:${from} forward split — each share becomes $to'
-          : '${to}:${from} reverse split — $from shares become $to';
+          ? '$to:$from forward split — each share becomes $to'
+          : '$to:$from reverse split — $from shares become $to';
     }
 
     return AlertDialog(
