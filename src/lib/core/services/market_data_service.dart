@@ -407,6 +407,10 @@ class MarketDataService {
           (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
       if (result == null) return [];
 
+      final meta = result['meta'] as Map<String, dynamic>?;
+      final currency = (meta?['currency'] as String?) ?? '';
+      if (currency.isEmpty) return [];
+
       final timestamps = (result['timestamp'] as List?)?.cast<int>();
       final quotes = result['indicators']?['quote'] as List?;
       final closes =
@@ -422,6 +426,7 @@ class MarketDataService {
         points.add(PricePoint(
           date: DateTime.fromMillisecondsSinceEpoch(timestamps[i] * 1000),
           price: price,
+          currency: currency,
         ));
       }
       return points;

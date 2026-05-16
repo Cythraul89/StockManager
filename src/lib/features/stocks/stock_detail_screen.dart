@@ -320,10 +320,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               const SizedBox(height: 16),
 
               // Price history chart
-              StockPriceChart(
-                stockId: widget.id,
-                currency: stock.currency,
-              ),
+              StockPriceChart(stockId: widget.id),
               const SizedBox(height: 16),
 
               // Analysis card

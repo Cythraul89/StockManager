@@ -14,11 +14,9 @@ class StockPriceChart extends ConsumerStatefulWidget {
   const StockPriceChart({
     super.key,
     required this.stockId,
-    required this.currency,
   });
 
   final String stockId;
-  final String currency;
 
   @override
   ConsumerState<StockPriceChart> createState() => _StockPriceChartState();
@@ -100,6 +98,7 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
 
   Widget _buildChart(BuildContext context, List<PricePoint> points) {
     final theme = Theme.of(context);
+    final currency = points.first.currency;
     final first = points.first.price;
     final last = points.last.price;
     final isPositive = last >= first;
@@ -176,7 +175,7 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
                 if (idx < 0 || idx >= points.length) return null;
                 final p = points[idx];
                 return LineTooltipItem(
-                  '${CurrencyFormatter.format(p.price, widget.currency)}\n',
+                  '${CurrencyFormatter.format(p.price, p.currency)}\n',
                   TextStyle(
                     color: theme.colorScheme.onSurface,
                     fontWeight: FontWeight.w600,
