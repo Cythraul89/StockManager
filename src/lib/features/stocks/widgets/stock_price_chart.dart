@@ -98,7 +98,6 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
 
   Widget _buildChart(BuildContext context, List<PricePoint> points) {
     final theme = Theme.of(context);
-    final currency = points.first.currency;
     final first = points.first.price;
     final last = points.last.price;
     final isPositive = last >= first;
