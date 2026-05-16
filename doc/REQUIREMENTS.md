@@ -203,11 +203,12 @@ Features confirmed for a future version. Not in scope for the initial release.
 - The trailing high-water mark is updated automatically as the price rises.
 - Configurable per stock; displayed alongside the current price on the stock detail screen.
 
-### 10.4 Watchlist (Monitoring-Only Stocks)
+### 10.4 Watchlist (Monitoring-Only Stocks) ✓ *(delivered — via zero-transaction stocks)*
 - Stocks can be added in **monitoring mode** — no broker assignment, no transactions required.
 - Watchlist stocks appear in a dedicated section separate from held positions.
 - All live price, target price, rating, and news features apply to watchlist stocks.
 - A watchlist stock can be promoted to a held position at any time by assigning a broker and adding a transaction.
+- *Implementation note:* a stock with no transactions naturally shows zero shares held and no P&L. The existing Add Stock flow covers this without a separate watchlist concept.
 
 ### 10.5 Price History Chart ✓ *(delivered — partial)*
 - Each stock detail view includes a **price history chart** showing closing prices over selectable time ranges: 1D · 1W · 1M · 6M · 1Y · 5Y · MAX.
