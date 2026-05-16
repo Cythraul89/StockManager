@@ -401,7 +401,7 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 └─────────────────────────────┘
 ```
 
-**Dividend Income Chart:** A `DividendIncomeChart` card appears above the tab bar whenever at least one paid + confirmed dividend exists. A Monthly / Yearly toggle (top-right of the card) switches the bucket granularity. All amounts are converted to the preferred currency using live exchange rates; dividends whose currency has no available rate are excluded rather than mixed in at the wrong scale. Bar width and X-axis label density adapt to the number of buckets (≤12 / ≤24 / >24). Tapping a bar shows a tooltip with the full period label and the total amount.
+**Dividend Income Chart:** A `DividendIncomeChart(dividends: ...)` card appears above the dividend list whenever at least one paid + confirmed dividend exists. The screen passes its already-loaded `dividends` list directly; the chart does not re-fetch from the database. A Monthly / Yearly toggle (top-right of the card) switches the bucket granularity. All amounts are converted to the preferred currency using live exchange rates; dividends whose currency has no available rate are excluded rather than mixed in at the wrong scale. Bar width and X-axis label density adapt to the number of buckets (≤12 / ≤24 / >24). Tapping a bar shows a tooltip with the full period label and the total amount.
 
 ### Desktop
 Received history and upcoming calendar shown side by side. Upcoming panel includes a simple month-by-month timeline view.

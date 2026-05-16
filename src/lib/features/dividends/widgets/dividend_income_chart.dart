@@ -8,12 +8,13 @@ import '../../../core/models/dividend.dart';
 import '../../../core/models/exchange_rate.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../settings/settings_provider.dart';
-import '../../stocks/stocks_provider.dart';
 
 enum _Period { monthly, yearly }
 
 class DividendIncomeChart extends ConsumerStatefulWidget {
-  const DividendIncomeChart({super.key});
+  const DividendIncomeChart({super.key, required this.dividends});
+
+  final List<Dividend> dividends;
 
   @override
   ConsumerState<DividendIncomeChart> createState() =>
@@ -25,55 +26,45 @@ class _DividendIncomeChartState extends ConsumerState<DividendIncomeChart> {
 
   @override
   Widget build(BuildContext context) {
-    final dividendsAsync = ref.watch(allDividendsProvider);
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
     final preferred =
         ref.watch(settingsStreamProvider).value?.preferredCurrency ?? 'USD';
 
-    return dividendsAsync.when(
-      loading: () => const SizedBox(
-        height: 220,
-        child: Center(child: CircularProgressIndicator()),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (dividends) {
-        final paid = dividends
-            .where((d) =>
-                d.type == DividendType.paid &&
-                d.confirmed &&
-                d.netAmount > Decimal.zero)
-            .toList();
+    final paid = widget.dividends
+        .where((d) =>
+            d.type == DividendType.paid &&
+            d.confirmed &&
+            d.netAmount > Decimal.zero)
+        .toList();
 
-        if (paid.isEmpty) return const SizedBox.shrink();
+    if (paid.isEmpty) return const SizedBox.shrink();
 
-        final buckets = _buildBuckets(paid, rates, preferred);
-        if (buckets.isEmpty) return const SizedBox.shrink();
+    final buckets = _buildBuckets(paid, rates, preferred);
+    if (buckets.isEmpty) return const SizedBox.shrink();
 
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Text('Dividend Income',
-                        style: Theme.of(context).textTheme.titleMedium),
-                    const Spacer(),
-                    _buildPeriodToggle(context),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 180,
-                  child: _buildBarChart(context, buckets, preferred),
-                ),
-                const SizedBox(height: 8),
+                Text('Dividend Income',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                _buildPeriodToggle(context),
               ],
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 180,
+              child: _buildBarChart(context, buckets, preferred),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 

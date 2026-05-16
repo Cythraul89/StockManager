@@ -44,7 +44,7 @@ class DividendsScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              const DividendIncomeChart(),
+              DividendIncomeChart(dividends: dividends),
               const SizedBox(height: 16),
               if (pending.isNotEmpty) ...[
                 Text('Pending confirmation',
