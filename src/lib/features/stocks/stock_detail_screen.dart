@@ -138,6 +138,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final analystAsync = ref.watch(analystDataProvider(widget.id));
+    final dayHistoryAsync =
+        ref.watch(priceHistoryProvider((widget.id, ChartRange.oneDay)));
     final weekHistoryAsync =
         ref.watch(priceHistoryProvider((widget.id, ChartRange.oneWeek)));
     final quotes = ref.watch(priceQuotesProvider);
@@ -310,6 +312,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                       _buildPriceChanges(
                         context,
                         quote,
+                        dayHistoryAsync.value,
                         weekHistoryAsync.value,
                         analystAsync.value,
                       ),
@@ -492,11 +495,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   Widget _buildPriceChanges(
     BuildContext context,
     PriceQuote? quote,
+    List<PricePoint>? dayHistory,
     List<PricePoint>? weekHistory,
     AnalystData? analyst,
   ) {
-    // Day change: from Yahoo's regularMarketChangePercent (already in %).
-    final dayPct = quote?.dayChangePct;
+    // Day change: prefer Yahoo's regularMarketChangePercent (already in %);
+    // fall back to first→last of the 1D chart data (intraday change from open).
+    Decimal? dayPct = quote?.dayChangePct;
+    if (dayPct == null && dayHistory != null && dayHistory.length >= 2) {
+      final first = dayHistory.first.price;
+      if (first > Decimal.zero) {
+        dayPct = dayHistory.last.price.percentChangeFrom(first);
+      }
+    }
 
     // Week change: first vs last close in the 5-day history (also in %).
     Decimal? weekPct;

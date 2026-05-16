@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/models/chart_range.dart';
+import '../../../core/models/exchange_rate.dart';
 import '../../../core/models/price_point.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/decimal_math.dart';
+import '../../settings/settings_provider.dart';
 import '../stocks_provider.dart';
 
 class StockPriceChart extends ConsumerStatefulWidget {
@@ -24,11 +26,25 @@ class StockPriceChart extends ConsumerStatefulWidget {
 
 class _StockPriceChartState extends ConsumerState<StockPriceChart> {
   ChartRange _range = ChartRange.oneMonth;
+  bool _showConverted = false;
 
   @override
   Widget build(BuildContext context) {
     final historyAsync =
         ref.watch(priceHistoryProvider((widget.stockId, _range)));
+    final settings = ref.watch(settingsStreamProvider).value;
+    final rates = ref.watch(exchangeRatesProvider).value ?? [];
+
+    final preferredCurrency = settings?.preferredCurrency;
+    final nativeCurrency = historyAsync.value?.firstOrNull?.currency;
+
+    ExchangeRate? convRate;
+    if (preferredCurrency != null &&
+        nativeCurrency != null &&
+        nativeCurrency != preferredCurrency) {
+      convRate = ExchangeRate.find(rates, nativeCurrency, preferredCurrency);
+    }
+    final canConvert = convRate != null;
 
     return Card(
       child: Padding(
@@ -36,7 +52,13 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(context, historyAsync.value),
+            _buildHeader(
+              context,
+              historyAsync.value,
+              canConvert: canConvert,
+              nativeCurrency: nativeCurrency,
+              preferredCurrency: preferredCurrency,
+            ),
             const SizedBox(height: 12),
             historyAsync.when(
               loading: () => const SizedBox(
@@ -52,7 +74,12 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
                       height: 160,
                       child: Center(child: Text('No data available')),
                     )
-                  : _buildChart(context, points),
+                  : _buildChart(
+                      context,
+                      points,
+                      convRate: _showConverted ? convRate : null,
+                      preferredCurrency: preferredCurrency,
+                    ),
             ),
             const SizedBox(height: 8),
             _buildRangeSelector(context),
@@ -62,7 +89,13 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, List<PricePoint>? points) {
+  Widget _buildHeader(
+    BuildContext context,
+    List<PricePoint>? points, {
+    required bool canConvert,
+    String? nativeCurrency,
+    String? preferredCurrency,
+  }) {
     final theme = Theme.of(context);
     String? changeLabel;
     Color? changeColor;
@@ -92,14 +125,75 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
             ),
           ),
         ],
+        const Spacer(),
+        if (canConvert)
+          _buildCurrencyToggle(context, nativeCurrency!, preferredCurrency!),
       ],
     );
   }
 
-  Widget _buildChart(BuildContext context, List<PricePoint> points) {
+  Widget _buildCurrencyToggle(
+      BuildContext context, String native, String preferred) {
     final theme = Theme.of(context);
-    final first = points.first.price;
-    final last = points.last.price;
+
+    Widget pill(String code, bool selected) => GestureDetector(
+          onTap: () => setState(() => _showConverted = code == preferred),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: selected
+                ? BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  )
+                : null,
+            child: Text(
+              code,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: selected
+                    ? theme.colorScheme.onPrimaryContainer
+                    : theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        pill(native, !_showConverted),
+        pill(preferred, _showConverted),
+      ],
+    );
+  }
+
+  Widget _buildChart(
+    BuildContext context,
+    List<PricePoint> points, {
+    ExchangeRate? convRate,
+    String? preferredCurrency,
+  }) {
+    final theme = Theme.of(context);
+
+    List<PricePoint> displayPoints;
+    if (convRate != null && preferredCurrency != null) {
+      // Capture as non-nullable locals so the closure doesn't need null checks.
+      final rate = convRate;
+      final toCurrency = preferredCurrency;
+      displayPoints = points
+          .map((p) => PricePoint(
+                date: p.date,
+                price: rate.convert(p.price),
+                currency: toCurrency,
+              ))
+          .toList();
+    } else {
+      displayPoints = points;
+    }
+
+    final displayCurrency = displayPoints.first.currency;
+    final first = displayPoints.first.price;
+    final last = displayPoints.last.price;
     final isPositive = last >= first;
     final lineColor =
         isPositive ? Colors.green.shade500 : theme.colorScheme.error;
@@ -107,26 +201,57 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
     // toDouble() is intentional — used only for pixel positioning in the chart,
     // not for any monetary arithmetic.
     final spots = <FlSpot>[];
-    for (var i = 0; i < points.length; i++) {
-      spots.add(FlSpot(i.toDouble(), points[i].price.toDouble()));
+    for (var i = 0; i < displayPoints.length; i++) {
+      spots.add(FlSpot(i.toDouble(), displayPoints[i].price.toDouble()));
     }
 
-    final minY = points.map((p) => p.price.toDouble()).reduce((a, b) => a < b ? a : b);
-    final maxY = points.map((p) => p.price.toDouble()).reduce((a, b) => a > b ? a : b);
-    final yPadding = (maxY - minY) * 0.1;
+    final minY = displayPoints
+        .map((p) => p.price.toDouble())
+        .reduce((a, b) => a < b ? a : b);
+    final maxY = displayPoints
+        .map((p) => p.price.toDouble())
+        .reduce((a, b) => a > b ? a : b);
+    final rawRange = maxY - minY;
+    final yPadding = rawRange > 0 ? rawRange * 0.1 : maxY * 0.05;
+    final chartMinY = minY - yPadding;
+    final chartMaxY = maxY + yPadding;
+    final yRange = chartMaxY - chartMinY;
 
     return SizedBox(
       height: 180,
       child: LineChart(
         LineChartData(
-          minY: minY - yPadding,
-          maxY: maxY + yPadding,
+          minY: chartMinY,
+          maxY: chartMaxY,
           clipData: const FlClipData.all(),
           gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 68,
+                interval: yRange > 0 ? yRange / 4 : 1,
+                getTitlesWidget: (value, meta) {
+                  if (!value.isFinite) return const SizedBox.shrink();
+                  Decimal price;
+                  try {
+                    price = Decimal.parse(value.toStringAsFixed(6));
+                  } catch (_) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(
+                      CurrencyFormatter.compact(price, displayCurrency),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
+              ),
             ),
             rightTitles: const AxisTitles(
               sideTitles: SideTitles(showTitles: false),
@@ -138,7 +263,7 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 24,
-                interval: _labelInterval(points.length),
+                interval: _labelInterval(displayPoints.length),
                 getTitlesWidget: (value, meta) {
                   // fl_chart calls this for every spot; only render at the
                   // min/max markers and skip everything in between to avoid
@@ -148,10 +273,10 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
                     return const SizedBox.shrink();
                   }
                   final idx = value.round();
-                  if (idx < 0 || idx >= points.length) {
+                  if (idx < 0 || idx >= displayPoints.length) {
                     return const SizedBox.shrink();
                   }
-                  final label = _dateLabel(points[idx].date);
+                  final label = _dateLabel(displayPoints[idx].date);
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
@@ -171,8 +296,8 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
                   theme.colorScheme.surfaceContainerHighest,
               getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
                 final idx = s.spotIndex;
-                if (idx < 0 || idx >= points.length) return null;
-                final p = points[idx];
+                if (idx < 0 || idx >= displayPoints.length) return null;
+                final p = displayPoints[idx];
                 return LineTooltipItem(
                   '${CurrencyFormatter.format(p.price, p.currency)}\n',
                   TextStyle(
