@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/utils/date_helpers.dart';
 import '../stocks/stocks_provider.dart';
 import 'widgets/confirm_dividend_dialog.dart';
+import 'widgets/dividend_income_chart.dart';
 import 'widgets/dividend_tile.dart';
 import '../../core/models/dividend.dart';
 
@@ -43,6 +44,8 @@ class DividendsScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              const DividendIncomeChart(),
+              const SizedBox(height: 16),
               if (pending.isNotEmpty) ...[
                 Text('Pending confirmation',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(

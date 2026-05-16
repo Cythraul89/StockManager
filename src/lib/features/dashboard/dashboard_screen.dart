@@ -5,6 +5,7 @@ import '../../core/models/price_quote.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'dashboard_provider.dart';
+import 'widgets/allocation_chart.dart';
 import 'widgets/portfolio_summary_card.dart';
 import 'widgets/stock_list_tile.dart';
 
@@ -102,6 +103,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             padding: const EdgeInsets.all(16),
             children: [
               PortfolioSummaryCard(summary: summary),
+              const SizedBox(height: 16),
+              AllocationChart(summary: summary),
               const SizedBox(height: 16),
               if (summary.stockItems.isEmpty)
                 const Center(
