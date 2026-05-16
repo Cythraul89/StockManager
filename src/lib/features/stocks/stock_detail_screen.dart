@@ -40,18 +40,18 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchPriceOnLoad();
+    _fetchPrice();
   }
 
-  // Fetches a fresh quote for this stock when the screen opens. Skipped when a
-  // non-stale quote is already in the in-memory cache (e.g. put there by the
-  // Dashboard). This ensures the price shows correctly when navigating directly
-  // from the stock list without visiting the Dashboard first.
-  Future<void> _fetchPriceOnLoad() async {
+  // On load: skip when a fresh (non-stale) quote is already in-memory.
+  // On pull-to-refresh (forceRefresh: true): always fetch.
+  Future<void> _fetchPrice({bool forceRefresh = false}) async {
     final stock = await ref.read(stockByIdProvider(widget.id).future);
     if (stock == null || !mounted) return;
-    final existing = ref.read(priceQuotesProvider)[stock.id];
-    if (existing != null && !existing.withStaleness().isStale) return;
+    if (!forceRefresh) {
+      final existing = ref.read(priceQuotesProvider)[stock.id];
+      if (existing != null && !existing.withStaleness().isStale) return;
+    }
     try {
       final quote = await ref
           .read(marketDataServiceProvider)
@@ -197,9 +197,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               ),
             ],
           ),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
+          body: RefreshIndicator(
+            onRefresh: () => _fetchPrice(forceRefresh: true),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
               // Stock info card
               Card(
                 child: Padding(
@@ -438,6 +440,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                       ),
               ),
             ],
+            ),
           ),
         );
       },
