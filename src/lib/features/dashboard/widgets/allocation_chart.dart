@@ -2,7 +2,6 @@ import 'package:decimal/decimal.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-import '../../../core/utils/currency_formatter.dart';
 import '../dashboard_provider.dart';
 
 class AllocationChart extends StatefulWidget {

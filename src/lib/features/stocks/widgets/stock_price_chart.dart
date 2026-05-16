@@ -236,7 +236,9 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
 
     for (final tx in transactions) {
       if (tx.executedAt.isBefore(chartStart) ||
-          tx.executedAt.isAfter(chartEnd)) continue;
+          tx.executedAt.isAfter(chartEnd)) {
+        continue;
+      }
       final idx = _nearestPointIndex(displayPoints, tx.executedAt);
       final spot =
           FlSpot(idx.toDouble(), displayPoints[idx].price.toDouble());
