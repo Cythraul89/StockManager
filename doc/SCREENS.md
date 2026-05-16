@@ -377,31 +377,45 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 │  │ Received │   Upcoming   │ │
 │  └──────────┴──────────────┘ │
 │                             │
+│  ── Received tab ──         │
 │  Dividend Income      M | Y │  ← DividendIncomeChart card
 │  ┌─────────────────────────┐│
-│  │ 200┤         ██         ││  ← bar chart, monthly/yearly toggle
+│  │ 200┤         ██         ││
 │  │ 100┤  ██  ██ ██ ██      ││
 │  │    └────────────────────││
 │  │   Jan Feb Mar Apr May   ││
 │  └─────────────────────────┘│
 │                             │
-│  ── Received tab ──         │
-│  Total all-time   € 842.40  │
+│  Total all-time   € 842.40  │  ← totals summary card
+│  ─────────────────────────  │
 │  Total 2026       € 186.00  │
 │  Total 2025       € 430.00  │
 │                             │
-│  ─ 2026 ─                   │
-│  ALV  02 Jun  € 96.00       │
-│  AAPL 15 May  € 12.40       │
-│  ALV  04 Jan  € 77.60       │
+│  2026              € 186.00 │  ← year section header
+│  ┌─────────────────────────┐│
+│  │ ALV  02 Jun  € 96.00    ││
+│  │ AAPL 15 May  € 12.40    ││
+│  │ ALV  04 Jan  € 77.60    ││
+│  └─────────────────────────┘│
 │                             │
 │  ── Upcoming tab ──         │
-│  AAPL  15 Aug 2026 ~€ 12    │
-│  ALV   03 Dec 2026 ~€ 96    │
+│  Total expected ~€ 108.00   │  ← grand total card
+│                             │
+│  August 2026      ~€ 12.40  │  ← month section header
+│  ┌─────────────────────────┐│
+│  │ AAPL  15 Aug  ~€ 12.40  ││
+│  └─────────────────────────┘│
+│                             │
+│  December 2026    ~€ 96.00  │
+│  ┌─────────────────────────┐│
+│  │ ALV   03 Dec  ~€ 96.00  ││
+│  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
 
-**Dividend Income Chart:** A `DividendIncomeChart(dividends: ...)` card appears above the dividend list whenever at least one paid + confirmed dividend exists. The screen passes its already-loaded `dividends` list directly; the chart does not re-fetch from the database. A Monthly / Yearly toggle (top-right of the card) switches the bucket granularity. All amounts are converted to the preferred currency using live exchange rates; dividends whose currency has no available rate are excluded rather than mixed in at the wrong scale. Bar width and X-axis label density adapt to the number of buckets (≤12 / ≤24 / >24). Tapping a bar shows a tooltip with the full period label and the total amount.
+**Received tab:** The `DividendIncomeChart` card appears at the top (only paid + confirmed dividends). Below it, a totals summary card shows all-time and per-year totals in the preferred currency, followed by paid dividends grouped under year headers. Pending-confirmation dividends (auto-fetched, unreviewed) appear in a separate section above the totals with a "Review" action.
+
+**Upcoming tab:** Expected dividends with `date ≥ today` sorted chronologically and grouped by month. A grand total card shows the sum of all `totalAmount` values that can be converted to the preferred currency (prefixed with `~`). Month headers show the per-month estimated total. Months and the grand total are omitted when no `totalAmount` is set (e.g. for expected dividends recorded without a share count). Tapping any tile opens the edit screen.
 
 ### Desktop
 Received history and upcoming calendar shown side by side. Upcoming panel includes a simple month-by-month timeline view.
