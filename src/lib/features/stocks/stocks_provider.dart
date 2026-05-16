@@ -131,6 +131,12 @@ final analystDataProvider =
 final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
     (String stockId, ChartRange range)>((ref, args) async {
   final (stockId, range) = args;
+
+  // Cache results for 5 minutes so navigating away and back does not trigger
+  // a full refetch, especially important for long-range (5Y / MAX) requests.
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 5), link.close);
+
   final stockAsync = ref.watch(stockByIdProvider(stockId));
   final stock = stockAsync.value;
   if (stock == null) return [];

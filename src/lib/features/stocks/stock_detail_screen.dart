@@ -499,8 +499,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     List<PricePoint>? weekHistory,
     AnalystData? analyst,
   ) {
-    // Day change: prefer Yahoo's regularMarketChangePercent (already in %);
-    // fall back to first→last of the 1D chart data (intraday change from open).
+    // Day change: prefer Yahoo's regularMarketChangePercent (already in %),
+    // which measures current vs previous close.  Fall back to first→last of
+    // the intraday 1D chart data (open → latest), a slightly different baseline
+    // used only when the quote was fetched via Stooq or set manually.
     Decimal? dayPct = quote?.dayChangePct;
     if (dayPct == null && dayHistory != null && dayHistory.length >= 2) {
       final first = dayHistory.first.price;

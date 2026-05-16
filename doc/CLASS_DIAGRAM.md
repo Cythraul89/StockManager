@@ -91,6 +91,26 @@ classDiagram
         +bool isPaid
     }
 
+    class PricePoint {
+        +DateTime date
+        +Decimal price
+        +String currency
+    }
+
+    class ChartRange {
+        <<enumeration>>
+        oneDay
+        oneWeek
+        oneMonth
+        sixMonths
+        oneYear
+        fiveYears
+        max
+        +String label
+        +String yahooRange
+        +String yahooInterval
+    }
+
     class AnalystData {
         +Decimal targetMeanPrice
         +Decimal? targetLowPrice
@@ -108,6 +128,7 @@ classDiagram
         +Decimal? trailingPE
         +Decimal? forwardPE
         +Decimal? trailingEps
+        +Decimal? yearChangePct
         +copyWith() AnalystData
     }
 
@@ -117,6 +138,7 @@ classDiagram
         +String currency
         +DateTime fetchedAt
         +bool isManualOverride
+        +Decimal? dayChangePct
         +withStaleness() PriceQuote
     }
 
@@ -228,6 +250,7 @@ classDiagram
         +fetchQuote(symbol, stockId) PriceQuote?
         +fetchQuotes(symbolMap) Map
         +fetchHistoricalPrice(symbol, date) Decimal?
+        +fetchPriceHistory(symbol, range) List~PricePoint~
         +fetchDividends(symbol) List~FetchedDividend~
         +fetchAnalystData(symbol) AnalystData?
     }
@@ -318,8 +341,10 @@ classDiagram
 
     %% Service outputs
     MarketDataService --> PriceQuote : produces
+    MarketDataService --> PricePoint : produces
     MarketDataService --> FetchedDividend : produces
     MarketDataService --> AnalystData : produces
+    MarketDataService ..> ChartRange : parameterised by
     CurrencyService --> ExchangeRate : produces
     IsinLookupService --> IsinLookupResult : produces
     NotificationService ..> Stock : alerts on
@@ -351,6 +376,7 @@ classDiagram
 
     class StocksDao {
         +watchAll() Stream~List~Stock~~
+        +watchById(id) Stream~Stock~~
         +getAll() Future~List~Stock~~
         +findById(id) Future~Stock~~
         +findByIsin(isin) Future~Stock~~

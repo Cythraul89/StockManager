@@ -53,9 +53,9 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │                             │
 │  Top Movers                 │
 │  ┌─────────────────────────┐│
-│  │ AAPL  +3.2%    € 189.40 ││
-│  │ MSFT  -1.1%    € 412.00 ││
-│  │ VOW3  +0.8%    €  92.50 ││
+│  │ AAPL [Buy]  +3.2% €189  ││  ← coloured recommendation badge
+│  │ MSFT [Hold] -1.1% €412  ││
+│  │ VOW3 [Buy]  +0.8% € 92  ││
 │  └─────────────────────────┘│
 │                             │
 │  Upcoming Dividends         │
@@ -65,6 +65,8 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
+
+**Stock tiles:** Each tile in the stock list (dashboard and Stocks tab) shows a small coloured recommendation badge (Str.Buy · Buy · Hold · Undprf. · Sell) next to the ticker symbol. The badge is loaded silently via `analystDataProvider` (10-minute keepAlive cache); no badge is shown while loading or when no analyst data is available.
 
 ### Desktop (additions)
 - Summary cards displayed in a 4-column row (no scrolling needed).
@@ -139,6 +141,16 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 │  │ Current price   $ 189.40││  ← fetched on open if not in cache
 │  │ Unrealised P&L  +$ 442  ││  ← coloured green / red
 │  │ Realised P&L    +$  80  ││
+│  │ Change [1D +0.8%][1W +2.1%][1Y +18.4%]││  ← coloured badges
+│  └─────────────────────────┘│
+│                             │
+│  ┌─────────────────────────┐│  ← Price history chart
+│  │ Price History  +2.3%  [USD][EUR]││  ← currency toggle pills
+│  │ $195┤       ╭──╮         ││  ← Y-axis price labels
+│  │ $190┤  ╭────╯  ╰──╮     ││
+│  │ $185┤──╯           ╰────││
+│  │      └──────────────────││
+│  │ [1D][1W][1M][6M][1Y][5Y][MAX]││  ← range selector
 │  └─────────────────────────┘│
 │                             │
 │  ┌─────────────────────────┐│  ← Analysis card
@@ -179,6 +191,10 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 **Price display:** When the screen opens, `_fetchPriceOnLoad()` checks the in-memory cache. If no quote exists or the cached quote is stale, a fresh quote is fetched from Yahoo Finance / Stooq and written to both the DB cache and `priceQuotesProvider`. This ensures the price shows correctly when navigating directly from the stock list without visiting the Dashboard first.
 
 **Manual price override:** When no market price is available (e.g. OTC or unlisted securities), a **Set price** link replaces the missing price row. Once set, a **(manual)** tag is appended to the price and a **Clear manual price** button appears. Manual prices are never marked stale.
+
+**Change badges:** Three coloured percentage pills (1D / 1W / 1Y) at the bottom of the info card. 1D comes from `PriceQuote.dayChangePct` (Yahoo `regularMarketChangePercent`) with a fallback to first→last of the intraday 1D history when the quote was fetched via Stooq or set manually. 1W is computed from the 1W price history. 1Y comes from `AnalystData.yearChangePct` (Yahoo `52WeekChange`, a fraction stored and converted to % for display). Badges appear only when data is available; all three can be absent simultaneously.
+
+**Price history chart:** A `StockPriceChart` widget between the info card and analysis card. Shows closing prices for the selected range. The Y-axis displays compact price labels in the active currency. A currency toggle (native code · preferred code) appears when a conversion rate is available and switches all chart prices, Y-axis labels, and tooltip between the stock's trading currency and the user's preferred currency. Chart data is cached for 5 minutes per (stockId, range) key.
 
 **Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails.
 

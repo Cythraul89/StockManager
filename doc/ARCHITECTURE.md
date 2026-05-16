@@ -350,10 +350,14 @@ Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchD
 |---|---|
 | `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency` |
 | `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE` |
-| `defaultKeyStatistics` | `trailingEps` |
+| `defaultKeyStatistics` | `trailingEps`, `52WeekChange` (stored as `yearChangePct`, a decimal fraction e.g. `0.157` = +15.7%) |
 | `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
 
-The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed as an "Analysis" card on the Stock Detail screen. Data is not persisted locally.
+The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed in two places:
+- **Stock Detail** — full "Analysis" card with target prices, range bars, consensus breakdown, and valuation metrics.
+- **Dashboard tile** — a compact coloured badge (Str.Buy / Buy / Hold / Undprf. / Sell) next to the ticker symbol, loaded silently in the background using the same keepAlive cache.
+
+Data is not persisted locally.
 
 #### Caching and manual refresh
 
@@ -387,7 +391,46 @@ Yahoo Finance returns analyst price targets in the stock's **trading currency** 
 | Consensus | Stacked colour bar (proportional to analyst counts) with a text legend |
 | Valuation | Trailing P/E · Forward P/E · EPS (TTM), converted to stock currency |
 
-### 5.10 Manual Price Override
+### 5.10 Price History Chart and Change Badges
+
+`MarketDataService.fetchPriceHistory(symbol, range)` fetches OHLCV closing prices from the Yahoo Finance v8 chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/{symbol}`). It does not require a session crumb (the v8 endpoint accepts unauthenticated requests) but uses `_withYahooRetry` for 429 backoff. The currency is read from `meta.currency` in the response and embedded in every returned `PricePoint`.
+
+| `ChartRange` | Yahoo `range` | Yahoo `interval` |
+|---|---|---|
+| 1D | `1d` | `5m` (intraday ticks) |
+| 1W | `5d` | `1d` |
+| 1M | `1mo` | `1d` |
+| 6M | `6mo` | `1d` |
+| 1Y | `1y` | `1wk` |
+| 5Y | `5y` | `1wk` |
+| MAX | `max` | `1mo` |
+
+#### Provider
+
+`priceHistoryProvider` is a `FutureProvider.family` keyed by `(stockId, ChartRange)`. It watches `stockByIdProvider(stockId)` so it automatically re-fetches when the stock's symbol changes (e.g. after an ISIN research update). Results are kept alive for **5 minutes** to avoid re-fetching during back-navigation and when the user cycles through range buttons.
+
+#### `StockPriceChart` widget
+
+A `ConsumerStatefulWidget` rendered on the Stock Detail screen. State: active `ChartRange` (default: 1M) and `_showConverted` currency toggle. Features:
+
+- **Y-axis labels** — three price labels in compact currency format (e.g. `€1.23K`, `NOK 152`) on the left edge.
+- **Tooltip** — shows exact formatted price and date on touch.
+- **Range selector** — pill buttons at the bottom; selected range highlighted with `primaryContainer`.
+- **Currency toggle** — appears in the header when the stock's trading currency differs from the user's preferred currency **and** a conversion rate exists. Two pills (native code · preferred code) switch the chart, Y-axis labels, and tooltip between currencies. Conversion uses the live `exchangeRatesProvider` rates; if rates are unavailable the toggle is hidden and native prices are shown.
+
+#### Change badges
+
+Three coloured percentage pills shown at the bottom of the info card on Stock Detail:
+
+| Badge | Source | Notes |
+|---|---|---|
+| 1D | `PriceQuote.dayChangePct` from Yahoo `regularMarketChangePercent` | Falls back to first→last of the 1D intraday history (open-to-latest) when the quote came from Stooq or a manual override |
+| 1W | Computed: `last / first − 1` over the 1W price history | Currency cancels in the ratio |
+| 1Y | `AnalystData.yearChangePct × 100` from `defaultKeyStatistics.52WeekChange` | Yahoo returns a fraction; multiplied by 100 for display |
+
+All three are ratios, so currency conversion is not needed — they remain correct regardless of whether the chart is showing native or preferred currency.
+
+### 5.11 Manual Price Override
 
 For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded funds), the user can set a price manually from the Stock Detail screen. Manual prices:
 
@@ -399,7 +442,7 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 
 `MarketDataService.fetchQuote()` accepts an optional `stockCurrency` parameter used for the Stooq fallback. `fetchQuotes()` accepts an optional `currencyByStockId` map so `DashboardScreen` can pass currencies in bulk.
 
-### 5.11 Nextcloud Sync Strategy
+### 5.12 Nextcloud Sync Strategy
 
 #### Backup format
 Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
@@ -437,7 +480,7 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 | `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
-### 5.12 Self-Signed Certificate Support
+### 5.13 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
 2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
