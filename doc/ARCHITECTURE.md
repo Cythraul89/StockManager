@@ -146,18 +146,19 @@ features/<name>/
 | manual_override | BOOL | bypass TTL when true |
 
 **settings** (single row, id = 1)
-| Column | Type |
-|---|---|
-| preferred_currency | TEXT |
-| nextcloud_url | TEXT? |
-| nextcloud_username | TEXT? |
-| nextcloud_path | TEXT |
-| theme | ENUM: system \| light \| dark |
-| notifications_enabled | BOOL |
-| price_alert_threshold_pct | DECIMAL |
-| dividend_alert_days | INT |
-| last_sync_at | DATETIME? |
-| nextcloud_keep_exports | INT | number of remote backups to retain (default 5) |
+| Column | Type | Notes |
+|---|---|---|
+| preferred_currency | TEXT | ISO 4217; default EUR |
+| nextcloud_url | TEXT? | |
+| nextcloud_username | TEXT? | |
+| nextcloud_path | TEXT | default /StockManager/ |
+| theme | ENUM: system \| light \| dark | |
+| notifications_enabled | BOOL | |
+| price_alert_threshold_pct | DECIMAL | |
+| dividend_alert_days | INT | |
+| last_sync_at | DATETIME? | |
+| nextcloud_keep_exports | INT | remote backups to retain; default 5 |
+| sparkline_range | TEXT | `ChartRange.label` (e.g. `1M`); default `1M` |
 
 > Nextcloud password is stored separately in flutter_secure_storage, not in SQLite.
 
@@ -430,7 +431,17 @@ Three coloured percentage pills shown at the bottom of the info card on Stock De
 
 All three are ratios, so currency conversion is not needed — they remain correct regardless of whether the chart is showing native or preferred currency.
 
-### 5.11 Manual Price Override
+### 5.11 Dashboard Sparklines
+
+Each stock tile on the Dashboard shows a 72×36 px mini line chart (sparkline) to the right of the name column. The sparkline fetches price history via the same `priceHistoryProvider` used by `StockPriceChart`, so the result is cached for 5 minutes and shared if the Stock Detail screen has already loaded the same range.
+
+**Configurable range:** The time window is controlled by `AppSettings.sparklineRange` (default: 1M). The user selects a range in Settings → Display → "Sparkline period", which opens a `SimpleDialog` listing all seven `ChartRange` values with a checkmark on the active choice. Changing the setting immediately updates all visible sparklines because tiles watch `settingsStreamProvider`.
+
+**Colour:** Green (`Colors.green.shade600`) when the last price in the period ≥ the first price; red (`colorScheme.error`) otherwise. The area below the line is filled with the same colour at 15 % opacity.
+
+**Rendering:** `duration: Duration.zero` (no animation), no axes, no grid, no border, touch interaction disabled. The sparkline is hidden while the fetch is in progress or when fewer than two data points are available.
+
+### 5.12 Manual Price Override
 
 For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded funds), the user can set a price manually from the Stock Detail screen. Manual prices:
 
@@ -442,7 +453,7 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 
 `MarketDataService.fetchQuote()` accepts an optional `stockCurrency` parameter used for the Stooq fallback. `fetchQuotes()` accepts an optional `currencyByStockId` map so `DashboardScreen` can pass currencies in bulk.
 
-### 5.12 Nextcloud Sync Strategy
+### 5.13 Nextcloud Sync Strategy
 
 #### Backup format
 Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
@@ -480,7 +491,7 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 | `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
-### 5.13 Self-Signed Certificate Support
+### 5.14 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
 2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.

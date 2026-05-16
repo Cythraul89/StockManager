@@ -53,9 +53,9 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │                             │
 │  Top Movers                 │
 │  ┌─────────────────────────┐│
-│  │ AAPL [Buy]  +3.2% €189  ││  ← coloured recommendation badge
-│  │ MSFT [Hold] -1.1% €412  ││
-│  │ VOW3 [Buy]  +0.8% € 92  ││
+│  │ AAPL [Buy] ╭╮  +3.2% €189││  ← badge · sparkline · value
+│  │ MSFT [Hold]╯╰  -1.1% €412││
+│  │ VOW3 [Buy] ╭─  +0.8% € 92││
 │  └─────────────────────────┘│
 │                             │
 │  Upcoming Dividends         │
@@ -66,7 +66,11 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 └─────────────────────────────┘
 ```
 
-**Stock tiles:** Each tile in the stock list (dashboard and Stocks tab) shows a small coloured recommendation badge (Str.Buy · Buy · Hold · Undprf. · Sell) next to the ticker symbol. The badge is loaded silently via `analystDataProvider` (10-minute keepAlive cache); no badge is shown while loading or when no analyst data is available.
+**Stock tiles:** Each tile in the stock list (dashboard and Stocks tab) shows:
+- A small coloured recommendation badge (Str.Buy · Buy · Hold · Undprf. · Sell) next to the ticker symbol, loaded silently via `analystDataProvider` (10-minute keepAlive); hidden while loading or when unavailable.
+- A 72×36 px **sparkline** (mini line chart) between the name column and the value column, showing price history for the configured period (default 1M). Green when the period end price ≥ start price, red otherwise. Hidden while loading or when fewer than two data points are available.
+
+The sparkline period is configurable in Settings → Display → "Sparkline period" (1D · 1W · 1M · 6M · 1Y · 5Y · MAX). Changing it immediately updates all visible sparklines.
 
 ### Desktop (additions)
 - Summary cards displayed in a 4-column row (no scrolling needed).
@@ -185,6 +189,10 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 │  $ 0.24/share · Total $2.40 │
 │  EXPECTED  15 May 2026      │
 │  $ 0.25/share · Est. $2.30  │
+│                             │
+│  Stock Splits       [+ Add] │
+│  4:1  10 Jun 2024           │  ← forward split · delete button
+│       forward split     [🗑] │
 └─────────────────────────────┘
 ```
 
@@ -198,8 +206,10 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 
 **Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails.
 
+**Splits section:** Below dividends, lists all recorded stock splits (ratio + date + forward/reverse label) with a per-row delete button that shows a confirmation dialog. The "Add" button opens `AddSplitDialog` — a date picker and two integer fields (From / To) with a live description line (e.g. "4:1 forward split — each share becomes 4"). The list is driven by `splitsByStockProvider` (a `StreamProvider`), so it reflects add/delete operations immediately without any manual refresh.
+
 ### Desktop
-All sections (stock info, analysis, transactions, dividends) displayed in a single scrollable column; no tabs.
+All sections (stock info, analysis, transactions, dividends, splits) displayed in a single scrollable column; no tabs.
 
 ---
 
@@ -430,6 +440,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 │  Display                    │
 │  Preferred currency  EUR ▾  │
 │  Theme          System ▾    │
+│  Sparkline period     1M ▾  │  ← opens SimpleDialog with all 7 ranges
 │                             │
 │  Nextcloud Sync         [▶] │
 │  Last sync: 12 May 14:30    │
