@@ -9,6 +9,7 @@ class PriceQuote extends Equatable {
     required this.fetchedAt,
     this.isStale = false,
     this.isManualOverride = false,
+    this.dayChangePct,
   });
 
   final String stockId;
@@ -17,6 +18,9 @@ class PriceQuote extends Equatable {
   final DateTime fetchedAt;
   final bool isStale;
   final bool isManualOverride;
+  // Percentage change from the previous close, as returned by Yahoo Finance.
+  // Null for manual overrides and DB-cached quotes (not persisted).
+  final Decimal? dayChangePct;
 
   static const cacheTtl = Duration(hours: 1);
 
@@ -25,14 +29,14 @@ class PriceQuote extends Equatable {
         price: price,
         currency: currency,
         fetchedAt: fetchedAt,
-        // Manual prices are never stale — the user controls them.
         isStale: isManualOverride
             ? false
             : DateTime.now().difference(fetchedAt) > cacheTtl,
         isManualOverride: isManualOverride,
+        dayChangePct: dayChangePct,
       );
 
   @override
   List<Object?> get props =>
-      [stockId, price, currency, fetchedAt, isStale, isManualOverride];
+      [stockId, price, currency, fetchedAt, isStale, isManualOverride, dayChangePct];
 }

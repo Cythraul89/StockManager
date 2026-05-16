@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/analyst_data.dart';
+import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/utils/currency_formatter.dart';
@@ -136,6 +138,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final analystAsync = ref.watch(analystDataProvider(widget.id));
+    final weekHistoryAsync =
+        ref.watch(priceHistoryProvider((widget.id, ChartRange.oneWeek)));
     final quotes = ref.watch(priceQuotesProvider);
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
 
@@ -303,6 +307,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                               : Colors.green,
                         ),
                       ],
+                      _buildPriceChanges(
+                        context,
+                        quote,
+                        weekHistoryAsync.value,
+                        analystAsync.value,
+                      ),
                     ],
                   ),
                 ),
@@ -478,6 +488,84 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               style:
                   theme.textTheme.bodyMedium?.copyWith(color: valueColor)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPriceChanges(
+    BuildContext context,
+    PriceQuote? quote,
+    List<PricePoint>? weekHistory,
+    AnalystData? analyst,
+  ) {
+    // Day change: from Yahoo's regularMarketChangePercent (already in %).
+    final dayPct = quote?.dayChangePct;
+
+    // Week change: first vs last close in the 5-day history (also in %).
+    Decimal? weekPct;
+    if (weekHistory != null && weekHistory.length >= 2) {
+      final first = weekHistory.first.price;
+      if (first > Decimal.zero) {
+        weekPct = weekHistory.last.price.percentChangeFrom(first);
+      }
+    }
+
+    // Year change: Yahoo 52WeekChange is a fraction (0.157 = +15.7%) — convert.
+    final yearPct = analyst?.yearChangePct != null
+        ? analyst!.yearChangePct! * Decimal.fromInt(100)
+        : null;
+
+    if (dayPct == null && weekPct == null && yearPct == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Text(
+            'Change',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const Spacer(),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (dayPct != null) _changeBadge(context, '1D', dayPct),
+              if (weekPct != null) ...[
+                if (dayPct != null) const SizedBox(width: 6),
+                _changeBadge(context, '1W', weekPct),
+              ],
+              if (yearPct != null) ...[
+                if (dayPct != null || weekPct != null) const SizedBox(width: 6),
+                _changeBadge(context, '1Y', yearPct),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _changeBadge(BuildContext context, String label, Decimal pct) {
+    final theme = Theme.of(context);
+    final isPositive = !pct.isNegative;
+    final color =
+        isPositive ? Colors.green.shade600 : theme.colorScheme.error;
+    final sign = isPositive ? '+' : '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$label  $sign${pct.toStringFixed(2)}%',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

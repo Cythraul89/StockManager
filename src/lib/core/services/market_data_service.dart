@@ -365,6 +365,8 @@ class MarketDataService {
         trailingPE: raw(sd, 'trailingPE'),
         forwardPE: raw(sd, 'forwardPE'),
         trailingEps: raw(dks, 'trailingEps'),
+        // 52-week return as a fraction (e.g. 0.157 = +15.7%)
+        yearChangePct: raw(dks, '52WeekChange'),
       );
     } on DioException catch (e) {
       final status = e.response?.statusCode;
@@ -490,11 +492,15 @@ class MarketDataService {
 
       if (price == null || currency == null) { return null; }
 
+      final changePct = meta?['regularMarketChangePercent'];
       return PriceQuote(
         stockId: stockId,
         price: Decimal.parse(price.toString()),
         currency: currency,
         fetchedAt: DateTime.now(),
+        dayChangePct: changePct != null
+            ? Decimal.tryParse(changePct.toString())
+            : null,
       );
     } on DioException {
       return null;

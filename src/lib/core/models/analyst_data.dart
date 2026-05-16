@@ -19,6 +19,7 @@ class AnalystData extends Equatable {
     this.trailingPE,
     this.forwardPE,
     this.trailingEps,
+    this.yearChangePct,
   });
 
   // Price targets (financialData)
@@ -47,6 +48,9 @@ class AnalystData extends Equatable {
   final Decimal? trailingPE;
   final Decimal? forwardPE;
   final Decimal? trailingEps;
+  // 52-week price return as a decimal fraction (e.g. 0.157 = +15.7%).
+  // From defaultKeyStatistics.52WeekChange; multiply by 100 for display.
+  final Decimal? yearChangePct;
 
   AnalystData copyWith({
     Decimal? targetMeanPrice,
@@ -65,6 +69,7 @@ class AnalystData extends Equatable {
     Decimal? trailingPE,
     Decimal? forwardPE,
     Decimal? trailingEps,
+    Decimal? yearChangePct,
   }) {
     return AnalystData(
       targetMeanPrice: targetMeanPrice ?? this.targetMeanPrice,
@@ -83,6 +88,7 @@ class AnalystData extends Equatable {
       trailingPE: trailingPE ?? this.trailingPE,
       forwardPE: forwardPE ?? this.forwardPE,
       trailingEps: trailingEps ?? this.trailingEps,
+      yearChangePct: yearChangePct ?? this.yearChangePct,
     );
   }
 
@@ -104,5 +110,6 @@ class AnalystData extends Equatable {
         trailingPE,
         forwardPE,
         trailingEps,
+        yearChangePct,
       ];
 }
