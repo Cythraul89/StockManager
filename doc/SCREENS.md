@@ -48,20 +48,22 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │                             │
 │  ┌──────────┐ ┌──────────┐  │
 │  │Unrealised│ │Dividends │  │
-│  │+€ 6,430  │ │YTD €Ɔ420 │  │
+│  │+€ 6,430  │ │YTD €420  │  │
 │  └──────────┘ └──────────┘  │
 │                             │
-│  Top Movers                 │
+│  Allocation                 │  ← AllocationChart card
+│  ┌─────────────────────────┐│
+│  │ (●) ●  ● AAPL  45.2%   ││  ← donut + legend
+│  │  ╲●╱    MSFT  30.1%    ││
+│  │         VOW3  14.7%    ││
+│  │         Others  10.0%  ││
+│  └─────────────────────────┘│
+│                             │
+│  Holdings                   │
 │  ┌─────────────────────────┐│
 │  │ AAPL [Buy] ╭╮  +3.2% €189││  ← badge · sparkline · value
 │  │ MSFT [Hold]╯╰  -1.1% €412││
 │  │ VOW3 [Buy] ╭─  +0.8% € 92││
-│  └─────────────────────────┘│
-│                             │
-│  Upcoming Dividends         │
-│  ┌─────────────────────────┐│
-│  │ AAPL  15 May  € 12.40   ││
-│  │ ALV    2 Jun  € 84.00   ││
 │  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
@@ -88,6 +90,7 @@ The sparkline period is configurable in Settings → Display → "Sparkline peri
 ```
 ┌─────────────────────────────┐
 │  Stocks             [+ Add] │
+│  [ 🔍 Search…       ] [⋮↕] │  ← TextField + sort PopupMenuButton
 │  ───────────────────────────  │
 │  Broker: Scalable Capital   │
 │  ┌─────────────────────────┐│
@@ -108,6 +111,8 @@ The sparkline period is configurable in Settings → Display → "Sparkline peri
 │  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
+
+**Search and sort:** A `TextField` below the AppBar filters stocks live by symbol or name (case-insensitive). A `PopupMenuButton` in the AppBar offers three sort orders — **Symbol** (default, alphabetical), **Name** (alphabetical), and **Price** (descending by last known quote). When no stocks match the search query an inline "No results for '…'" message replaces the list. Sort by price is cross-currency (stocks with no quote sort last; JPY prices are not normalised to the preferred currency).
 
 ### Desktop (master-detail)
 ```
@@ -196,7 +201,7 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 └─────────────────────────────┘
 ```
 
-**Price display:** When the screen opens, `_fetchPriceOnLoad()` checks the in-memory cache. If no quote exists or the cached quote is stale, a fresh quote is fetched from Yahoo Finance / Stooq and written to both the DB cache and `priceQuotesProvider`. This ensures the price shows correctly when navigating directly from the stock list without visiting the Dashboard first.
+**Price display:** When the screen opens, `_fetchPrice()` checks the in-memory cache. If no quote exists or the cached quote is stale, a fresh quote is fetched from Yahoo Finance / Stooq and written to both the DB cache and `priceQuotesProvider`. This ensures the price shows correctly when navigating directly from the stock list without visiting the Dashboard first. Pull-to-refresh (dragging down on the scrollable body) calls `_fetchPrice(forceRefresh: true)`, which always fetches a new quote regardless of staleness and shows a `SnackBar` with "Could not refresh price" if the fetch fails.
 
 **Manual price override:** When no market price is available (e.g. OTC or unlisted securities), a **Set price** link replaces the missing price row. Once set, a **(manual)** tag is appended to the price and a **Clear manual price** button appears. Manual prices are never marked stale.
 
@@ -372,6 +377,14 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 │  │ Received │   Upcoming   │ │
 │  └──────────┴──────────────┘ │
 │                             │
+│  Dividend Income      M | Y │  ← DividendIncomeChart card
+│  ┌─────────────────────────┐│
+│  │ 200┤         ██         ││  ← bar chart, monthly/yearly toggle
+│  │ 100┤  ██  ██ ██ ██      ││
+│  │    └────────────────────││
+│  │   Jan Feb Mar Apr May   ││
+│  └─────────────────────────┘│
+│                             │
 │  ── Received tab ──         │
 │  Total all-time   € 842.40  │
 │  Total 2026       € 186.00  │
@@ -387,6 +400,8 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 │  ALV   03 Dec 2026 ~€ 96    │
 └─────────────────────────────┘
 ```
+
+**Dividend Income Chart:** A `DividendIncomeChart` card appears above the tab bar whenever at least one paid + confirmed dividend exists. A Monthly / Yearly toggle (top-right of the card) switches the bucket granularity. All amounts are converted to the preferred currency using live exchange rates; dividends whose currency has no available rate are excluded rather than mixed in at the wrong scale. Bar width and X-axis label density adapt to the number of buckets (≤12 / ≤24 / >24). Tapping a bar shows a tooltip with the full period label and the total amount.
 
 ### Desktop
 Received history and upcoming calendar shown side by side. Upcoming panel includes a simple month-by-month timeline view.

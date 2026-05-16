@@ -194,6 +194,8 @@ Data always flows upward. Widgets never touch repositories directly — they go 
 ### 5.1 Adaptive Layout Breakpoint
 At **≥ 600 dp** the `adaptive_shell` switches to the desktop shell (persistent sidebar). Below that the mobile shell (bottom navigation bar) is used. The breakpoint is implemented inside a `ShellRoute` in go_router so that navigation state and scroll positions are preserved across the switch.
 
+The `NavigationRail` inside `DesktopShell` uses **extended mode** (icons + labels, ~220 dp wide) only at **≥ 1200 dp**; between 600 and 1199 dp it shows icons only (~72 dp), which preserves usable screen space on tablets and landscape phones.
+
 ### 5.2 Split-Adjusted Calculations
 Raw transaction rows are never modified when a stock split is recorded. `PortfolioCalculator.calculate()` applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable. The helper `PortfolioCalculator.splitMultiplierAfter(txDate, splits)` is a public static method so that `PnlCalculator` can share the same logic without duplication.
 
@@ -418,6 +420,7 @@ A `ConsumerStatefulWidget` rendered on the Stock Detail screen. State: active `C
 - **Tooltip** — shows exact formatted price and date on touch.
 - **Range selector** — pill buttons at the bottom; selected range highlighted with `primaryContainer`.
 - **Currency toggle** — appears in the header when the stock's trading currency differs from the user's preferred currency **and** a conversion rate exists. Two pills (native code · preferred code) switch the chart, Y-axis labels, and tooltip between currencies. Conversion uses the live `exchangeRatesProvider` rates; if rates are unavailable the toggle is hidden and native prices are shown.
+- **Transaction overlays** — buy and sell transactions within the visible date range are rendered as coloured dots on the price line (green for buys, red for sells). Each dot is placed at the nearest available price point by date using `_nearestPointIndex`. Touching near a dot appends a tooltip item showing the transaction type, share count, and price per share. Dots from overlay bars that are more than 2 data points from the current touch position are suppressed to avoid fl_chart's "always include nearest spot from every bar" behaviour.
 
 #### Change badges
 
@@ -440,6 +443,21 @@ Each stock tile on the Dashboard shows a 72×36 px mini line chart (sparkline) t
 **Colour:** Green (`Colors.green.shade600`) when the last price in the period ≥ the first price; red (`colorScheme.error`) otherwise. The area below the line is filled with the same colour at 15 % opacity.
 
 **Rendering:** `duration: Duration.zero` (no animation), no axes, no grid, no border, touch interaction disabled. The sparkline is hidden while the fetch is in progress or when fewer than two data points are available.
+
+### 5.11b Stocks Screen Search and Sort
+
+`StocksScreen` is a `ConsumerStatefulWidget` that adds search and sort on top of `stocksStreamProvider`:
+
+- **Search** — a persistent `TextField` at the top of the body filters the list in real-time by symbol or name (case-insensitive `contains`). A clear button (✕) appears when the field is non-empty.
+- **Sort** — a `PopupMenuButton` in the AppBar offers three orderings:
+  - **Symbol** (A → Z, default)
+  - **Name** (A → Z)
+  - **Price high → low** — uses the raw `PriceQuote.price`; stocks with no quote sort last. *Note: the price is not normalised to a common currency, so cross-currency comparisons are ordinal only.*
+- The active sort option is marked with a checkmark in the popup. Filtering and sorting are applied together in `_applyFilterAndSort` and produce a new list on every build (O(n log n), negligible for portfolio sizes).
+
+### 5.11c Stock Detail Pull-to-Refresh
+
+`StockDetailScreen` wraps its `ListView` in a `RefreshIndicator`. Pulling down calls `_fetchPrice(forceRefresh: true)`, which always fetches a fresh quote regardless of cache staleness (unlike the on-load call which skips when a non-stale quote is already in memory). On network failure during a manual refresh, a `SnackBar` with "Could not refresh price" is shown; silent failure is reserved for the background on-load fetch.
 
 ### 5.12 Manual Price Override
 
@@ -491,7 +509,33 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 | `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
-### 5.14 Self-Signed Certificate Support
+### 5.15 Portfolio Allocation Chart
+
+`AllocationChart` is a `StatefulWidget` rendered on the Dashboard screen between the portfolio summary card and the holdings list.
+
+**Data source:** `PortfolioSummary.stockItems` (already computed by `portfolioSummaryProvider`). Each `StockSummaryItem.currentValue` is in the user's preferred currency because `portfolioSummaryProvider` converts via `ExchangeRate`. Items where `missingRate = true` are excluded — their `currentValue` is in the stock's native currency and would corrupt the percentages.
+
+**Slices:** Stocks are sorted by `currentValue` descending. The top 7 are individual slices; the remainder are grouped as "Others". A fixed 8-colour palette is used so slice colours are stable across sessions.
+
+**Interaction:** Tapping a slice expands its radius (`46 → 56 dp`) via fl_chart's `PieTouchData`. The legend alongside shows each symbol and its percentage of the total, computed with `Decimal` arithmetic.
+
+**Empty state:** The widget returns `SizedBox.shrink()` when no stock has both a price and a valid exchange rate, so the card never appears as an empty placeholder.
+
+### 5.16 Dividend Income Chart
+
+`DividendIncomeChart` is a `ConsumerStatefulWidget` rendered at the top of the Dividends screen.
+
+**Data source:** `allDividendsProvider` (a `FutureProvider` that re-fires when `dataVersionProvider` increments). Only dividends with `type = paid`, `confirmed = true`, and `netAmount > 0` are included.
+
+**Currency conversion:** Each dividend's `netAmount` is converted to the preferred currency using `ExchangeRate.find(rates, d.currency, preferred)`. Dividends whose currency cannot be converted (no rate available and currency differs from preferred) are **skipped** — including them raw would silently mix currencies in the bar totals.
+
+**Grouping:** Dividends are bucketed by a period key — `"YYYY-MM"` in monthly mode, `"YYYY"` in yearly mode. Buckets are sorted chronologically (string sort on the zero-padded key is equivalent to date sort). A Monthly / Yearly toggle in the card header switches between modes; the toggle state is local `ConsumerState`.
+
+**Chart rendering:** A `BarChart` from fl_chart. Bar width adapts to the number of periods (14 dp ≤ 12 bars, 9 dp ≤ 24, 6 dp otherwise). X-axis labels use a dynamic skip interval (every bar, every 3rd, or every 6th) and format as `"MMM"` for ≤ 12 bars or `"MMM 'yy"` for more. The y-axis shows compact currency labels (e.g. `€1.2k`). Tapping a bar shows a tooltip with the full period label and formatted total.
+
+**Empty state:** Returns `SizedBox.shrink()` when there are no paid+confirmed dividends (e.g. new user, or all dividends are expected only), so the card never appears as an empty placeholder.
+
+### 5.17 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
 2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.

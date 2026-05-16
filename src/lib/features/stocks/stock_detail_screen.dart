@@ -45,24 +45,32 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
   // On load: skip when a fresh (non-stale) quote is already in-memory.
   // On pull-to-refresh (forceRefresh: true): always fetch.
-  Future<void> _fetchPrice({bool forceRefresh = false}) async {
+  // Returns true when a new quote was written, false on skip or error.
+  Future<bool> _fetchPrice({bool forceRefresh = false}) async {
     final stock = await ref.read(stockByIdProvider(widget.id).future);
-    if (stock == null || !mounted) return;
+    if (stock == null || !mounted) return false;
     if (!forceRefresh) {
       final existing = ref.read(priceQuotesProvider)[stock.id];
-      if (existing != null && !existing.withStaleness().isStale) return;
+      if (existing != null && !existing.withStaleness().isStale) return false;
     }
     try {
       final quote = await ref
           .read(marketDataServiceProvider)
           .fetchQuote(stock.symbol, stock.id, stockCurrency: stock.currency);
-      if (quote == null || !mounted) return;
+      if (quote == null || !mounted) return false;
       await ref.read(stockActionsProvider).cacheMarketPrice(quote);
-      if (!mounted) return;
+      if (!mounted) return false;
       final notifier = ref.read(priceQuotesProvider.notifier);
       notifier.state = Map.from(notifier.state)..[stock.id] = quote;
+      return true;
     } catch (e) {
       debugPrint('StockDetail: fetchPrice failed: $e');
+      if (mounted && forceRefresh) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh price')),
+        );
+      }
+      return false;
     }
   }
 

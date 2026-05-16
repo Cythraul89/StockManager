@@ -457,6 +457,7 @@ stocksStreamProvider  ←── StocksDao.watchAll()                 │
 stocksProvider        ←── StocksDao.getAll()                   ├── AppDatabase
 transactionsByStock   ←── TransactionsDao.watchByStock(id)     │
 dividendsByStock      ←── DividendsDao.watchByStock(id)        │
+allDividendsProvider  ←── DividendsDao.getAll()                │
 settingsStreamProvider←── SettingsDao.watchSettings()          │
 exchangeRatesProvider ←── SettingsDao.watchExchangeRates()     │
 splitsByStockProvider ←── StocksDao.watchSplitsForStock(id)    │
@@ -482,6 +483,10 @@ portfolioSummaryProvider (FutureProvider)
        ├── PnlCalculator.calculate()  ← price converted quoteCurrency→stock.currency first
        ├── PnlCalculator.convert()    ← then stock.currency→preferredCurrency
        └── DividendCalculator.calculate() + convert()
+
+allDividendsProvider (FutureProvider)
+  ├── databaseProvider → DividendsDao.getAll()
+  └── dataVersionProvider  ← invalidated on any write; triggers re-fetch
 
 stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStock,
                                          addTransaction, updateTransaction, deleteTransaction,
