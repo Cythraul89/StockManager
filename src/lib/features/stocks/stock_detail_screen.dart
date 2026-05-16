@@ -2,14 +2,18 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/analyst_data.dart';
+import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
+import '../../core/models/stock_split.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/decimal_math.dart';
 import '../settings/settings_provider.dart';
@@ -17,7 +21,9 @@ import '../transactions/widgets/transaction_tile.dart';
 import '../dividends/widgets/confirm_dividend_dialog.dart';
 import '../dividends/widgets/dividend_tile.dart';
 import 'stocks_provider.dart';
+import 'widgets/add_split_dialog.dart';
 import 'widgets/manual_price_dialog.dart';
+import 'widgets/stock_price_chart.dart';
 
 class StockDetailScreen extends ConsumerStatefulWidget {
   const StockDetailScreen({super.key, required this.id});
@@ -135,6 +141,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final analystAsync = ref.watch(analystDataProvider(widget.id));
+    final dayHistoryAsync =
+        ref.watch(priceHistoryProvider((widget.id, ChartRange.oneDay)));
+    final weekHistoryAsync =
+        ref.watch(priceHistoryProvider((widget.id, ChartRange.oneWeek)));
     final quotes = ref.watch(priceQuotesProvider);
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
 
@@ -302,10 +312,21 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                               : Colors.green,
                         ),
                       ],
+                      _buildPriceChanges(
+                        context,
+                        quote,
+                        dayHistoryAsync.value,
+                        weekHistoryAsync.value,
+                        analystAsync.value,
+                      ),
                     ],
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+
+              // Price history chart
+              StockPriceChart(stockId: widget.id),
               const SizedBox(height: 16),
 
               // Analysis card
@@ -394,6 +415,28 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                             .toList(),
                       ),
               ),
+              const SizedBox(height: 16),
+
+              _sectionHeader(
+                context,
+                'Stock Splits',
+                onAdd: () => _addSplit(stock.id),
+              ),
+              splitsAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('Error: $e'),
+                data: (splitList) => splitList.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Text('No splits recorded.'),
+                      )
+                    : Column(
+                        children: splitList
+                            .map((s) => _splitTile(context, s))
+                            .toList(),
+                      ),
+              ),
             ],
           ),
         );
@@ -470,6 +513,94 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               style:
                   theme.textTheme.bodyMedium?.copyWith(color: valueColor)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPriceChanges(
+    BuildContext context,
+    PriceQuote? quote,
+    List<PricePoint>? dayHistory,
+    List<PricePoint>? weekHistory,
+    AnalystData? analyst,
+  ) {
+    // Day change: prefer Yahoo's regularMarketChangePercent (already in %),
+    // which measures current vs previous close.  Fall back to first→last of
+    // the intraday 1D chart data (open → latest), a slightly different baseline
+    // used only when the quote was fetched via Stooq or set manually.
+    Decimal? dayPct = quote?.dayChangePct;
+    if (dayPct == null && dayHistory != null && dayHistory.length >= 2) {
+      final first = dayHistory.first.price;
+      if (first > Decimal.zero) {
+        dayPct = dayHistory.last.price.percentChangeFrom(first);
+      }
+    }
+
+    // Week change: first vs last close in the 5-day history (also in %).
+    Decimal? weekPct;
+    if (weekHistory != null && weekHistory.length >= 2) {
+      final first = weekHistory.first.price;
+      if (first > Decimal.zero) {
+        weekPct = weekHistory.last.price.percentChangeFrom(first);
+      }
+    }
+
+    // Year change: Yahoo 52WeekChange is a fraction (0.157 = +15.7%) — convert.
+    final yearPct = analyst?.yearChangePct != null
+        ? analyst!.yearChangePct! * Decimal.fromInt(100)
+        : null;
+
+    if (dayPct == null && weekPct == null && yearPct == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Text(
+            'Change',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const Spacer(),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (dayPct != null) _changeBadge(context, '1D', dayPct),
+              if (weekPct != null) ...[
+                if (dayPct != null) const SizedBox(width: 6),
+                _changeBadge(context, '1W', weekPct),
+              ],
+              if (yearPct != null) ...[
+                if (dayPct != null || weekPct != null) const SizedBox(width: 6),
+                _changeBadge(context, '1Y', yearPct),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _changeBadge(BuildContext context, String label, Decimal pct) {
+    final theme = Theme.of(context);
+    final isPositive = !pct.isNegative;
+    final color =
+        isPositive ? Colors.green.shade600 : theme.colorScheme.error;
+    final sign = isPositive ? '+' : '';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$label  $sign${pct.toStringFixed(2)}%',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -839,5 +970,80 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       'sell' || 'strongsell' || 'strong_sell' => ('Sell', Colors.red),
       _ => (null, Colors.transparent),
     };
+  }
+
+  Future<void> _addSplit(String stockId) async {
+    final result = await showDialog<SplitResult>(
+      context: context,
+      builder: (_) => const AddSplitDialog(),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await ref.read(stockActionsProvider).addSplit(StockSplit(
+            id: '',
+            stockId: stockId,
+            date: result.date,
+            fromShares: result.from,
+            toShares: result.to,
+          ));
+    } catch (e) {
+      debugPrint('StockDetail: addSplit failed: $e');
+    }
+  }
+
+  Future<void> _confirmDeleteSplit(StockSplit split) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete split?'),
+        content: Text(
+          '${split.toShares}:${split.fromShares} split on '
+          '${DateFormat("d MMM yyyy").format(split.date)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(stockActionsProvider).deleteSplit(split.id);
+    } catch (e) {
+      debugPrint('StockDetail: deleteSplit failed: $e');
+    }
+  }
+
+  Widget _splitTile(BuildContext context, StockSplit split) {
+    final theme = Theme.of(context);
+    final dateStr = DateFormat('d MMM yyyy').format(split.date);
+    final isForward = split.toShares > split.fromShares;
+    final typeLabel = isForward ? 'forward split' : 'reverse split';
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        '${split.toShares}:${split.fromShares}',
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        '$dateStr · $typeLabel',
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline, size: 18),
+        color: theme.colorScheme.error,
+        tooltip: 'Delete split',
+        onPressed: () => _confirmDeleteSplit(split),
+      ),
+    );
   }
 }

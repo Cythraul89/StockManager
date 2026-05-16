@@ -5,7 +5,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/analyst_data.dart';
+import '../models/chart_range.dart';
 import '../models/fetched_dividend.dart';
+import '../models/price_point.dart';
 import '../models/price_quote.dart';
 
 class MarketDataService {
@@ -363,6 +365,8 @@ class MarketDataService {
         trailingPE: raw(sd, 'trailingPE'),
         forwardPE: raw(sd, 'forwardPE'),
         trailingEps: raw(dks, 'trailingEps'),
+        // 52-week return as a fraction (e.g. 0.157 = +15.7%)
+        yearChangePct: raw(dks, '52WeekChange'),
       );
     } on DioException catch (e) {
       final status = e.response?.statusCode;
@@ -377,6 +381,61 @@ class MarketDataService {
     } catch (e) {
       debugPrint('MarketDataService: analyst data fetch failed for $symbol: $e');
       return null;
+    }
+  }
+
+  /// Fetches OHLCV closing prices for [symbol] over the given [range].
+  /// Returns an empty list when the symbol is unknown or the API is unreachable.
+  Future<List<PricePoint>> fetchPriceHistory(
+      String symbol, ChartRange range) async {
+    try {
+      final response =
+          await _withYahooRetry(() => _dio.get<Map<String, dynamic>>(
+                '$_yahooBaseUrl$symbol',
+                queryParameters: {
+                  'interval': range.yahooInterval,
+                  'range': range.yahooRange,
+                },
+                options: Options(
+                  sendTimeout: const Duration(seconds: 15),
+                  receiveTimeout: const Duration(seconds: 15),
+                ),
+              ));
+
+      final chart = response.data?['chart'] as Map<String, dynamic>?;
+      final result =
+          (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
+      if (result == null) return [];
+
+      final meta = result['meta'] as Map<String, dynamic>?;
+      final currency = (meta?['currency'] as String?) ?? '';
+      if (currency.isEmpty) return [];
+
+      final timestamps = (result['timestamp'] as List?)?.cast<int>();
+      final quotes = result['indicators']?['quote'] as List?;
+      final closes =
+          (quotes?.firstOrNull as Map<String, dynamic>?)?['close'] as List?;
+      if (timestamps == null || closes == null) return [];
+
+      final points = <PricePoint>[];
+      for (var i = 0; i < timestamps.length && i < closes.length; i++) {
+        final close = closes[i];
+        if (close == null) continue;
+        final price = Decimal.tryParse(close.toString());
+        if (price == null || price <= Decimal.zero) continue;
+        points.add(PricePoint(
+          date: DateTime.fromMillisecondsSinceEpoch(timestamps[i] * 1000),
+          price: price,
+          currency: currency,
+        ));
+      }
+      return points;
+    } on DioException {
+      return [];
+    } catch (e) {
+      debugPrint(
+          'MarketDataService: price history fetch failed for $symbol: $e');
+      return [];
     }
   }
 
@@ -438,11 +497,15 @@ class MarketDataService {
 
       if (price == null || currency == null) { return null; }
 
+      final changePct = meta?['regularMarketChangePercent'];
       return PriceQuote(
         stockId: stockId,
         price: Decimal.parse(price.toString()),
         currency: currency,
         fetchedAt: DateTime.now(),
+        dayChangePct: changePct != null
+            ? Decimal.tryParse(changePct.toString())
+            : null,
       );
     } on DioException {
       return null;

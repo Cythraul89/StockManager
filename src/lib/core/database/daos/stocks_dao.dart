@@ -36,6 +36,12 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
   Future<int> deleteById(String id) =>
       (delete(stocks)..where((t) => t.id.equals(id))).go();
 
+  Stream<List<StockSplitRow>> watchSplitsForStock(String stockId) =>
+      (select(stockSplits)
+            ..where((t) => t.stockId.equals(stockId))
+            ..orderBy([(t) => OrderingTerm.asc(t.date)]))
+          .watch();
+
   Future<List<StockSplitRow>> getSplitsForStock(String stockId) =>
       (select(stockSplits)
             ..where((t) => t.stockId.equals(stockId))

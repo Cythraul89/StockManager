@@ -1,6 +1,8 @@
 import 'package:decimal/decimal.dart';
 import 'package:equatable/equatable.dart';
 
+import 'chart_range.dart';
+
 enum AppTheme { system, light, dark }
 
 class AppSettings extends Equatable {
@@ -15,6 +17,7 @@ class AppSettings extends Equatable {
     required this.dividendAlertDays,
     this.lastSyncAt,
     required this.nextcloudKeepExports,
+    required this.sparklineRange,
   });
 
   final String preferredCurrency;
@@ -27,6 +30,7 @@ class AppSettings extends Equatable {
   final int dividendAlertDays;
   final DateTime? lastSyncAt;
   final int nextcloudKeepExports;
+  final ChartRange sparklineRange;
 
   static AppSettings get defaults => AppSettings(
         preferredCurrency: 'EUR',
@@ -36,6 +40,7 @@ class AppSettings extends Equatable {
         priceAlertThresholdPct: Decimal.fromInt(5),
         dividendAlertDays: 3,
         nextcloudKeepExports: 5,
+        sparklineRange: ChartRange.oneMonth,
       );
 
   AppSettings copyWith({
@@ -49,6 +54,7 @@ class AppSettings extends Equatable {
     int? dividendAlertDays,
     DateTime? lastSyncAt,
     int? nextcloudKeepExports,
+    ChartRange? sparklineRange,
   }) =>
       AppSettings(
         preferredCurrency: preferredCurrency ?? this.preferredCurrency,
@@ -62,6 +68,7 @@ class AppSettings extends Equatable {
         dividendAlertDays: dividendAlertDays ?? this.dividendAlertDays,
         lastSyncAt: lastSyncAt ?? this.lastSyncAt,
         nextcloudKeepExports: nextcloudKeepExports ?? this.nextcloudKeepExports,
+        sparklineRange: sparklineRange ?? this.sparklineRange,
       );
 
   @override
@@ -76,5 +83,6 @@ class AppSettings extends Equatable {
         dividendAlertDays,
         lastSyncAt,
         nextcloudKeepExports,
+        sparklineRange,
       ];
 }

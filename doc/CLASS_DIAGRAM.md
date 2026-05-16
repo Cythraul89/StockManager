@@ -51,8 +51,8 @@ classDiagram
         +String id
         +String stockId
         +DateTime date
-        +Decimal fromShares
-        +Decimal toShares
+        +int fromShares
+        +int toShares
         +ratio() Decimal
     }
 
@@ -91,6 +91,26 @@ classDiagram
         +bool isPaid
     }
 
+    class PricePoint {
+        +DateTime date
+        +Decimal price
+        +String currency
+    }
+
+    class ChartRange {
+        <<enumeration>>
+        oneDay
+        oneWeek
+        oneMonth
+        sixMonths
+        oneYear
+        fiveYears
+        max
+        +String label
+        +String yahooRange
+        +String yahooInterval
+    }
+
     class AnalystData {
         +Decimal targetMeanPrice
         +Decimal? targetLowPrice
@@ -108,6 +128,7 @@ classDiagram
         +Decimal? trailingPE
         +Decimal? forwardPE
         +Decimal? trailingEps
+        +Decimal? yearChangePct
         +copyWith() AnalystData
     }
 
@@ -117,6 +138,7 @@ classDiagram
         +String currency
         +DateTime fetchedAt
         +bool isManualOverride
+        +Decimal? dayChangePct
         +withStaleness() PriceQuote
     }
 
@@ -142,6 +164,7 @@ classDiagram
         +Decimal priceAlertThresholdPct
         +int dividendAlertDays
         +DateTime? lastSyncAt
+        +ChartRange sparklineRange
         +copyWith() AppSettings
         +defaults AppSettings$
     }
@@ -163,6 +186,7 @@ classDiagram
     Dividend --> DividendSource
     PriceQuote --> Stock : cached for
     AppSettings --> AppTheme
+    AppSettings --> ChartRange : sparklineRange
 
     %% ─────────────────────────────────────────────────────────
     %% CALCULATORS
@@ -228,6 +252,7 @@ classDiagram
         +fetchQuote(symbol, stockId) PriceQuote?
         +fetchQuotes(symbolMap) Map
         +fetchHistoricalPrice(symbol, date) Decimal?
+        +fetchPriceHistory(symbol, range) List~PricePoint~
         +fetchDividends(symbol) List~FetchedDividend~
         +fetchAnalystData(symbol) AnalystData?
     }
@@ -318,8 +343,10 @@ classDiagram
 
     %% Service outputs
     MarketDataService --> PriceQuote : produces
+    MarketDataService --> PricePoint : produces
     MarketDataService --> FetchedDividend : produces
     MarketDataService --> AnalystData : produces
+    MarketDataService ..> ChartRange : parameterised by
     CurrencyService --> ExchangeRate : produces
     IsinLookupService --> IsinLookupResult : produces
     NotificationService ..> Stock : alerts on
@@ -331,7 +358,7 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 3
+        +schemaVersion = 4
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
@@ -351,6 +378,7 @@ classDiagram
 
     class StocksDao {
         +watchAll() Stream~List~Stock~~
+        +watchById(id) Stream~Stock~~
         +getAll() Future~List~Stock~~
         +findById(id) Future~Stock~~
         +findByIsin(isin) Future~Stock~~
@@ -359,6 +387,7 @@ classDiagram
         +getCachedPrice(id) Future~PriceQuote~~
         +getAllCachedPrices() Future~List~PriceQuote~~
         +upsertPrice(quote) Future
+        +watchSplitsForStock(id) Stream~List~StockSplit~~
         +getSplitsForStock(id) Future~List~StockSplit~~
         +upsertSplit(split) Future
         +deleteSplit(id) Future
@@ -430,10 +459,14 @@ transactionsByStock   ←── TransactionsDao.watchByStock(id)     │
 dividendsByStock      ←── DividendsDao.watchByStock(id)        │
 settingsStreamProvider←── SettingsDao.watchSettings()          │
 exchangeRatesProvider ←── SettingsDao.watchExchangeRates()     │
-splitsByStockProvider ←── StocksDao.getSplitsForStock(id)      │
+splitsByStockProvider ←── StocksDao.watchSplitsForStock(id)    │
                                                                 ┘
 
 priceQuotesProvider  ← StateProvider (in-memory, refreshed on demand)
+
+priceHistoryProvider(stockId, range)  (FutureProvider.family, keepAlive 5 min)
+  ├── stockByIdProvider(stockId)  ← re-fetches when symbol changes
+  └── marketDataServiceProvider → MarketDataService.fetchPriceHistory()
 
 portfolioSummaryProvider (FutureProvider)
   ├── stocksProvider

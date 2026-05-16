@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/app_settings.dart';
+import '../../core/models/chart_range.dart';
 import '../../core/utils/app_version.dart';
 import 'settings_provider.dart';
 import 'widgets/settings_section.dart';
@@ -35,6 +36,13 @@ class SettingsScreen extends ConsumerWidget {
                   subtitle: Text(settings.theme.name),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _showThemePicker(context, ref, settings),
+                ),
+                ListTile(
+                  title: const Text('Sparkline period'),
+                  subtitle: Text(settings.sparklineRange.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () =>
+                      _showSparklineRangePicker(context, ref, settings),
                 ),
               ],
             ),
@@ -118,6 +126,38 @@ class SettingsScreen extends ConsumerWidget {
           _ => AppTheme.system,
         },
       ));
+    }
+  }
+
+  Future<void> _showSparklineRangePicker(
+      BuildContext context, WidgetRef ref, AppSettings settings) async {
+    final picked = await showDialog<ChartRange>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Sparkline period'),
+        children: [
+          for (final r in ChartRange.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, r),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 40,
+                    child: Text(r.label,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  if (r == settings.sparklineRange)
+                    const Icon(Icons.check, size: 16),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked != null) {
+      await ref
+          .read(settingsActionsProvider)
+          .saveSettings(settings.copyWith(sparklineRange: picked));
     }
   }
 }

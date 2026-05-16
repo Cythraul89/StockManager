@@ -203,17 +203,21 @@ Features confirmed for a future version. Not in scope for the initial release.
 - The trailing high-water mark is updated automatically as the price rises.
 - Configurable per stock; displayed alongside the current price on the stock detail screen.
 
-### 10.4 Watchlist (Monitoring-Only Stocks)
+### 10.4 Watchlist (Monitoring-Only Stocks) ✓ *(delivered — via zero-transaction stocks)*
 - Stocks can be added in **monitoring mode** — no broker assignment, no transactions required.
 - Watchlist stocks appear in a dedicated section separate from held positions.
 - All live price, target price, rating, and news features apply to watchlist stocks.
 - A watchlist stock can be promoted to a held position at any time by assigning a broker and adding a transaction.
+- *Implementation note:* a stock with no transactions naturally shows zero shares held and no P&L. The existing Add Stock flow covers this without a separate watchlist concept.
 
-### 10.5 Price History Chart
-- Each stock detail view includes a **price history chart** showing closing prices over selectable time ranges (1W, 1M, 3M, 1Y, 5Y).
-- The chart highlights the user's buy and sell transactions as overlaid markers.
-- The dashboard shows a **mini sparkline** per stock in the stock list.
-- Charts are rendered from cached historical data and work offline for the last fetched range.
+### 10.5 Price History Chart ✓ *(delivered — partial)*
+- Each stock detail view includes a **price history chart** showing closing prices over selectable time ranges: 1D · 1W · 1M · 6M · 1Y · 5Y · MAX.
+- The selected range label is highlighted; switching ranges triggers a fresh fetch.
+- The line is green for a positive period change, red for negative; the area below the line is filled with a matching gradient.
+- The period percentage change (e.g. +1.57%) is shown next to the card title.
+- Touching the chart shows a tooltip with the exact price and date.
+- Data is fetched from Yahoo Finance at an appropriate interval for each range (e.g. 5-minute bars for 1D, daily for 1M, weekly for 1Y).
+- *Not yet delivered:* transaction overlays on the chart; mini sparklines on the dashboard stock list.
 
 ### 10.6 Stock News
 - Each stock detail view includes a **news feed** of recent articles related to that stock.

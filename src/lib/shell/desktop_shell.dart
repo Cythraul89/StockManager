@@ -21,34 +21,36 @@ class DesktopShell extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      body: Row(
-        children: [
-          NavigationRail(
-            extended: MediaQuery.sizeOf(context).width >= 900,
-            selectedIndex: currentIndex,
-            onDestinationSelected: (i) => context.go(_navItems[i].path),
-            leading: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                'Stock\nManager',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
+      body: SafeArea(
+        child: Row(
+          children: [
+            NavigationRail(
+              extended: MediaQuery.sizeOf(context).width >= 1200,
+              selectedIndex: currentIndex,
+              onDestinationSelected: (i) => context.go(_navItems[i].path),
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'Stock\nManager',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
               ),
+              destinations: [
+                for (final item in _navItems)
+                  NavigationRailDestination(
+                    icon: Icon(item.icon),
+                    label: Text(item.label),
+                  ),
+              ],
             ),
-            destinations: [
-              for (final item in _navItems)
-                NavigationRailDestination(
-                  icon: Icon(item.icon),
-                  label: Text(item.label),
-                ),
-            ],
-          ),
-          const VerticalDivider(width: 1),
-          Expanded(child: child),
-        ],
+            const VerticalDivider(width: 1),
+            Expanded(child: child),
+          ],
+        ),
       ),
     );
   }

@@ -9,6 +9,8 @@ import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/analyst_data.dart';
 import '../../core/models/broker.dart';
+import '../../core/models/chart_range.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/fetched_dividend.dart';
 import '../../core/models/price_quote.dart';
@@ -76,10 +78,11 @@ final transactionsByStockProvider =
 // ── Split providers ────────────────────────────────────────────────────────────────────────────
 
 final splitsByStockProvider =
-    FutureProvider.family<List<StockSplit>, String>((ref, stockId) async {
+    StreamProvider.family<List<StockSplit>, String>((ref, stockId) {
   final db = ref.watch(databaseProvider);
-  final rows = await db.stocksDao.getSplitsForStock(stockId);
-  return rows.map(_splitFromRow).toList();
+  return db.stocksDao
+      .watchSplitsForStock(stockId)
+      .map((rows) => rows.map(_splitFromRow).toList());
 });
 
 // ── Dividend providers ───────────────────────────────────────────────────────────────────────
@@ -120,6 +123,27 @@ final analystDataProvider =
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
   return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
+});
+
+// ── Price history (fetched on demand, keyed by stockId + range) ──────────────
+
+// Re-fetches automatically when the stock changes (e.g. after a ticker edit)
+// because it watches stockByIdProvider directly.
+final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
+    (String stockId, ChartRange range)>((ref, args) async {
+  final (stockId, range) = args;
+
+  // Cache results for 5 minutes so navigating away and back does not trigger
+  // a full refetch, especially important for long-range (5Y / MAX) requests.
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 5), link.close);
+
+  final stockAsync = ref.watch(stockByIdProvider(stockId));
+  final stock = stockAsync.value;
+  if (stock == null) return [];
+  return ref
+      .read(marketDataServiceProvider)
+      .fetchPriceHistory(stock.symbol, range);
 });
 
 // ── Price quote cache (in-memory, refreshed on demand) ───────────────────────────
@@ -179,6 +203,23 @@ class StockActions {
 
   Future<void> deleteStock(String stockId) async {
     await _db.stocksDao.deleteById(stockId);
+    _notifyChange();
+  }
+
+  Future<void> addSplit(StockSplit split) async {
+    final id = split.id.isEmpty ? _uuid.v4() : split.id;
+    await _db.stocksDao.upsertSplit(StockSplitsCompanion.insert(
+      id: id,
+      stockId: split.stockId,
+      date: split.date,
+      fromShares: split.fromShares,
+      toShares: split.toShares,
+    ));
+    _notifyChange();
+  }
+
+  Future<void> deleteSplit(String splitId) async {
+    await _db.stocksDao.deleteSplit(splitId);
     _notifyChange();
   }
 
