@@ -78,10 +78,11 @@ final transactionsByStockProvider =
 // ── Split providers ────────────────────────────────────────────────────────────────────────────
 
 final splitsByStockProvider =
-    FutureProvider.family<List<StockSplit>, String>((ref, stockId) async {
+    StreamProvider.family<List<StockSplit>, String>((ref, stockId) {
   final db = ref.watch(databaseProvider);
-  final rows = await db.stocksDao.getSplitsForStock(stockId);
-  return rows.map(_splitFromRow).toList();
+  return db.stocksDao
+      .watchSplitsForStock(stockId)
+      .map((rows) => rows.map(_splitFromRow).toList());
 });
 
 // ── Dividend providers ───────────────────────────────────────────────────────────────────────
@@ -202,6 +203,23 @@ class StockActions {
 
   Future<void> deleteStock(String stockId) async {
     await _db.stocksDao.deleteById(stockId);
+    _notifyChange();
+  }
+
+  Future<void> addSplit(StockSplit split) async {
+    final id = split.id.isEmpty ? _uuid.v4() : split.id;
+    await _db.stocksDao.upsertSplit(StockSplitsCompanion.insert(
+      id: id,
+      stockId: split.stockId,
+      date: split.date,
+      fromShares: split.fromShares,
+      toShares: split.toShares,
+    ));
+    _notifyChange();
+  }
+
+  Future<void> deleteSplit(String splitId) async {
+    await _db.stocksDao.deleteSplit(splitId);
     _notifyChange();
   }
 

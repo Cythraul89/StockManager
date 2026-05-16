@@ -1,7 +1,10 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/chart_range.dart';
+import '../../../core/models/price_point.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/decimal_math.dart';
 import '../../stocks/stocks_provider.dart';
@@ -24,6 +27,10 @@ class StockListTile extends ConsumerWidget {
     final analystAsync = ref.watch(analystDataProvider(item.stock.id));
     final recKey = analystAsync.value?.recommendationKey;
     final (recLabel, recColor) = _recommendationStyle(recKey);
+
+    final sparkAsync =
+        ref.watch(priceHistoryProvider((item.stock.id, ChartRange.oneMonth)));
+    final sparkPoints = sparkAsync.value;
 
     return ListTile(
       onTap: () => context.push('/stocks/${item.stock.id}'),
@@ -53,6 +60,10 @@ class StockListTile extends ConsumerWidget {
               ],
             ),
           ),
+          if (sparkPoints != null && sparkPoints.length >= 2) ...[
+            _buildSparkline(context, sparkPoints),
+            const SizedBox(width: 8),
+          ],
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -141,5 +152,47 @@ class StockListTile extends ConsumerWidget {
     final raw =
         CurrencyFormatter.format(item.rawQuotePrice, item.quoteCurrency);
     return '$shares$converted ($raw)';
+  }
+
+  Widget _buildSparkline(BuildContext context, List<PricePoint> points) {
+    final isUp = points.last.price >= points.first.price;
+    final color =
+        isUp ? Colors.green.shade600 : Theme.of(context).colorScheme.error;
+    final spots = List.generate(
+      points.length,
+      (i) => FlSpot(i.toDouble(), points[i].price.toDouble()),
+    );
+    final minY = spots.fold(spots.first.y, (m, s) => s.y < m ? s.y : m);
+    final maxY = spots.fold(spots.first.y, (m, s) => s.y > m ? s.y : m);
+    final pad = (maxY - minY) > 0 ? (maxY - minY) * 0.1 : maxY * 0.05;
+
+    return SizedBox(
+      width: 72,
+      height: 36,
+      child: LineChart(
+        LineChartData(
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: color,
+              barWidth: 1.5,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                color: color.withValues(alpha: 0.15),
+              ),
+            ),
+          ],
+          minY: minY - pad,
+          maxY: maxY + pad,
+          borderData: FlBorderData(show: false),
+          gridData: const FlGridData(show: false),
+          titlesData: const FlTitlesData(show: false),
+          lineTouchData: const LineTouchData(enabled: false),
+        ),
+        duration: Duration.zero,
+      ),
+    );
   }
 }

@@ -2,6 +2,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
@@ -12,6 +13,7 @@ import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
+import '../../core/models/stock_split.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/decimal_math.dart';
 import '../settings/settings_provider.dart';
@@ -19,6 +21,7 @@ import '../transactions/widgets/transaction_tile.dart';
 import '../dividends/widgets/confirm_dividend_dialog.dart';
 import '../dividends/widgets/dividend_tile.dart';
 import 'stocks_provider.dart';
+import 'widgets/add_split_dialog.dart';
 import 'widgets/manual_price_dialog.dart';
 import 'widgets/stock_price_chart.dart';
 
@@ -409,6 +412,28 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                                       ? () => _confirmDividend(d)
                                       : null,
                                 ))
+                            .toList(),
+                      ),
+              ),
+              const SizedBox(height: 16),
+
+              _sectionHeader(
+                context,
+                'Stock Splits',
+                onAdd: () => _addSplit(stock.id),
+              ),
+              splitsAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('Error: $e'),
+                data: (splitList) => splitList.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Text('No splits recorded.'),
+                      )
+                    : Column(
+                        children: splitList
+                            .map((s) => _splitTile(context, s))
                             .toList(),
                       ),
               ),
@@ -945,5 +970,80 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       'sell' || 'strongsell' || 'strong_sell' => ('Sell', Colors.red),
       _ => (null, Colors.transparent),
     };
+  }
+
+  Future<void> _addSplit(String stockId) async {
+    final result = await showDialog<SplitResult>(
+      context: context,
+      builder: (_) => const AddSplitDialog(),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await ref.read(stockActionsProvider).addSplit(StockSplit(
+            id: '',
+            stockId: stockId,
+            date: result.date,
+            fromShares: result.from,
+            toShares: result.to,
+          ));
+    } catch (e) {
+      debugPrint('StockDetail: addSplit failed: $e');
+    }
+  }
+
+  Future<void> _confirmDeleteSplit(StockSplit split) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete split?'),
+        content: Text(
+          '${split.toShares}:${split.fromShares} split on '
+          '${DateFormat("d MMM yyyy").format(split.date)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await ref.read(stockActionsProvider).deleteSplit(split.id);
+    } catch (e) {
+      debugPrint('StockDetail: deleteSplit failed: $e');
+    }
+  }
+
+  Widget _splitTile(BuildContext context, StockSplit split) {
+    final theme = Theme.of(context);
+    final dateStr = DateFormat('d MMM yyyy').format(split.date);
+    final isForward = split.toShares > split.fromShares;
+    final typeLabel = isForward ? 'forward split' : 'reverse split';
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        '${split.toShares}:${split.fromShares}',
+        style: theme.textTheme.bodyMedium
+            ?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        '$dateStr · $typeLabel',
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline, size: 18),
+        color: theme.colorScheme.error,
+        tooltip: 'Delete split',
+        onPressed: () => _confirmDeleteSplit(split),
+      ),
+    );
   }
 }
