@@ -9,6 +9,8 @@ import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/analyst_data.dart';
 import '../../core/models/broker.dart';
+import '../../core/models/chart_range.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/fetched_dividend.dart';
 import '../../core/models/price_quote.dart';
@@ -120,6 +122,21 @@ final analystDataProvider =
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
   return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
+});
+
+// ── Price history (fetched on demand, keyed by stockId + range) ──────────────
+
+// Re-fetches automatically when the stock changes (e.g. after a ticker edit)
+// because it watches stockByIdProvider directly.
+final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
+    (String stockId, ChartRange range)>((ref, args) async {
+  final (stockId, range) = args;
+  final stockAsync = ref.watch(stockByIdProvider(stockId));
+  final stock = stockAsync.value;
+  if (stock == null) return [];
+  return ref
+      .read(marketDataServiceProvider)
+      .fetchPriceHistory(stock.symbol, range);
 });
 
 // ── Price quote cache (in-memory, refreshed on demand) ───────────────────────────

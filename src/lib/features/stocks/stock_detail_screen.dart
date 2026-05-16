@@ -18,6 +18,7 @@ import '../dividends/widgets/confirm_dividend_dialog.dart';
 import '../dividends/widgets/dividend_tile.dart';
 import 'stocks_provider.dart';
 import 'widgets/manual_price_dialog.dart';
+import 'widgets/stock_price_chart.dart';
 
 class StockDetailScreen extends ConsumerStatefulWidget {
   const StockDetailScreen({super.key, required this.id});
@@ -305,6 +306,13 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+
+              // Price history chart
+              StockPriceChart(
+                stockId: widget.id,
+                currency: stock.currency,
               ),
               const SizedBox(height: 16),
 
