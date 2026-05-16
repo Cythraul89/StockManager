@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/database/app_database.dart';
 import '../../core/models/app_settings.dart';
+import '../../core/models/chart_range.dart';
 import '../../core/models/exchange_rate.dart';
 import '../../core/services/backup_service.dart';
 import '../../core/services/currency_service.dart';
@@ -81,6 +82,7 @@ class SettingsActions {
           dividendAlertDays: Value(s.dividendAlertDays),
           lastSyncAt: Value(s.lastSyncAt),
           nextcloudKeepExports: Value(s.nextcloudKeepExports),
+          sparklineRange: Value(s.sparklineRange.label),
         ),
       );
 
@@ -130,6 +132,7 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       dividendAlertDays: r.dividendAlertDays,
       lastSyncAt: r.lastSyncAt,
       nextcloudKeepExports: r.nextcloudKeepExports,
+      sparklineRange: _chartRangeFromLabel(r.sparklineRange),
     );
 
 ExchangeRate _rateFromRow(ExchangeRateCacheRow r) => ExchangeRate(
@@ -145,3 +148,8 @@ AppTheme _themeFromString(String s) => switch (s) {
       'dark' => AppTheme.dark,
       _ => AppTheme.system,
     };
+
+ChartRange _chartRangeFromLabel(String label) => ChartRange.values.firstWhere(
+      (r) => r.label == label,
+      orElse: () => ChartRange.oneMonth,
+    );

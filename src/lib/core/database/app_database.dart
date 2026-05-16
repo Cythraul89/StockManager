@@ -48,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -60,6 +60,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             await m.addColumn(dividends, dividends.source);
             await m.addColumn(dividends, dividends.confirmed);
+          }
+          if (from < 4) {
+            await m.addColumn(settings, settings.sparklineRange);
           }
         },
         beforeOpen: (details) async {

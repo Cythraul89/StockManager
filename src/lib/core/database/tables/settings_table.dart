@@ -22,6 +22,9 @@ class Settings extends Table {
   // How many previous ODS exports to keep on Nextcloud (0 = keep all)
   IntColumn get nextcloudKeepExports =>
       integer().withDefault(const Constant(5))();
+  // ChartRange.label stored as text, e.g. '1M', '1Y'
+  TextColumn get sparklineRange =>
+      text().withDefault(const Constant('1M'))();
 
   @override
   Set<Column> get primaryKey => {id};

@@ -7,6 +7,7 @@ import '../../../core/models/chart_range.dart';
 import '../../../core/models/price_point.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/decimal_math.dart';
+import '../../settings/settings_provider.dart';
 import '../../stocks/stocks_provider.dart';
 import '../dashboard_provider.dart';
 
@@ -28,8 +29,10 @@ class StockListTile extends ConsumerWidget {
     final recKey = analystAsync.value?.recommendationKey;
     final (recLabel, recColor) = _recommendationStyle(recKey);
 
+    final sparklineRange = ref.watch(settingsStreamProvider).value?.sparklineRange
+        ?? ChartRange.oneMonth;
     final sparkAsync =
-        ref.watch(priceHistoryProvider((item.stock.id, ChartRange.oneMonth)));
+        ref.watch(priceHistoryProvider((item.stock.id, sparklineRange)));
     final sparkPoints = sparkAsync.value;
 
     return ListTile(
