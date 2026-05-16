@@ -24,7 +24,7 @@ class DesktopShell extends StatelessWidget {
       body: Row(
         children: [
           NavigationRail(
-            extended: MediaQuery.sizeOf(context).width >= 900,
+            extended: MediaQuery.sizeOf(context).width >= 1200,
             selectedIndex: currentIndex,
             onDestinationSelected: (i) => context.go(_navItems[i].path),
             leading: Padding(
