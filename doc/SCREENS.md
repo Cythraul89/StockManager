@@ -183,6 +183,11 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 │  │ P/E (trailing)  28.4×   ││
 │  │ P/E (forward)   24.1×   ││
 │  │ EPS (TTM)       $ 6.73  ││
+│  │                         ││
+│  │ Dividends               ││
+│  │ Annual rate     $ 1.00  ││  ← trailingAnnualDividendRate; hidden when zero/null
+│  │ Avg yield (5Y)   0.53%  ││  ← fiveYearAvgDividendYield
+│  │ Est. annual inc $ 9.47  ││  ← shares × price × 5Y yield / 100; shown when shares > 0
 │  └─────────────────────────┘│
 │                             │
 │  Transactions       [+ Add] │
@@ -209,7 +214,7 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 
 **Price history chart:** A `StockPriceChart` widget between the info card and analysis card. Shows closing prices for the selected range. The Y-axis displays compact price labels in the active currency. A currency toggle (native code · preferred code) appears when a conversion rate is available and switches all chart prices, Y-axis labels, and tooltip between the stock's trading currency and the user's preferred currency. Chart data is cached for 5 minutes per (stockId, range) key.
 
-**Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails.
+**Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails. At the bottom of the card a **Dividends subsection** shows: `trailingAnnualDividendRate` (hidden when zero or null), `fiveYearAvgDividendYield` (already a percentage from Yahoo), and an estimated annual income computed as `sharesHeld × currentPrice × fiveYearAvgDividendYield / 100` in the stock's currency (shown only when shares held > 0).
 
 **Splits section:** Below dividends, lists all recorded stock splits (ratio + date + forward/reverse label) with a per-row delete button that shows a confirmation dialog. The "Add" button opens `AddSplitDialog` — a date picker and two integer fields (From / To) with a live description line (e.g. "4:1 forward split — each share becomes 4"). The list is driven by `splitsByStockProvider` (a `StreamProvider`), so it reflects add/delete operations immediately without any manual refresh.
 
@@ -398,6 +403,9 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 │  │ ALV  04 Jan  € 77.60    ││
 │  └─────────────────────────┘│
 │                             │
+│  Est. annual income ~€ 42.00│  ← estimatedAnnualDividendProvider card
+│  (based on 3 of 4 stocks)   │  ← coverage note
+│                             │
 │  ── Upcoming tab ──         │
 │  Total expected ~€ 108.00   │  ← grand total card
 │                             │
@@ -413,7 +421,7 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 └─────────────────────────────┘
 ```
 
-**Received tab:** The `DividendIncomeChart` card appears at the top (only paid + confirmed dividends). Below it, a totals summary card shows all-time and per-year totals in the preferred currency, followed by paid dividends grouped under year headers. Pending-confirmation dividends (auto-fetched, unreviewed) appear in a separate section above the totals with a "Review" action.
+**Received tab:** The `DividendIncomeChart` card appears at the top (only paid + confirmed dividends). Below it, a totals summary card shows all-time and per-year totals in the preferred currency, followed by paid dividends grouped under year headers. Pending-confirmation dividends (auto-fetched, unreviewed) appear in a separate section above the totals with a "Review" action. At the bottom of the tab an **estimated annual income card** shows the portfolio-wide dividend income estimate (from `estimatedAnnualDividendProvider`) as "Est. annual income ~€X" with a coverage note indicating how many stocks have cached analyst data contributing to the estimate.
 
 **Upcoming tab:** Expected dividends with `date ≥ today` sorted chronologically and grouped by month. A grand total card shows the sum of all `totalAmount` values that can be converted to the preferred currency (prefixed with `~`). Month headers show the per-month estimated total. Months and the grand total are omitted when no `totalAmount` is set (e.g. for expected dividends recorded without a share count). Tapping any tile opens the edit screen.
 

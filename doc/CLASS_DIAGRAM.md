@@ -229,6 +229,13 @@ classDiagram
         +Decimal annualYieldPct
     }
 
+    class DividendEstimate {
+        +Decimal total
+        +int coveredStocks
+        +int totalStocks
+        +String currency
+    }
+
     %% Calculator dependencies and outputs
     PortfolioCalculator ..> StockTransaction : consumes
     PortfolioCalculator ..> StockSplit : consumes
@@ -488,6 +495,11 @@ allDividendsProvider (FutureProvider)
   ├── databaseProvider → DividendsDao.getAll()
   └── dataVersionProvider  ← invalidated on any write; triggers re-fetch
 
+estimatedAnnualDividendProvider (Provider — synchronous, no extra API calls)
+  ├── portfolioSummaryProvider  ← currentValue + sharesHeld per stock
+  └── analystDataProvider(stockId) [per stock, .valueOrNull — skips if not cached]
+       └── AnalystData.fiveYearAvgDividendYield × currentValue / 100 → DividendEstimate
+
 stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStock,
                                          addTransaction, updateTransaction, deleteTransaction,
                                          addDividend, updateDividend, deleteDividend,
@@ -518,6 +530,16 @@ analystRefreshProvider(stockId)  (StateProvider.family&lt;int, String&gt;)
 analystDataProvider(stockId)  (FutureProvider.family, keepAlive 10 min)
   ├── analystRefreshProvider(stockId)  ← re-fetches on increment
   └── marketDataServiceProvider → MarketDataService.fetchAnalystData()
+
+estimatedAnnualDividendProvider  (Provider — synchronous, no extra API calls)
+  ├── portfolioSummaryProvider   ← currentValue + sharesHeld per stock
+  └── analystDataProvider(id)    ← reads keepAlive cache for each held stock
+       │
+       └── produces DividendEstimate
+             ├── total: Decimal          (sum of currentValue × 5Y yield / 100)
+             ├── coveredStocks: int      (stocks with cached fiveYearAvgDividendYield)
+             ├── totalStocks: int        (held stocks with shares > 0)
+             └── currency: String        (preferred display currency)
 
 isinLookupServiceProvider  ── IsinLookupService  (must be overridden in ProviderScope)
   └── used by AddStockScreen and EditStockScreen (ISIN lookup / Research button)

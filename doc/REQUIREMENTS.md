@@ -100,8 +100,10 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - A dividend overview shows:
   - Total dividends received (all-time and per year), converted to the preferred display currency
   - Upcoming expected dividends with dates and estimated totals
+  - **Estimated annual income** — derived from Yahoo Finance's 5-year average dividend yield × current position value for each stock; shown on the dividend overview as a portfolio-wide estimate with a coverage note (how many stocks have cached analyst data)
 - Each stock has an optional **Dividend Reinvestment (DRIP)** flag; when enabled, recorded dividend payments automatically generate a corresponding buy transaction for that stock.
 - Each stock displays its **annual dividend yield** (annual dividend per share ÷ current price × 100).
+- The stock detail **Analysis card** includes a Dividends subsection showing Yahoo Finance data: **annual rate** (`trailingAnnualDividendRate`, hidden when zero/null), **5-year average yield** (`fiveYearAvgDividendYield`, already a percentage), and **estimated annual income** (shares held × current price × 5Y avg yield ÷ 100, in the stock's currency; shown only when shares are held).
 
 ---
 

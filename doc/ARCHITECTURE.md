@@ -65,6 +65,12 @@ features/<name>/
 └── widgets/                    # Feature-local reusable widgets
 ```
 
+Notable provider files:
+
+| File | Key exports |
+|---|---|
+| `features/dividends/dividends_provider.dart` | `estimatedAnnualDividendProvider`, `DividendEstimate` |
+
 ---
 
 ## 3. Data Model
@@ -421,6 +427,7 @@ A `ConsumerStatefulWidget` rendered on the Stock Detail screen. State: active `C
 - **Range selector** — pill buttons at the bottom; selected range highlighted with `primaryContainer`.
 - **Currency toggle** — appears in the header when the stock's trading currency differs from the user's preferred currency **and** a conversion rate exists. Two pills (native code · preferred code) switch the chart, Y-axis labels, and tooltip between currencies. Conversion uses the live `exchangeRatesProvider` rates; if rates are unavailable the toggle is hidden and native prices are shown.
 - **Transaction overlays** — buy and sell transactions within the visible date range are rendered as coloured dots on the price line (green for buys, red for sells). Each dot is placed at the nearest available price point by date using `_nearestPointIndex`. Touching near a dot appends a tooltip item showing the transaction type, share count, and price per share. Dots from overlay bars that are more than 2 data points from the current touch position are suppressed to avoid fl_chart's "always include nearest spot from every bar" behaviour.
+- **Range-switch stability** — the chart is wrapped in `KeyedSubtree(key: ValueKey(_range))`. This forces fl_chart to rebuild its internal state from scratch on every range change, preventing an animation crash that occurs when the new range has a different number of data points than the previous one.
 
 #### Change badges
 
@@ -535,7 +542,28 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 
 **Empty state:** Returns `SizedBox.shrink()` when there are no paid+confirmed dividends (e.g. new user, or all dividends are expected only), so the card never appears as an empty placeholder.
 
-### 5.17 Self-Signed Certificate Support
+### 5.17 Estimated Annual Dividend Provider
+
+`estimatedAnnualDividendProvider` is a synchronous `Provider` (not a `FutureProvider`) defined in `features/dividends/dividends_provider.dart`. It derives the portfolio-wide estimated annual dividend income entirely from already-cached data — no extra API calls are made.
+
+**Data sources:**
+- `portfolioSummaryProvider` — supplies `currentValue` (in preferred currency) and `sharesHeld` per stock.
+- `analystDataProvider(stockId)` — read from the in-memory keepAlive cache for each stock; stocks where the provider has not yet resolved or returned an error are simply skipped.
+
+**Computation:** For each stock that has cached `AnalystData` with a non-null, non-zero `fiveYearAvgDividendYield`, the contribution is `currentValue × fiveYearAvgDividendYield / 100`. Results are summed in the preferred currency.
+
+**Return type — `DividendEstimate`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `total` | `Decimal` | Sum of estimated annual income across covered stocks, in preferred currency |
+| `coveredStocks` | `int` | Number of stocks with cached analyst data contributing to the estimate |
+| `totalStocks` | `int` | Total number of held stocks (shares > 0) |
+| `currency` | `String` | Preferred display currency |
+
+**UI usage:** Shown on the Dividends screen Received tab as "Est. annual income ~€X" with a coverage note "(based on N of M stocks)" so the user understands the estimate is partial when analyst data is missing for some positions.
+
+### 5.18 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
 2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
