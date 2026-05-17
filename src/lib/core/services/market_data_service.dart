@@ -465,6 +465,41 @@ class MarketDataService {
     }
   }
 
+  Future<AnalystData?> fetchAnalystDataFinnhubWithFallback(
+      String symbol, String apiKey) async {
+    final results = await Future.wait([
+      fetchAnalystDataFromFinnhub(symbol, apiKey),
+      fetchAnalystData(symbol),
+    ]);
+    final fh = results[0];
+    final yh = results[1];
+    if (fh == null) return yh;
+    if (yh == null) return fh;
+    return AnalystData(
+      targetMeanPrice: fh.targetMeanPrice,
+      targetLowPrice: fh.targetLowPrice ?? yh.targetLowPrice,
+      targetHighPrice: fh.targetHighPrice ?? yh.targetHighPrice,
+      recommendationKey: fh.recommendationKey ?? yh.recommendationKey,
+      numberOfAnalysts: fh.numberOfAnalysts ?? yh.numberOfAnalysts,
+      financialCurrency: fh.financialCurrency ?? yh.financialCurrency,
+      strongBuyCount: fh.strongBuyCount ?? yh.strongBuyCount,
+      buyCount: fh.buyCount ?? yh.buyCount,
+      holdCount: fh.holdCount ?? yh.holdCount,
+      sellCount: fh.sellCount ?? yh.sellCount,
+      strongSellCount: fh.strongSellCount ?? yh.strongSellCount,
+      fiftyTwoWeekLow: fh.fiftyTwoWeekLow ?? yh.fiftyTwoWeekLow,
+      fiftyTwoWeekHigh: fh.fiftyTwoWeekHigh ?? yh.fiftyTwoWeekHigh,
+      trailingPE: fh.trailingPE ?? yh.trailingPE,
+      forwardPE: fh.forwardPE ?? yh.forwardPE,
+      trailingEps: fh.trailingEps ?? yh.trailingEps,
+      yearChangePct: fh.yearChangePct ?? yh.yearChangePct,
+      fiveYearAvgDividendYield:
+          fh.fiveYearAvgDividendYield ?? yh.fiveYearAvgDividendYield,
+      trailingAnnualDividendRate:
+          fh.trailingAnnualDividendRate ?? yh.trailingAnnualDividendRate,
+    );
+  }
+
   static Decimal? _fhDecimal(Map<String, dynamic>? map, String key) {
     final v = map?[key];
     if (v == null) return null;

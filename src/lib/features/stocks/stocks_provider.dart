@@ -132,7 +132,7 @@ final analystDataProvider =
     if (apiKey == null || apiKey.isEmpty) return null;
     return ref
         .read(marketDataServiceProvider)
-        .fetchAnalystDataFromFinnhub(stock.symbol, apiKey);
+        .fetchAnalystDataFinnhubWithFallback(stock.symbol, apiKey);
   }
 
   return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
