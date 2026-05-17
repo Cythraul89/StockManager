@@ -362,7 +362,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 data: (data) => data != null
                     ? _buildAnalystCard(
                         context, data, stock.currency, quoteCurrency,
-                        currentPrice, rates, dividendsAsync.value ?? [])
+                        currentPrice, rates)
                     : _buildAnalystUnavailableCard(context),
               ),
               const SizedBox(height: 16),
@@ -657,7 +657,6 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     String quoteCurrency,
     Decimal? currentPrice,
     List<ExchangeRate> rates,
-    List<Dividend> dividends,
   ) {
     // Yahoo analyst price targets are always denominated in the stock's trading
     // currency (quoteCurrency), not in Yahoo's financialCurrency field which
@@ -820,66 +819,29 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     CurrencyFormatter.format(epsConverted, currency)),
             ],
 
-            // ── Dividends (5-year average) ─────────────────────────────────
-            ..._buildDividendAvgSection(
-                context, dividends, stockCurrency, currentPrice),
+            // ── Dividends ──────────────────────────────────────────────────
+            if (data.fiveYearAvgDividendYield != null ||
+                data.trailingAnnualDividendRate != null) ...[
+              const SizedBox(height: 14),
+              _analyticsSubheader(context, 'Dividends'),
+              if (data.trailingAnnualDividendRate != null)
+                _kv(
+                  context,
+                  'Annual rate',
+                  CurrencyFormatter.format(
+                      data.trailingAnnualDividendRate!, currency),
+                ),
+              if (data.fiveYearAvgDividendYield != null)
+                _kv(
+                  context,
+                  'Avg yield (5Y)',
+                  '${data.fiveYearAvgDividendYield!.toStringFixed(2)}%',
+                ),
+            ],
           ],
         ),
       ),
     );
-  }
-
-  List<Widget> _buildDividendAvgSection(
-    BuildContext context,
-    List<Dividend> dividends,
-    String stockCurrency,
-    Decimal? currentPrice,
-  ) {
-    final cutoff = DateTime(DateTime.now().year - 5, 1, 1);
-    // Use amountPerShare (always populated) so dividends entered without a
-    // total-amount figure are still included. Summing per-year gives the
-    // annual dividend per share; averaged across years it is the standard
-    // metric used to derive yield.
-    final relevant = dividends
-        .where((d) =>
-            d.type == DividendType.paid &&
-            d.confirmed &&
-            d.amountPerShare.isPositive &&
-            d.currency == stockCurrency &&
-            d.date.isAfter(cutoff))
-        .toList();
-    if (relevant.isEmpty) return [];
-
-    final yearSums = <int, Decimal>{};
-    for (final d in relevant) {
-      yearSums[d.date.year] =
-          (yearSums[d.date.year] ?? Decimal.zero) + d.amountPerShare;
-    }
-    final total = yearSums.values.fold(Decimal.zero, (a, b) => a + b);
-    final avgAnnual =
-        (total.toRational() / Decimal.fromInt(yearSums.length).toRational())
-            .toDecimal(scaleOnInfinitePrecision: 4);
-
-    final yieldPct = (currentPrice != null && currentPrice.isPositive)
-        ? (avgAnnual.toRational() /
-                currentPrice.toRational() *
-                Decimal.fromInt(100).toRational())
-            .toDecimal(scaleOnInfinitePrecision: 2)
-        : null;
-
-    final yearCount = yearSums.length;
-
-    return [
-      const SizedBox(height: 14),
-      _analyticsSubheader(context, 'Dividends'),
-      _kv(
-        context,
-        'Avg annual/share (${yearCount}Y)',
-        CurrencyFormatter.format(avgAnnual, stockCurrency),
-      ),
-      if (yieldPct != null)
-        _kv(context, 'Yield (avg)', '${yieldPct.toStringFixed(2)}%'),
-    ];
   }
 
   Widget _analyticsSubheader(BuildContext context, String label) {

@@ -367,6 +367,9 @@ class MarketDataService {
         trailingEps: raw(dks, 'trailingEps'),
         // 52-week return as a fraction (e.g. 0.157 = +15.7%)
         yearChangePct: raw(dks, '52WeekChange'),
+        // Dividends — fiveYearAvgDividendYield is already in % (e.g. 3.5 = 3.5%)
+        fiveYearAvgDividendYield: raw(sd, 'fiveYearAvgDividendYield'),
+        trailingAnnualDividendRate: raw(sd, 'trailingAnnualDividendRate'),
       );
     } on DioException catch (e) {
       final status = e.response?.statusCode;

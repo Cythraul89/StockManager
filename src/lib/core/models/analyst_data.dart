@@ -20,6 +20,8 @@ class AnalystData extends Equatable {
     this.forwardPE,
     this.trailingEps,
     this.yearChangePct,
+    this.fiveYearAvgDividendYield,
+    this.trailingAnnualDividendRate,
   });
 
   // Price targets (financialData)
@@ -52,6 +54,12 @@ class AnalystData extends Equatable {
   // From defaultKeyStatistics.52WeekChange; multiply by 100 for display.
   final Decimal? yearChangePct;
 
+  // Dividend data (summaryDetail)
+  // fiveYearAvgDividendYield is already in percentage points (e.g. 3.5 = 3.5%).
+  final Decimal? fiveYearAvgDividendYield;
+  // trailingAnnualDividendRate is the annual dividend per share in the trading currency.
+  final Decimal? trailingAnnualDividendRate;
+
   AnalystData copyWith({
     Decimal? targetMeanPrice,
     Decimal? targetLowPrice,
@@ -70,6 +78,8 @@ class AnalystData extends Equatable {
     Decimal? forwardPE,
     Decimal? trailingEps,
     Decimal? yearChangePct,
+    Decimal? fiveYearAvgDividendYield,
+    Decimal? trailingAnnualDividendRate,
   }) {
     return AnalystData(
       targetMeanPrice: targetMeanPrice ?? this.targetMeanPrice,
@@ -89,6 +99,10 @@ class AnalystData extends Equatable {
       forwardPE: forwardPE ?? this.forwardPE,
       trailingEps: trailingEps ?? this.trailingEps,
       yearChangePct: yearChangePct ?? this.yearChangePct,
+      fiveYearAvgDividendYield:
+          fiveYearAvgDividendYield ?? this.fiveYearAvgDividendYield,
+      trailingAnnualDividendRate:
+          trailingAnnualDividendRate ?? this.trailingAnnualDividendRate,
     );
   }
 
@@ -111,5 +125,7 @@ class AnalystData extends Equatable {
         forwardPE,
         trailingEps,
         yearChangePct,
+        fiveYearAvgDividendYield,
+        trailingAnnualDividendRate,
       ];
 }
