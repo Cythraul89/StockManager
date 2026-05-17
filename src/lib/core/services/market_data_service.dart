@@ -9,6 +9,7 @@ import '../models/chart_range.dart';
 import '../models/fetched_dividend.dart';
 import '../models/price_point.dart';
 import '../models/price_quote.dart';
+import '../utils/decimal_math.dart';
 
 class MarketDataService {
   MarketDataService(this._dio) {
@@ -387,7 +388,101 @@ class MarketDataService {
     }
   }
 
-  /// Fetches OHLCV closing prices for [symbol] over the given [range].
+  /// Fetches analyst data from Finnhub using three parallel requests:
+  /// price-target, recommendation trend, and basic financials.
+  Future<AnalystData?> fetchAnalystDataFromFinnhub(
+      String symbol, String apiKey) async {
+    const base = 'https://finnhub.io/api/v1';
+    try {
+      final responses = await Future.wait([
+        _dio.get<dynamic>('$base/stock/price-target',
+            queryParameters: {'symbol': symbol, 'token': apiKey}),
+        _dio.get<dynamic>('$base/stock/recommendation',
+            queryParameters: {'symbol': symbol, 'token': apiKey}),
+        _dio.get<dynamic>('$base/stock/metric',
+            queryParameters: {
+              'symbol': symbol,
+              'metric': 'all',
+              'token': apiKey,
+            }),
+      ]);
+
+      // ── Price target ────────────────────────────────────────────────────
+      final pt = responses[0].data as Map<String, dynamic>?;
+      final targetMean = _fhDecimal(pt, 'targetMean');
+      if (targetMean == null || targetMean.isZero) return null;
+
+      // ── Recommendation trend (most-recent period first) ─────────────────
+      final recList = (responses[1].data as List<dynamic>?)
+          ?.cast<Map<String, dynamic>>();
+      final rec = recList?.firstOrNull;
+      final sb = rec?['strongBuy']  as int? ?? 0;
+      final b  = rec?['buy']        as int? ?? 0;
+      final h  = rec?['hold']       as int? ?? 0;
+      final s  = rec?['sell']       as int? ?? 0;
+      final ss = rec?['strongSell'] as int? ?? 0;
+      final total = sb + b + h + s + ss;
+
+      // ── Basic financials ────────────────────────────────────────────────
+      final metricsMap = responses[2].data as Map<String, dynamic>?;
+      final m = metricsMap?['metric'] as Map<String, dynamic>?;
+
+      // Finnhub 52-week return is in % (e.g. 15.7); convert to fraction.
+      final raw52w = _fhDecimal(m, '52WeekPriceReturnDaily');
+      final yearChangePct = raw52w != null
+          ? (raw52w.toRational() / Decimal.fromInt(100).toRational())
+              .toDecimal(scaleOnInfinitePrecision: 4)
+          : null;
+
+      return AnalystData(
+        targetMeanPrice: targetMean,
+        targetLowPrice:  _fhDecimal(pt, 'targetLow'),
+        targetHighPrice: _fhDecimal(pt, 'targetHigh'),
+        recommendationKey:
+            total > 0 ? _fhRecKey(sb, b, h, s, ss, total) : null,
+        numberOfAnalysts: total > 0 ? total : null,
+        financialCurrency: null,
+        strongBuyCount:  sb > 0 ? sb : null,
+        buyCount:        b  > 0 ? b  : null,
+        holdCount:       h  > 0 ? h  : null,
+        sellCount:       s  > 0 ? s  : null,
+        strongSellCount: ss > 0 ? ss : null,
+        fiftyTwoWeekLow:  _fhDecimal(m, '52WeekLow'),
+        fiftyTwoWeekHigh: _fhDecimal(m, '52WeekHigh'),
+        trailingPE: _fhDecimal(m, 'peExclExtraTTM') ??
+            _fhDecimal(m, 'peNormalizedAnnual'),
+        forwardPE:  _fhDecimal(m, 'forwardPE'),
+        trailingEps: _fhDecimal(m, 'epsBasicExclExtraAnnual') ??
+            _fhDecimal(m, 'epsNormalizedAnnual'),
+        yearChangePct: yearChangePct,
+        fiveYearAvgDividendYield:  _fhDecimal(m, 'dividendYield5Y'),
+        trailingAnnualDividendRate: _fhDecimal(m, 'dividendPerShareAnnual'),
+      );
+    } catch (e) {
+      debugPrint(
+          'MarketDataService: Finnhub analyst fetch failed for $symbol: $e');
+      return null;
+    }
+  }
+
+  static Decimal? _fhDecimal(Map<String, dynamic>? map, String key) {
+    final v = map?[key];
+    if (v == null) return null;
+    return Decimal.tryParse(v.toString());
+  }
+
+  // Derives a Yahoo-compatible recommendationKey from Finnhub counts using a
+  // weighted score: strongBuy=+2, buy=+1, hold=0, sell=−1, strongSell=−2.
+  static String _fhRecKey(int sb, int b, int h, int s, int ss, int total) {
+    final score = (sb * 2 + b - s - ss * 2) / total;
+    if (score > 1.2)  return 'strong_buy';
+    if (score > 0.4)  return 'buy';
+    if (score > -0.4) return 'hold';
+    if (score > -1.2) return 'sell';
+    return 'strong_sell';
+  }
+
+
   /// Returns an empty list when the symbol is unknown or the API is unreachable.
   Future<List<PricePoint>> fetchPriceHistory(
       String symbol, ChartRange range) async {

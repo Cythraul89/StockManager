@@ -47,6 +47,19 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
             SettingsSection(
+              title: 'Market Data',
+              children: [
+                ListTile(
+                  title: const Text('Data Provider'),
+                  subtitle: Text(settings.marketDataProvider == MarketDataProvider.finnhub
+                      ? 'Finnhub'
+                      : 'Yahoo Finance (default)'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/market-data'),
+                ),
+              ],
+            ),
+            SettingsSection(
               title: 'Synchronisation',
               children: [
                 ListTile(

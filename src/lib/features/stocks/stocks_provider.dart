@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/analyst_data.dart';
+import '../../core/models/app_settings.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/chart_range.dart';
 import '../../core/models/price_point.dart';
@@ -20,6 +21,7 @@ import '../../core/models/transaction.dart';
 import '../../core/services/isin_lookup_service.dart';
 import '../../core/services/market_data_service.dart';
 import '../../core/utils/withholding_tax.dart';
+import '../settings/settings_provider.dart';
 
 final isinLookupServiceProvider = Provider<IsinLookupService>((ref) {
   throw UnimplementedError('isinLookupServiceProvider must be overridden');
@@ -114,6 +116,7 @@ final analystDataProvider =
     FutureProvider.family<AnalystData?, String>((ref, stockId) async {
   // Re-run whenever the manual refresh counter is incremented.
   ref.watch(analystRefreshProvider(stockId));
+  ref.watch(analystCacheVersionProvider); // busts cache on provider/key change
 
   // Keep the result alive for 10 minutes so navigating away and back does not
   // trigger a full Yahoo Finance round-trip on every visit.
@@ -122,6 +125,16 @@ final analystDataProvider =
 
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
+
+  final settings = await ref.watch(settingsProvider.future);
+  if (settings.marketDataProvider == MarketDataProvider.finnhub) {
+    final apiKey = await ref.watch(finnhubApiKeyProvider.future);
+    if (apiKey == null || apiKey.isEmpty) return null;
+    return ref
+        .read(marketDataServiceProvider)
+        .fetchAnalystDataFromFinnhub(stock.symbol, apiKey);
+  }
+
   return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
 });
 

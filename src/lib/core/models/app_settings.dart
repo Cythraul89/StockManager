@@ -5,6 +5,8 @@ import 'chart_range.dart';
 
 enum AppTheme { system, light, dark }
 
+enum MarketDataProvider { yahoo, finnhub }
+
 class AppSettings extends Equatable {
   const AppSettings({
     required this.preferredCurrency,
@@ -18,6 +20,7 @@ class AppSettings extends Equatable {
     this.lastSyncAt,
     required this.nextcloudKeepExports,
     required this.sparklineRange,
+    required this.marketDataProvider,
   });
 
   final String preferredCurrency;
@@ -31,6 +34,7 @@ class AppSettings extends Equatable {
   final DateTime? lastSyncAt;
   final int nextcloudKeepExports;
   final ChartRange sparklineRange;
+  final MarketDataProvider marketDataProvider;
 
   static AppSettings get defaults => AppSettings(
         preferredCurrency: 'EUR',
@@ -41,6 +45,7 @@ class AppSettings extends Equatable {
         dividendAlertDays: 3,
         nextcloudKeepExports: 5,
         sparklineRange: ChartRange.oneMonth,
+        marketDataProvider: MarketDataProvider.yahoo,
       );
 
   AppSettings copyWith({
@@ -55,6 +60,7 @@ class AppSettings extends Equatable {
     DateTime? lastSyncAt,
     int? nextcloudKeepExports,
     ChartRange? sparklineRange,
+    MarketDataProvider? marketDataProvider,
   }) =>
       AppSettings(
         preferredCurrency: preferredCurrency ?? this.preferredCurrency,
@@ -69,6 +75,7 @@ class AppSettings extends Equatable {
         lastSyncAt: lastSyncAt ?? this.lastSyncAt,
         nextcloudKeepExports: nextcloudKeepExports ?? this.nextcloudKeepExports,
         sparklineRange: sparklineRange ?? this.sparklineRange,
+        marketDataProvider: marketDataProvider ?? this.marketDataProvider,
       );
 
   @override
@@ -84,5 +91,6 @@ class AppSettings extends Equatable {
         lastSyncAt,
         nextcloudKeepExports,
         sparklineRange,
+        marketDataProvider,
       ];
 }
