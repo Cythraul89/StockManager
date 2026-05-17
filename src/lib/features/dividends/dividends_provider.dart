@@ -1,6 +1,7 @@
 import 'package:decimal/decimal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/utils/decimal_math.dart';
 import '../dashboard/dashboard_provider.dart';
 import '../stocks/stocks_provider.dart';
 
