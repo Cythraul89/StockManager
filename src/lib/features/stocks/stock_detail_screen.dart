@@ -822,7 +822,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
             // ── Dividends (5-year average) ─────────────────────────────────
             ..._buildDividendAvgSection(
-                context, dividends, stockCurrency, currency, currentPrice),
+                context, dividends, stockCurrency, currentPrice),
           ],
         ),
       ),
@@ -833,15 +833,18 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     BuildContext context,
     List<Dividend> dividends,
     String stockCurrency,
-    String displayCurrency,
     Decimal? currentPrice,
   ) {
     final cutoff = DateTime(DateTime.now().year - 5, 1, 1);
+    // Use amountPerShare (always populated) so dividends entered without a
+    // total-amount figure are still included. Summing per-year gives the
+    // annual dividend per share; averaged across years it is the standard
+    // metric used to derive yield.
     final relevant = dividends
         .where((d) =>
             d.type == DividendType.paid &&
             d.confirmed &&
-            d.netAmount.isPositive &&
+            d.amountPerShare.isPositive &&
             d.currency == stockCurrency &&
             d.date.isAfter(cutoff))
         .toList();
@@ -850,20 +853,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final yearSums = <int, Decimal>{};
     for (final d in relevant) {
       yearSums[d.date.year] =
-          (yearSums[d.date.year] ?? Decimal.zero) + d.netAmount;
+          (yearSums[d.date.year] ?? Decimal.zero) + d.amountPerShare;
     }
-    final total =
-        yearSums.values.fold(Decimal.zero, (a, b) => a + b);
+    final total = yearSums.values.fold(Decimal.zero, (a, b) => a + b);
     final avgAnnual =
         (total.toRational() / Decimal.fromInt(yearSums.length).toRational())
-            .toDecimal(scaleOnInfinitePrecision: 2);
+            .toDecimal(scaleOnInfinitePrecision: 4);
 
-    final yieldPct =
-        (currentPrice != null && currentPrice.isPositive)
-            ? (avgAnnual.toRational() / currentPrice.toRational() *
-               Decimal.fromInt(100).toRational())
-                .toDecimal(scaleOnInfinitePrecision: 2)
-            : null;
+    final yieldPct = (currentPrice != null && currentPrice.isPositive)
+        ? (avgAnnual.toRational() /
+                currentPrice.toRational() *
+                Decimal.fromInt(100).toRational())
+            .toDecimal(scaleOnInfinitePrecision: 2)
+        : null;
 
     final yearCount = yearSums.length;
 
@@ -872,8 +874,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       _analyticsSubheader(context, 'Dividends'),
       _kv(
         context,
-        'Avg annual (${yearCount}Y)',
-        CurrencyFormatter.format(avgAnnual, displayCurrency),
+        'Avg annual/share (${yearCount}Y)',
+        CurrencyFormatter.format(avgAnnual, stockCurrency),
       ),
       if (yieldPct != null)
         _kv(context, 'Yield (avg)', '${yieldPct.toStringFixed(2)}%'),

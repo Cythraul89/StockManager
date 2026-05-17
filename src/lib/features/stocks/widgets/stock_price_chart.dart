@@ -77,12 +77,17 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
                       height: 160,
                       child: Center(child: Text('No data available')),
                     )
-                  : _buildChart(
-                      context,
-                      points,
-                      transactions: transactions,
-                      convRate: _showConverted ? convRate : null,
-                      preferredCurrency: preferredCurrency,
+                  : KeyedSubtree(
+                      // Force a full chart rebuild on range change so fl_chart
+                      // doesn't try to animate between incompatible datasets.
+                      key: ValueKey(_range),
+                      child: _buildChart(
+                        context,
+                        points,
+                        transactions: transactions,
+                        convRate: _showConverted ? convRate : null,
+                        preferredCurrency: preferredCurrency,
+                      ),
                     ),
             ),
             const SizedBox(height: 8),
