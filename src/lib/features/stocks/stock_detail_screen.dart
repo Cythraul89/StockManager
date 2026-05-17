@@ -829,8 +829,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 _kv(
                   context,
                   'Annual rate',
+                  // conv() converts from analysisCurrency → stockCurrency (same
+                  // as target prices above); currency label matches the result.
                   CurrencyFormatter.format(
-                      data.trailingAnnualDividendRate!, currency),
+                      conv(data.trailingAnnualDividendRate!), currency),
                 ),
               if (data.fiveYearAvgDividendYield != null)
                 _kv(

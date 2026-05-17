@@ -110,10 +110,14 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
 
     // Compute totals in preferred currency (skip dividends with no rate).
     var allTimeTotal = Decimal.zero;
+    var skippedCount = 0;
     final yearTotals = <int, Decimal>{};
     for (final d in paid) {
       final amount = _toPreferred(d.netAmount, d.currency, preferred, rates);
-      if (amount == null) continue;
+      if (amount == null) {
+        skippedCount++;
+        continue;
+      }
       allTimeTotal += amount;
       yearTotals[d.date.year] =
           (yearTotals[d.date.year] ?? Decimal.zero) + amount;
@@ -155,7 +159,7 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
           const SizedBox(height: 16),
         ],
         if (paid.isNotEmpty) ...[
-          _buildTotalsSummary(allTimeTotal, yearTotals, preferred),
+          _buildTotalsSummary(allTimeTotal, yearTotals, preferred, skippedCount),
           const SizedBox(height: 16),
         ],
         if (estimate != null) ...[
@@ -198,6 +202,7 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
     Decimal allTime,
     Map<int, Decimal> yearTotals,
     String preferred,
+    int skippedCount,
   ) {
     final sortedYears = yearTotals.keys.toList()
       ..sort((a, b) => b.compareTo(a));
@@ -219,6 +224,26 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
                 'Total $year',
                 CurrencyFormatter.format(yearTotals[year]!, preferred),
               ),
+            if (skippedCount > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '$skippedCount dividend${skippedCount == 1 ? '' : 's'} '
+                      'excluded — no exchange rate available.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
