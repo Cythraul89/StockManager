@@ -820,11 +820,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
             ],
 
             // ── Dividends ──────────────────────────────────────────────────
-            if (data.fiveYearAvgDividendYield != null ||
-                data.trailingAnnualDividendRate != null) ...[
+            if ((data.trailingAnnualDividendRate?.isPositive ?? false) ||
+                data.fiveYearAvgDividendYield != null) ...[
               const SizedBox(height: 14),
               _analyticsSubheader(context, 'Dividends'),
-              if (data.trailingAnnualDividendRate != null)
+              if (data.trailingAnnualDividendRate?.isPositive ?? false)
                 _kv(
                   context,
                   'Annual rate',
