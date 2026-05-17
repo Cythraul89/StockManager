@@ -362,7 +362,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 data: (data) => data != null
                     ? _buildAnalystCard(
                         context, data, stock.currency, quoteCurrency,
-                        currentPrice, rates)
+                        currentPrice, rates, position.sharesHeld)
                     : _buildAnalystUnavailableCard(context),
               ),
               const SizedBox(height: 16),
@@ -657,6 +657,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     String quoteCurrency,
     Decimal? currentPrice,
     List<ExchangeRate> rates,
+    Decimal sharesHeld,
   ) {
     // Yahoo analyst price targets are always denominated in the stock's trading
     // currency (quoteCurrency), not in Yahoo's financialCurrency field which
@@ -836,6 +837,21 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   context,
                   'Avg yield (5Y)',
                   '${data.fiveYearAvgDividendYield!.toStringFixed(2)}%',
+                ),
+              if (data.fiveYearAvgDividendYield != null &&
+                  currentPrice != null &&
+                  sharesHeld.isPositive)
+                _kv(
+                  context,
+                  'Est. annual income',
+                  CurrencyFormatter.format(
+                    (sharesHeld.toRational() *
+                            currentPrice.toRational() *
+                            data.fiveYearAvgDividendYield!.toRational() /
+                            Decimal.fromInt(100).toRational())
+                        .toDecimal(scaleOnInfinitePrecision: 2),
+                    stockCurrency,
+                  ),
                 ),
             ],
           ],

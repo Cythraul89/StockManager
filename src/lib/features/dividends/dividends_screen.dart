@@ -10,6 +10,7 @@ import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/date_helpers.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
+import 'dividends_provider.dart';
 import 'widgets/confirm_dividend_dialog.dart';
 import 'widgets/dividend_income_chart.dart';
 import 'widgets/dividend_tile.dart';
@@ -43,6 +44,7 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
     final preferred =
         ref.watch(settingsStreamProvider).value?.preferredCurrency ?? 'USD';
+    final estimate = ref.watch(estimatedAnnualDividendProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -80,7 +82,7 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
           return TabBarView(
             controller: _tabController,
             children: [
-              _buildReceivedTab(dividends, paid, pending, rates, preferred),
+              _buildReceivedTab(dividends, paid, pending, rates, preferred, estimate),
               _buildUpcomingTab(upcoming, rates, preferred),
             ],
           );
@@ -97,6 +99,7 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
     List<Dividend> pending,
     List<ExchangeRate> rates,
     String preferred,
+    DividendEstimate? estimate,
   ) {
     // Group paid by year (most-recent first).
     final yearGroups = <int, List<Dividend>>{};
@@ -153,6 +156,10 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
         ],
         if (paid.isNotEmpty) ...[
           _buildTotalsSummary(allTimeTotal, yearTotals, preferred),
+          const SizedBox(height: 16),
+        ],
+        if (estimate != null) ...[
+          _buildEstimateCard(estimate),
           const SizedBox(height: 16),
         ],
         if (paid.isEmpty)
@@ -212,6 +219,35 @@ class _DividendsScreenState extends ConsumerState<DividendsScreen>
                 'Total $year',
                 CurrencyFormatter.format(yearTotals[year]!, preferred),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEstimateCard(DividendEstimate estimate) {
+    final theme = Theme.of(context);
+    final partial = estimate.coveredStocks < estimate.totalStocks;
+    final coverage = '${estimate.coveredStocks}/${estimate.totalStocks} stocks';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _summaryRow(
+              'Est. annual income',
+              '~${CurrencyFormatter.format(estimate.total, estimate.currency)}',
+              bold: true,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              partial
+                  ? 'Based on 5Y avg yield · $coverage with analyst data loaded'
+                  : 'Based on 5Y avg yield · all $coverage',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
           ],
         ),
       ),
