@@ -80,17 +80,16 @@ class _MarketDataSettingsScreenState
                         .saveSettings(
                             settings.copyWith(marketDataProvider: v));
                   },
-                  child: Column(
+                  child: const Column(
                     children: [
                       RadioListTile<MarketDataProvider>(
-                        title: const Text('Yahoo Finance'),
-                        subtitle: const Text('Default, no setup required'),
+                        title: Text('Yahoo Finance'),
+                        subtitle: Text('Default, no setup required'),
                         value: MarketDataProvider.yahoo,
                       ),
                       RadioListTile<MarketDataProvider>(
-                        title: const Text('Finnhub'),
-                        subtitle:
-                            const Text('Free account required, more reliable'),
+                        title: Text('Finnhub'),
+                        subtitle: Text('Free account required, more reliable'),
                         value: MarketDataProvider.finnhub,
                       ),
                     ],
