@@ -22,6 +22,28 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
   String? _status;
   bool _statusIsError = false;
 
+  static bool get _isDesktop =>
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+
+  Future<void> _saveOrShare(File file, String extension) async {
+    if (_isDesktop) {
+      final fileName = file.path.split(Platform.pathSeparator).last;
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save backup',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: [extension],
+      );
+      if (savePath == null) return; // user cancelled
+      await file.copy(savePath);
+    } else {
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: 'StockManager Backup',
+      );
+    }
+  }
+
   Future<void> _export() async {
     setState(() {
       _isExporting = true;
@@ -30,10 +52,7 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
     try {
       final file = await ref.read(backupServiceProvider).exportToZip();
       if (!mounted) return;
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'StockManager Backup',
-      );
+      await _saveOrShare(file, 'zip');
       if (mounted) {
         setState(() {
           _status = 'Backup exported successfully.';
@@ -60,10 +79,7 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
     try {
       final file = await ref.read(backupServiceProvider).exportToOds();
       if (!mounted) return;
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'StockManager Backup',
-      );
+      await _saveOrShare(file, 'ods');
       if (mounted) {
         setState(() {
           _status = 'ODS exported successfully.';
