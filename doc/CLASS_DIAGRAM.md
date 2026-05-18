@@ -24,6 +24,7 @@ classDiagram
         +String exchange
         +String currency
         +bool dripEnabled
+        +String? lastKnownConsensus
         +copyWith() Stock
     }
 
@@ -159,6 +160,8 @@ classDiagram
         +String preferredCurrency
         +String? nextcloudUrl
         +String? nextcloudUsername
+        +String? nextcloudPassword
+        +String? nextcloudCertFingerprint
         +String nextcloudPath
         +int nextcloudKeepExports
         +AppTheme theme
@@ -168,6 +171,7 @@ classDiagram
         +DateTime? lastSyncAt
         +ChartRange sparklineRange
         +MarketDataProvider marketDataProvider
+        +String? finnhubApiKey
         +copyWith() AppSettings
         +defaults AppSettings$
     }
@@ -295,21 +299,19 @@ classDiagram
         +initialize()
         +showPriceAlert(stock, quote)
         +showDividendAlert(stock, dividend)
+        +showRatingChangeAlert(stockName, symbol, oldRating, newRating)
         +cancelAll()
     }
 
     class NextcloudService {
-        +verifyCredentials(url, user, pw) Future
-        +uploadBackup(url, user, pw, path, bytes) Future
-        +upload(url, user, pw, path, bytes, contentType) Future
-        +listFiles(url, user, pw, path) List~String~
-        +delete(url, user, pw, path) Future
-        +downloadFile(url, user, pw, path) Uint8List
-        +findLatestBackup(url, user, pw, path) RemoteBackupInfo?
+        +verifyCredentials(url, user, pw, pinnedFingerprint) Future
+        +uploadBackup(url, user, pw, path, bytes, pinnedFingerprint) Future
+        +upload(url, user, pw, path, bytes, contentType, pinnedFingerprint) Future
+        +listFiles(url, user, pw, path, pinnedFingerprint) List~String~
+        +delete(url, user, pw, path, pinnedFingerprint) Future
+        +downloadFile(url, user, pw, path, pinnedFingerprint) Uint8List
+        +findLatestBackup(url, user, pw, path, pinnedFingerprint) RemoteBackupInfo?
         +fetchCertificateInfo(url) CertificateInfo?
-        +pinCertificate(fingerprint) Future
-        +unpinCertificate() Future
-        +getPinnedFingerprint() String?
     }
 
     class RemoteBackupInfo {
@@ -328,6 +330,10 @@ classDiagram
         +exportToZip() File
         +exportToOds() File
         +importFromBytes(bytes) Future
+    }
+
+    class BackgroundCheckService {
+        +run() Future~bool~$
     }
 
     class SyncStatus {
@@ -359,6 +365,9 @@ classDiagram
     NextcloudService --> RemoteBackupInfo : produces
     NextcloudService --> CertificateInfo : produces
     BackupService ..> AppDatabase : reads/writes
+    BackgroundCheckService ..> AppDatabase : opens own connection
+    BackgroundCheckService ..> MarketDataService : fetches quotes/ratings
+    BackgroundCheckService ..> NotificationService : fires alerts
 
     %% Service outputs
     MarketDataService --> PriceQuote : produces
@@ -377,7 +386,7 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 5
+        +schemaVersion = 9
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
@@ -410,6 +419,7 @@ classDiagram
         +getSplitsForStock(id) Future~List~StockSplit~~
         +upsertSplit(split) Future
         +deleteSplit(id) Future
+        +updateLastKnownConsensus(stockId, consensus) Future
     }
 
     class TransactionsDao {
@@ -439,6 +449,9 @@ classDiagram
         +watchSettings() Stream~AppSettings~
         +getSettings() Future~AppSettings~
         +upsertSettings(settings) Future
+        +updateLastSyncAt(time) Future
+        +updateFinnhubApiKey(key) Future
+        +updateCertFingerprint(fingerprint) Future
         +watchExchangeRates() Stream~List~ExchangeRate~~
         +getExchangeRates() Future~List~ExchangeRate~~
         +getRate(base, target) Future~ExchangeRate~~
@@ -519,8 +532,8 @@ stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStoc
                                          setManualPrice, clearManualPrice, cacheMarketPrice,
                                          loadManualPrices)
 
-settingsActionsProvider ─ SettingsActions (saveSettings, saveFinnhubApiKey, setManualRate,
-                                           deleteRate, cacheRates)
+settingsActionsProvider ─ SettingsActions (saveSettings, saveFinnhubApiKey, saveCertFingerprint,
+                                           saveLastSyncAt, setManualRate, deleteRate, cacheRates)
 
 backupServiceProvider  ── BackupService (exportToZip, exportToOds,
                                          importFromBytes)
@@ -543,7 +556,7 @@ analystCacheVersionProvider  (StateProvider<int>)
   └── incremented when market data provider or Finnhub API key changes
 
 finnhubApiKeyProvider  (FutureProvider<String?>)
-  └── reads from flutter_secure_storage; invalidated by saveFinnhubApiKey()
+  └── reads from settings table (settingsDao.getSettings().finnhubApiKey); invalidated by saveFinnhubApiKey()
 
 analystDataProvider(stockId)  (FutureProvider.family, keepAlive 10 min)
   ├── analystRefreshProvider(stockId)   ← re-fetches on increment

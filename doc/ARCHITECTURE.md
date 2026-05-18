@@ -14,9 +14,9 @@
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
 | Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
 | Push notifications | firebase_messaging | Android FCM only (per requirements) |
-| Background tasks | WorkManager (via workmanager plugin) | Android only; polls prices when app is closed |
+| Background tasks | WorkManager (via workmanager plugin) | Android only; price, rating, and dividend checks when app is closed |
 | Local notifications | flutter_local_notifications | All platforms; used for alerts on desktop |
-| Secure storage | flutter_secure_storage | Nextcloud credentials, encrypted at rest |
+| Secure storage | flutter_secure_storage | `last_used_broker_id` only; credentials moved to SQLite settings table |
 
 ---
 
@@ -37,7 +37,8 @@ lib/
 │   │   ├── currency_service.dart
 │   │   ├── nextcloud_service.dart
 │   │   ├── backup_service.dart
-│   │   └── notification_service.dart
+│   │   ├── notification_service.dart
+│   │   └── background_check_service.dart
 │   ├── models/                     # Immutable domain models (pure Dart, no Flutter)
 │   ├── calculators/                # P&L, avg price, dividend yield — pure functions
 │   └── utils/                      # Formatting, date helpers, decimal math
@@ -95,6 +96,7 @@ Notable provider files:
 | exchange | TEXT | e.g. NASDAQ — resolved from ISIN |
 | currency | TEXT | ISO 4217, e.g. USD — resolved from ISIN |
 | drip_enabled | BOOL | Dividend reinvestment flag |
+| last_known_consensus | TEXT? | Most recent analyst `recommendationKey`; used by `BackgroundCheckService` to detect rating changes between runs |
 
 **transactions**
 | Column | Type | Notes |
@@ -166,8 +168,9 @@ Notable provider files:
 | nextcloud_keep_exports | INT | remote backups to retain; default 5 |
 | sparkline_range | TEXT | `ChartRange.label` (e.g. `1M`); default `1M` |
 | market_data_provider | TEXT: yahoo \| finnhub | default yahoo |
-
-> Nextcloud password is stored separately in flutter_secure_storage, not in SQLite.
+| nextcloud_password | TEXT? | Nextcloud password / app token (moved from flutter_secure_storage) |
+| finnhub_api_key | TEXT? | Finnhub API key (moved from flutter_secure_storage) |
+| nextcloud_cert_fingerprint | TEXT? | Pinned SHA-256 cert fingerprint (moved from flutter_secure_storage) |
 
 ---
 
@@ -227,8 +230,16 @@ When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth 
 ### 5.5 Financial Arithmetic
 All monetary values are stored and calculated as `Decimal` (via the `decimal` package), never `double`, to avoid floating-point rounding errors.
 
-### 5.6 Background Price Alerts on Android
-True FCM push requires a backend server to send messages. To avoid a server dependency, price alerts on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval). The task fetches latest prices, checks thresholds, and fires a local notification if triggered. FCM infrastructure is included in the project so a self-hosted backend can be added later without client changes.
+### 5.6 Background Checks on Android
+True FCM push requires a backend server to send messages. To avoid a server dependency, background checks on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval, network required). The task is registered in `main.dart` via a top-level `callbackDispatcher` and dispatched to `BackgroundCheckService.run()`.
+
+`BackgroundCheckService` is a static-only class that runs inside a WorkManager isolate (no Riverpod). It opens its own `AppDatabase` connection and `MarketDataService` + `FlutterLocalNotificationsPlugin` instances, then performs three checks per run:
+
+- **Price alert** — fetches a fresh quote via `MarketDataService`, compares against the cached `price_cache` price; fires a `price_alerts` channel notification if the change exceeds `priceAlertThresholdPct`. The cached price is updated after each run so the next comparison is against the most recently seen price.
+- **Analyst rating change** — fetches analyst data (Finnhub or Yahoo based on `settings.marketDataProvider`), compares `recommendationKey` against `stocks.lastKnownConsensus`; fires a `rating_alerts` channel notification on change, then calls `StocksDao.updateLastKnownConsensus()` to persist the new value. No notification is sent on the first run (when `lastKnownConsensus` is null), preventing false alerts at install time.
+- **Dividend alert** — queries expected dividends within the next `dividendAlertDays` days; fires a `dividend_alerts` channel notification for each upcoming payment.
+
+FCM infrastructure (`firebase_core`, `firebase_messaging`) is included in the project so a self-hosted push backend can be added later without client-side changes.
 
 ### 5.7 ODS Structure
 
@@ -487,7 +498,11 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 ### 5.13 Nextcloud Sync Strategy
 
 #### Backup format
-Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
+Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature.
+
+The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DDTHH-MM-SSZ.zip` (full UTC timestamp; colons replaced with hyphens for filesystem compatibility). `findLatestBackup` and `_pruneOldBackups` also accept the legacy `YYYY-MM-DD` date-only format for backward compatibility with older backups already on the server.
+
+On desktop platforms (macOS, Windows, Linux), `LocalBackupScreen` uses `FilePicker.platform.saveFile()` to present a native save dialog. On mobile it uses `Share.shareXFiles()` as before.
 
 `importFromBytes()` auto-detects the format from the archive contents (presence of `meta.json` → ZIP backup; presence of `content.xml` → ODS import).
 
@@ -518,10 +533,9 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 #### Secure storage keys
 | Key | Value |
 |---|---|
-| `nextcloud_password` | Nextcloud password / app token |
-| `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
-| `finnhub_api_key` | Finnhub API key for analyst data fetching |
+
+`nextcloud_password`, `nextcloud_cert_fingerprint`, and `finnhub_api_key` were previously stored in `flutter_secure_storage` and are now columns in the `settings` table (schema v7–v8). This removed the dependency on the macOS Data Protection Keychain, which requires a real Team ID and fails on ad-hoc signed builds.
 
 ### 5.15 Portfolio Allocation Chart
 
@@ -573,9 +587,11 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 ### 5.18 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
-2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
-3. All subsequent WebDAV requests validate against the stored fingerprint; a mismatch aborts the connection and alerts the user.
-4. The certificate can be re-pinned or removed from the Nextcloud settings screen.
+2. On confirmation, `SettingsActions.saveCertFingerprint()` persists the fingerprint to the `settings` table via `SettingsDao.updateCertFingerprint()`.
+3. All subsequent WebDAV requests read the fingerprint from `AppSettings.nextcloudCertFingerprint` and pass it as the `pinnedFingerprint` named parameter to each `NextcloudService` method.
+4. The certificate can be re-pinned by pressing "Test connection" on the Nextcloud settings screen.
+
+`NextcloudService` is a stateless value class (`const NextcloudService()`). It does not manage fingerprint persistence; all WebDAV methods accept an optional `String? pinnedFingerprint` parameter and callers are responsible for supplying the correct value.
 
 This approach avoids globally disabling TLS verification — only the explicitly approved certificate is trusted.
 

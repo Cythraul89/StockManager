@@ -194,7 +194,7 @@ Features confirmed for a future version. Not in scope for the initial release.
 - Supported providers:
   - **Yahoo Finance** (default) — no account or API key required; unofficial API, subject to rate-limiting.
   - **Finnhub** (optional) — requires a free Finnhub API key entered by the user; provides more reliable and structured analyst data (price targets, consensus ratings, EPS estimates).
-- The API key for Finnhub is stored in `flutter_secure_storage` alongside the Nextcloud credentials.
+- The API key for Finnhub is stored in the settings table alongside other Nextcloud credentials.
 - Switching providers invalidates any cached analyst data so the next screen open re-fetches from the new source.
 - When Finnhub is the active provider, any fields it does not supply (e.g. `fiveYearAvgDividendYield`, `trailingAnnualDividendRate` for non-US stocks) are supplemented from a parallel Yahoo Finance request, so dividend data is always shown when available.
 - When Finnhub is selected but no API key is configured, the Analysis card shows an 'API key required' prompt with a tap-through link to Settings → Market Data.
