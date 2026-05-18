@@ -98,12 +98,23 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     );
   }
 
-  // Compare two sync timestamps as local calendar dates to avoid DST issues.
+  // Parses both the legacy date-only format (YYYY-MM-DD → midnight UTC) and
+  // the current datetime format (YYYY-MM-DDTHH-MM-SSZ → full UTC instant).
+  static DateTime? _parseBackupTimestamp(String s) {
+    if (s.contains('T')) {
+      final normalized = s.replaceAllMapped(
+        RegExp(r'T(\d{2})-(\d{2})-(\d{2})Z'),
+        (m) => 'T${m[1]}:${m[2]}:${m[3]}Z',
+      );
+      return DateTime.tryParse(normalized);
+    }
+    return DateTime.tryParse(s);
+  }
+
+  // Returns true when the remote backup was created after the last local sync.
   bool _remoteIsNewer(DateTime? lastSyncAt, DateTime remoteBackupDate) {
     if (lastSyncAt == null) return true;
-    final local = lastSyncAt.toLocal();
-    final lastSyncDay = DateTime(local.year, local.month, local.day);
-    return remoteBackupDate.isAfter(lastSyncDay);
+    return remoteBackupDate.isAfter(lastSyncAt);
   }
 
   // On startup: offer restore if remote has a newer backup, else upload.
@@ -237,11 +248,13 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       final backupFile = await ref.read(backupServiceProvider).exportToZip();
       final bytes = await backupFile.readAsBytes();
 
-      final dateStr =
-          DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      final utcNow = DateTime.now().toUtc();
+      // Use full UTC timestamp so cross-device _remoteIsNewer comparisons work
+      // within the same day. Colons replaced with hyphens for filename safety.
+      final dateTimeStr = utcNow.toIso8601String().substring(0, 19).replaceAll(':', '-') + 'Z';
       final dir = creds.path;
       final remotePath =
-          '${dir.endsWith('/') ? dir : '$dir/'}stockmanager_backup_$dateStr.zip';
+          '${dir.endsWith('/') ? dir : '$dir/'}stockmanager_backup_$dateTimeStr.zip';
 
       await ref.read(nextcloudServiceProvider).uploadBackup(
             serverUrl: creds.url,
@@ -291,13 +304,13 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     final row = await ref.read(databaseProvider).settingsDao.getSettings();
     final keep = row?.nextcloudKeepExports ?? AppSettings.defaults.nextcloudKeepExports;
 
-    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2})\.zip$');
+    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2}(?:T\d{2}-\d{2}-\d{2}Z)?)\.zip$');
     final backups = <(DateTime, String)>[];
     for (final href in hrefs) {
       final decoded = Uri.decodeFull(href);
       final match = pattern.firstMatch(decoded);
       if (match == null) continue;
-      final date = DateTime.tryParse(match.group(1)!);
+      final date = _parseBackupTimestamp(match.group(1)!);
       if (date != null) backups.add((date, href));
     }
 

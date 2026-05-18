@@ -315,7 +315,8 @@ class NextcloudService {
       return null;
     }
 
-    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2})\.zip$');
+    // Matches legacy date-only (YYYY-MM-DD) and current datetime (YYYY-MM-DDTHH-MM-SSZ) formats.
+    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2}(?:T\d{2}-\d{2}-\d{2}Z)?)\.zip$');
     DateTime? latestDate;
     String? latestHref;
 
@@ -323,7 +324,7 @@ class NextcloudService {
       final decoded = Uri.decodeFull(href);
       final match = pattern.firstMatch(decoded);
       if (match == null) continue;
-      final date = DateTime.tryParse(match.group(1)!);
+      final date = _parseBackupTimestamp(match.group(1)!);
       if (date == null) continue;
       if (latestDate == null || date.isAfter(latestDate)) {
         latestDate = date;
@@ -333,6 +334,17 @@ class NextcloudService {
 
     if (latestDate == null || latestHref == null) return null;
     return RemoteBackupInfo(remotePath: latestHref, backupDate: latestDate);
+  }
+
+  static DateTime? _parseBackupTimestamp(String s) {
+    if (s.contains('T')) {
+      final normalized = s.replaceAllMapped(
+        RegExp(r'T(\d{2})-(\d{2})-(\d{2})Z'),
+        (m) => 'T${m[1]}:${m[2]}:${m[3]}Z',
+      );
+      return DateTime.tryParse(normalized);
+    }
+    return DateTime.tryParse(s);
   }
 
   static String _certFingerprint(Uint8List derBytes) {
