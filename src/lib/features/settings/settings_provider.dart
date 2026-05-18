@@ -91,7 +91,6 @@ class SettingsActions {
         nextcloudUrl: Value(s.nextcloudUrl),
         nextcloudUsername: Value(s.nextcloudUsername),
         nextcloudPassword: Value(s.nextcloudPassword?.isEmpty == true ? null : s.nextcloudPassword),
-        nextcloudCertFingerprint: Value(s.nextcloudCertFingerprint),
         nextcloudPath: Value(s.nextcloudPath),
         theme: Value(s.theme.name),
         notificationsEnabled: Value(s.notificationsEnabled),
@@ -101,7 +100,8 @@ class SettingsActions {
         nextcloudKeepExports: Value(s.nextcloudKeepExports),
         sparklineRange: Value(s.sparklineRange.label),
         marketDataProvider: Value(s.marketDataProvider == MarketDataProvider.finnhub ? 'finnhub' : 'yahoo'),
-        finnhubApiKey: Value(s.finnhubApiKey?.isEmpty == true ? null : s.finnhubApiKey),
+        // nextcloudCertFingerprint and finnhubApiKey are managed by their own
+        // targeted update methods — absent here so upsert never overwrites them.
       ),
     );
   }
