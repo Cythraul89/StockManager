@@ -16,6 +16,7 @@ import '../../core/models/fetched_dividend.dart';
 import '../../core/models/news_article.dart';
 import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
+import '../../core/models/asset_type.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
@@ -215,6 +216,7 @@ class StockActions {
       exchange: stock.exchange,
       currency: stock.currency,
       dripEnabled: Value(stock.dripEnabled),
+      assetType: Value(stock.assetType.dbValue),
     ));
     _notifyChange();
     return id;
@@ -231,6 +233,7 @@ class StockActions {
         exchange: Value(stock.exchange),
         currency: Value(stock.currency),
         dripEnabled: Value(stock.dripEnabled),
+        assetType: Value(stock.assetType.dbValue),
       ),
     );
     _notifyChange();
@@ -463,6 +466,7 @@ Stock _stockFromRow(StockRow r) => Stock(
       exchange: r.exchange,
       currency: r.currency,
       dripEnabled: r.dripEnabled,
+      assetType: AssetType.fromDb(r.assetType),
     );
 
 StockTransaction _txFromRow(TransactionRow r) => StockTransaction(

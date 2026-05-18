@@ -9,6 +9,7 @@ import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/analyst_data.dart';
 import '../../core/models/app_settings.dart';
+import '../../core/models/asset_type.dart';
 import '../../core/models/news_article.dart';
 import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
@@ -226,8 +227,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(stock.name,
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(stock.name,
+                                style: Theme.of(context).textTheme.titleMedium),
+                          ),
+                          if (stock.assetType != AssetType.stock) ...[
+                            const SizedBox(width: 8),
+                            _assetTypeChip(context, stock.assetType),
+                          ],
+                        ],
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         '${stock.exchange} · ${stock.isin}',
@@ -521,6 +533,31 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     if (quoteCurrency == stockCurrency) return '$converted$tag';
     final raw = CurrencyFormatter.format(rawPrice, quoteCurrency);
     return '$converted ($raw)$tag';
+  }
+
+  Widget _assetTypeChip(BuildContext context, AssetType type) {
+    final color = switch (type) {
+      AssetType.etf => Colors.teal.shade700,
+      AssetType.fund => Colors.purple.shade700,
+      AssetType.bond => Colors.amber.shade800,
+      AssetType.warrant || AssetType.other => Colors.grey.shade600,
+      AssetType.stock => Colors.transparent,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        type.label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
   }
 
   Widget _kv(BuildContext context, String label, String value,

@@ -12,6 +12,8 @@ class Stocks extends Table {
   TextColumn get exchange => text()();
   TextColumn get currency => text()();
   BoolColumn get dripEnabled => boolean().withDefault(const Constant(false))();
+  TextColumn get assetType =>
+      text().withDefault(const Constant('stock'))();
 
   @override
   Set<Column> get primaryKey => {id};

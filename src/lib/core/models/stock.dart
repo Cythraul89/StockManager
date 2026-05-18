@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import 'asset_type.dart';
+
 class Stock extends Equatable {
   const Stock({
     required this.id,
@@ -10,6 +12,7 @@ class Stock extends Equatable {
     required this.exchange,
     required this.currency,
     required this.dripEnabled,
+    this.assetType = AssetType.stock,
   });
 
   final String id;
@@ -20,6 +23,7 @@ class Stock extends Equatable {
   final String exchange;
   final String currency;
   final bool dripEnabled;
+  final AssetType assetType;
 
   Stock copyWith({
     String? id,
@@ -30,6 +34,7 @@ class Stock extends Equatable {
     String? exchange,
     String? currency,
     bool? dripEnabled,
+    AssetType? assetType,
   }) =>
       Stock(
         id: id ?? this.id,
@@ -40,9 +45,10 @@ class Stock extends Equatable {
         exchange: exchange ?? this.exchange,
         currency: currency ?? this.currency,
         dripEnabled: dripEnabled ?? this.dripEnabled,
+        assetType: assetType ?? this.assetType,
       );
 
   @override
   List<Object?> get props =>
-      [id, brokerId, isin, symbol, name, exchange, currency, dripEnabled];
+      [id, brokerId, isin, symbol, name, exchange, currency, dripEnabled, assetType];
 }

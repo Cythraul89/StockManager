@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/asset_type.dart';
 import '../../../core/models/chart_range.dart';
 import '../../../core/models/price_point.dart';
 import '../../../core/utils/currency_formatter.dart';
@@ -50,6 +51,10 @@ class StockListTile extends ConsumerWidget {
                     Text(item.stock.symbol,
                         style: theme.textTheme.titleSmall
                             ?.copyWith(fontWeight: FontWeight.bold)),
+                    if (item.stock.assetType != AssetType.stock) ...[
+                      const SizedBox(width: 6),
+                      _assetTypeBadge(context, item.stock.assetType),
+                    ],
                     if (recLabel != null) ...[
                       const SizedBox(width: 6),
                       _recBadge(context, recLabel, recColor),
@@ -128,6 +133,33 @@ class StockListTile extends ConsumerWidget {
       ),
       child: Text(
         label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+            ),
+      ),
+    );
+  }
+
+  Widget _assetTypeBadge(BuildContext context, AssetType type) {
+    final color = switch (type) {
+      AssetType.etf => Colors.teal.shade700,
+      AssetType.fund => Colors.purple.shade700,
+      AssetType.bond => Colors.amber.shade800,
+      AssetType.warrant => Colors.grey.shade600,
+      AssetType.other => Colors.grey.shade600,
+      AssetType.stock => Colors.transparent,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.35), width: 0.5),
+      ),
+      child: Text(
+        type.label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
               color: color,
               fontWeight: FontWeight.w600,

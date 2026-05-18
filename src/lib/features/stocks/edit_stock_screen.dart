@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/asset_type.dart';
 import '../../core/services/isin_lookup_service.dart';
 import '../../core/utils/currency_formatter.dart';
 import 'stocks_provider.dart';
@@ -22,6 +23,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
   final _exchangeCtrl = TextEditingController();
   final _currencyFieldKey = GlobalKey<FormFieldState<String>>();
   String? _selectedCurrency;
+  AssetType _assetType = AssetType.stock;
   bool _dripEnabled = false;
   bool _loaded = false;
   bool _isSaving = false;
@@ -87,6 +89,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
       _nameCtrl.text = chosen.name;
       _exchangeCtrl.text =
           chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
+      _assetType = chosen.assetType;
       if (resolvedCurrency.isNotEmpty) {
         _selectedCurrency = resolvedCurrency;
       }
@@ -183,6 +186,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
           _nameCtrl.text = stock.name;
           _exchangeCtrl.text = stock.exchange;
           _selectedCurrency = stock.currency;
+          _assetType = stock.assetType;
           _dripEnabled = stock.dripEnabled;
           _loaded = true;
         }
@@ -277,6 +281,21 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<AssetType>(
+                  value: _assetType,
+                  decoration: const InputDecoration(
+                    labelText: 'Asset type',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: AssetType.values
+                      .map((t) =>
+                          DropdownMenuItem(value: t, child: Text(t.label)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _assetType = v);
+                  },
+                ),
                 SwitchListTile(
                   title: const Text('Dividend Reinvestment (DRIP)'),
                   value: _dripEnabled,
@@ -304,6 +323,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                                         .toUpperCase(),
                                     currency: newCurrency,
                                     dripEnabled: _dripEnabled,
+                                    assetType: _assetType,
                                   ),
                                 );
                             // When symbol or currency changed, the cached price
