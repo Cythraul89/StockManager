@@ -29,7 +29,7 @@ final finnhubApiKeyProvider = FutureProvider<String?>((ref) async {
 final analystCacheVersionProvider = StateProvider<int>((ref) => 0);
 
 final nextcloudServiceProvider = Provider<NextcloudService>((ref) {
-  return NextcloudService(ref.watch(secureStorageProvider));
+  return const NextcloudService();
 });
 
 final backupServiceProvider = Provider<BackupService>((ref) {
@@ -91,6 +91,7 @@ class SettingsActions {
         nextcloudUrl: Value(s.nextcloudUrl),
         nextcloudUsername: Value(s.nextcloudUsername),
         nextcloudPassword: Value(s.nextcloudPassword?.isEmpty == true ? null : s.nextcloudPassword),
+        nextcloudCertFingerprint: Value(s.nextcloudCertFingerprint),
         nextcloudPath: Value(s.nextcloudPath),
         theme: Value(s.theme.name),
         notificationsEnabled: Value(s.notificationsEnabled),
@@ -153,6 +154,7 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       nextcloudUrl: r.nextcloudUrl,
       nextcloudUsername: r.nextcloudUsername,
       nextcloudPassword: r.nextcloudPassword,
+      nextcloudCertFingerprint: r.nextcloudCertFingerprint,
       nextcloudPath: r.nextcloudPath,
       theme: _themeFromString(r.theme),
       notificationsEnabled: r.notificationsEnabled,

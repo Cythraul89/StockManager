@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/database/app_database.dart';
 import '../../core/services/nextcloud_service.dart';
 import 'nextcloud_sync_provider.dart';
 import 'settings_provider.dart';
@@ -59,19 +60,26 @@ class _NextcloudSettingsScreenState
       final certInfo = await service.fetchCertificateInfo(url);
       if (!mounted) return;
 
+      String? fingerprint;
       if (certInfo != null) {
         final approved = await _showCertDialog(certInfo);
         if (approved != true) {
           setState(() => _connectionStatus = 'Certificate not trusted.');
           return;
         }
-        await service.pinCertificate(certInfo.fingerprint);
+        fingerprint = certInfo.fingerprint;
+        await ref
+            .read(databaseProvider)
+            .settingsDao
+            .updateCertFingerprint(fingerprint);
       }
 
       await service.verifyCredentials(
         serverUrl: url,
         username: _usernameCtrl.text.trim(),
         password: _passwordCtrl.text,
+        pinnedFingerprint: fingerprint ??
+            (await ref.read(settingsProvider.future)).nextcloudCertFingerprint,
       );
 
       if (mounted) {

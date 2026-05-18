@@ -13,6 +13,7 @@ class AppSettings extends Equatable {
     this.nextcloudUrl,
     this.nextcloudUsername,
     this.nextcloudPassword,
+    this.nextcloudCertFingerprint,
     required this.nextcloudPath,
     required this.theme,
     required this.notificationsEnabled,
@@ -29,6 +30,7 @@ class AppSettings extends Equatable {
   final String? nextcloudUrl;
   final String? nextcloudUsername;
   final String? nextcloudPassword;
+  final String? nextcloudCertFingerprint;
   final String nextcloudPath;
   final AppTheme theme;
   final bool notificationsEnabled;
@@ -57,6 +59,7 @@ class AppSettings extends Equatable {
     String? nextcloudUrl,
     String? nextcloudUsername,
     String? nextcloudPassword,
+    String? nextcloudCertFingerprint,
     String? nextcloudPath,
     AppTheme? theme,
     bool? notificationsEnabled,
@@ -73,6 +76,7 @@ class AppSettings extends Equatable {
         nextcloudUrl: nextcloudUrl ?? this.nextcloudUrl,
         nextcloudUsername: nextcloudUsername ?? this.nextcloudUsername,
         nextcloudPassword: nextcloudPassword ?? this.nextcloudPassword,
+        nextcloudCertFingerprint: nextcloudCertFingerprint ?? this.nextcloudCertFingerprint,
         nextcloudPath: nextcloudPath ?? this.nextcloudPath,
         theme: theme ?? this.theme,
         notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
@@ -92,6 +96,7 @@ class AppSettings extends Equatable {
         nextcloudUrl,
         nextcloudUsername,
         nextcloudPassword,
+        nextcloudCertFingerprint,
         nextcloudPath,
         theme,
         notificationsEnabled,

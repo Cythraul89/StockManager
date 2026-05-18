@@ -79,7 +79,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
   // Always reads directly from the database so the result is never stale.
   // FutureProvider caches its value until invalidated, which means reading
   // settingsProvider immediately after saveSettings() returns old data.
-  Future<({String url, String username, String password, String path})?> _credentials() async {
+  Future<({String url, String username, String password, String path, String? fingerprint})?> _credentials() async {
     final row =
         await ref.read(databaseProvider).settingsDao.getSettings();
     final url = row?.nextcloudUrl;
@@ -94,6 +94,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       username: username,
       password: password,
       path: row!.nextcloudPath,
+      fingerprint: row.nextcloudCertFingerprint,
     );
   }
 
@@ -117,6 +118,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
                 username: creds.username,
                 password: creds.password,
                 remotePath: creds.path,
+                pinnedFingerprint: creds.fingerprint,
               );
 
       // lastSyncAt is only needed for comparison here; reading settingsProvider
@@ -148,6 +150,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
                 username: creds.username,
                 password: creds.password,
                 remotePath: creds.path,
+                pinnedFingerprint: creds.fingerprint,
               );
 
       final settings = await ref.read(settingsProvider.future);
@@ -172,6 +175,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
             username: creds.username,
             password: creds.password,
             remotePath: creds.path,
+            pinnedFingerprint: creds.fingerprint,
           );
     } catch (e) {
       debugPrint('NextcloudSync: findRemoteBackup failed: $e');
@@ -199,6 +203,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
             username: creds.username,
             password: creds.password,
             remotePath: info.remotePath,
+            pinnedFingerprint: creds.fingerprint,
           );
 
       await ref.read(backupServiceProvider).importFromBytes(bytes);
@@ -244,6 +249,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
             password: creds.password,
             remotePath: remotePath,
             bytes: bytes,
+            pinnedFingerprint: creds.fingerprint,
           );
 
       final now = DateTime.now();
@@ -259,7 +265,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
   }
 
   Future<void> _pruneOldBackups({
-    required ({String url, String username, String password, String path}) creds,
+    required ({String url, String username, String password, String path, String? fingerprint}) creds,
   }) async {
     final service = ref.read(nextcloudServiceProvider);
 
@@ -270,6 +276,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
         username: creds.username,
         password: creds.password,
         remotePath: creds.path,
+        pinnedFingerprint: creds.fingerprint,
       );
     } catch (_) {
       return; // Best effort — don't fail sync if listing fails
@@ -298,6 +305,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
           username: creds.username,
           password: creds.password,
           remotePath: backup.$2,
+          pinnedFingerprint: creds.fingerprint,
         );
       } catch (_) {
         // Best effort — continue pruning remaining backups

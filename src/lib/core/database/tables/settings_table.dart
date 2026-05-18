@@ -30,6 +30,7 @@ class Settings extends Table {
       text().withDefault(const Constant('yahoo'))();
   TextColumn get nextcloudPassword => text().nullable()();
   TextColumn get finnhubApiKey => text().nullable()();
+  TextColumn get nextcloudCertFingerprint => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
