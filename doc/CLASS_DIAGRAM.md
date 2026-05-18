@@ -129,6 +129,8 @@ classDiagram
         +Decimal? forwardPE
         +Decimal? trailingEps
         +Decimal? yearChangePct
+        +Decimal? fiveYearAvgDividendYield
+        +Decimal? trailingAnnualDividendRate
         +copyWith() AnalystData
     }
 
@@ -165,6 +167,7 @@ classDiagram
         +int dividendAlertDays
         +DateTime? lastSyncAt
         +ChartRange sparklineRange
+        +MarketDataProvider marketDataProvider
         +copyWith() AppSettings
         +defaults AppSettings$
     }
@@ -174,6 +177,12 @@ classDiagram
         system
         light
         dark
+    }
+
+    class MarketDataProvider {
+        <<enumeration>>
+        yahoo
+        finnhub
     }
 
     %% Domain associations
@@ -187,6 +196,7 @@ classDiagram
     PriceQuote --> Stock : cached for
     AppSettings --> AppTheme
     AppSettings --> ChartRange : sparklineRange
+    AppSettings --> MarketDataProvider
 
     %% ─────────────────────────────────────────────────────────
     %% CALCULATORS
@@ -262,6 +272,8 @@ classDiagram
         +fetchPriceHistory(symbol, range) List~PricePoint~
         +fetchDividends(symbol) List~FetchedDividend~
         +fetchAnalystData(symbol) AnalystData?
+        +fetchAnalystDataFromFinnhub(symbol, apiKey) AnalystData?
+        +fetchAnalystDataFinnhubWithFallback(symbol, apiKey) AnalystData?
     }
 
     class CurrencyService {
@@ -365,7 +377,7 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 4
+        +schemaVersion = 5
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
@@ -507,7 +519,7 @@ stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStoc
                                          setManualPrice, clearManualPrice, cacheMarketPrice,
                                          loadManualPrices)
 
-settingsActionsProvider ─ SettingsActions (saveSettings, setManualRate,
+settingsActionsProvider ─ SettingsActions (saveSettings, saveFinnhubApiKey, setManualRate,
                                            deleteRate, cacheRates)
 
 backupServiceProvider  ── BackupService (exportToZip, exportToOds,
@@ -527,9 +539,20 @@ nextcloudSyncProvider (NotifierProvider)
 analystRefreshProvider(stockId)  (StateProvider.family&lt;int, String&gt;)
   └── incremented by the refresh button on StockDetailScreen
 
+analystCacheVersionProvider  (StateProvider<int>)
+  └── incremented when market data provider or Finnhub API key changes
+
+finnhubApiKeyProvider  (FutureProvider<String?>)
+  └── reads from flutter_secure_storage; invalidated by saveFinnhubApiKey()
+
 analystDataProvider(stockId)  (FutureProvider.family, keepAlive 10 min)
-  ├── analystRefreshProvider(stockId)  ← re-fetches on increment
-  └── marketDataServiceProvider → MarketDataService.fetchAnalystData()
+  ├── analystRefreshProvider(stockId)   ← re-fetches on increment
+  ├── analystCacheVersionProvider       ← busts cache on provider/key change
+  ├── settingsProvider                  ← reads marketDataProvider
+  └── marketDataServiceProvider
+        ├── Yahoo: MarketDataService.fetchAnalystData()
+        └── Finnhub: MarketDataService.fetchAnalystDataFinnhubWithFallback()
+                      (parallel Finnhub fetch + Yahoo fallback for null fields)
 
 estimatedAnnualDividendProvider  (Provider — synchronous, no extra API calls)
   ├── portfolioSummaryProvider   ← currentValue + sharesHeld per stock
@@ -572,5 +595,6 @@ ShellRoute (AdaptiveShell)
 └── /settings                      SettingsScreen
     ├── /settings/nextcloud        NextcloudSettingsScreen
     ├── /settings/currency         CurrencySettingsScreen
-    └── /settings/notifications    NotificationSettingsScreen
+    ├── /settings/notifications    NotificationSettingsScreen
+    └── /settings/market-data      MarketDataSettingsScreen
 ```

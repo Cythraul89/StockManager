@@ -9,7 +9,7 @@
 | Local database | Drift (SQLite) | Type-safe, reactive streams, first-class migration support |
 | Navigation | go_router | Declarative, shell routes for adaptive layout, deep-link ready |
 | HTTP client | Dio | Interceptors, retry logic, timeout handling |
-| Market data | Yahoo Finance (unofficial JSON) + Stooq CSV fallback | Yahoo primary; Stooq CSV (`f=sdc`) used when Yahoo returns no data |
+| Market data | Yahoo Finance (unofficial JSON) + Stooq CSV fallback + Finnhub (optional) | Yahoo primary for live prices; Stooq CSV fallback for quotes; Finnhub selectable for analyst data (requires free API key) |
 | Currency rates | Frankfurter (api.frankfurter.app) | Free, no API key, ECB data, cacheable, supports major ISO 4217 pairs |
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
 | Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
@@ -165,6 +165,7 @@ Notable provider files:
 | last_sync_at | DATETIME? | |
 | nextcloud_keep_exports | INT | remote backups to retain; default 5 |
 | sparkline_range | TEXT | `ChartRange.label` (e.g. `1M`); default `1M` |
+| market_data_provider | TEXT: yahoo \| finnhub | default yahoo |
 
 > Nextcloud password is stored separately in flutter_secure_storage, not in SQLite.
 
@@ -358,9 +359,13 @@ Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchD
 | Module | Fields extracted |
 |---|---|
 | `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency` |
-| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE` |
+| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE`, `fiveYearAvgDividendYield` (already in %, e.g. 3.5 = 3.5%), `trailingAnnualDividendRate` (annual dividend per share in trading currency) |
 | `defaultKeyStatistics` | `trailingEps`, `52WeekChange` (stored as `yearChangePct`, a decimal fraction e.g. `0.157` = +15.7%) |
 | `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
+
+`MarketDataService.fetchAnalystDataFromFinnhub(symbol, apiKey)` fires three parallel requests to Finnhub's v1 API: `/stock/price-target` (mean/low/high targets), `/stock/recommendation` (consensus counts for the most recent period), and `/stock/metric?metric=all` (52-week range, P/E, EPS, 5Y dividend yield, annual dividend per share). A weighted recommendation score `(strongBuy×2 + buy − sell − strongSell×2) / total` is mapped to the same `strong_buy / buy / hold / sell / strong_sell` keys used by Yahoo. Finnhub's `52WeekPriceReturnDaily` is in percent and is divided by 100 to match Yahoo's fraction convention for `yearChangePct`.
+
+`MarketDataService.fetchAnalystDataFinnhubWithFallback(symbol, apiKey)` runs both Finnhub and Yahoo requests in parallel and merges the results: Finnhub fields take precedence; any null fields (common for non-US stocks, e.g. `fiveYearAvgDividendYield`, `trailingAnnualDividendRate`) are filled from the Yahoo result. If Finnhub returns no data, the full Yahoo result is used. This method is called by `analystDataProvider` when Finnhub is the active provider.
 
 The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed in two places:
 - **Stock Detail** — full "Analysis" card with target prices, range bars, consensus breakdown, and valuation metrics.
@@ -370,7 +375,7 @@ Data is not persisted locally.
 
 #### Caching and manual refresh
 
-`analystDataProvider` uses `ref.keepAlive()` with a 10-minute TTL, so navigating away and back does not trigger a full Yahoo round-trip on every visit. A `StateProvider.family<int, String>` counter (`analystRefreshProvider`) is used to force a re-fetch: `analystDataProvider` watches it, and the refresh button on the Analysis card increments it. `ref.invalidate()` is intentionally **not** used here because it interferes with the `keepAlive` link.
+`analystDataProvider` uses `ref.keepAlive()` with a 10-minute TTL, so navigating away and back does not trigger a full Yahoo round-trip on every visit. A `StateProvider.family<int, String>` counter (`analystRefreshProvider`) is used to force a re-fetch: `analystDataProvider` watches it, and the refresh button on the Analysis card increments it. `ref.invalidate()` is intentionally **not** used here because it interferes with the `keepAlive` link. It also watches `analystCacheVersionProvider` (a `StateProvider<int>`) which is incremented when the market data provider is switched or the Finnhub API key is changed, busting all cached analyst data so the next open re-fetches from the new source.
 
 #### Yahoo Finance session (GDPR)
 
@@ -399,6 +404,7 @@ Yahoo Finance returns analyst price targets in the stock's **trading currency** 
 | 52-Week Range | Same gradient bar widget, same current-price marker |
 | Consensus | Stacked colour bar (proportional to analyst counts) with a text legend |
 | Valuation | Trailing P/E · Forward P/E · EPS (TTM), converted to stock currency |
+| Dividends | Annual rate (`trailingAnnualDividendRate`, hidden when zero/null) · 5Y avg yield (`fiveYearAvgDividendYield`, %) · Est. annual income (shares × current price × 5Y yield ÷ 100, in stock currency, shown when shares > 0 and yield is available) |
 
 ### 5.10 Price History Chart and Change Badges
 
@@ -515,6 +521,7 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 | `nextcloud_password` | Nextcloud password / app token |
 | `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
+| `finnhub_api_key` | Finnhub API key for analyst data fetching |
 
 ### 5.15 Portfolio Allocation Chart
 
@@ -592,6 +599,7 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /brokers/:id/edit        → Edit broker
 /settings                → Settings
 /settings/backup         → Local backup (export / import ZIP)
+/settings/market-data    → MarketDataSettingsScreen
 /settings/nextcloud      → Nextcloud configuration
 /settings/currency       → Currency preferences & overrides
 /settings/notifications  → Notification preferences

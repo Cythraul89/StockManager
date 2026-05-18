@@ -478,6 +478,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 │  Preferred currency  EUR ▾  │
 │  Theme          System ▾    │
 │  Sparkline period     1M ▾  │  ← opens SimpleDialog with all 7 ranges
+│  Market Data       Yahoo ▶  │  ← or "Finnhub ▶"
 │                             │
 │  Nextcloud Sync         [▶] │
 │  Last sync: 12 May 14:30    │
@@ -577,6 +578,49 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
+## 15. Market Data Settings
+
+**Purpose:** Select the market data provider for analyst consensus data and configure the Finnhub API key.
+
+```
+┌─────────────────────────────┐
+│  ← Market Data              │
+│                             │
+│  Data Provider              │
+│  ┌─────────────────────────┐│
+│  │ (●) Yahoo Finance       ││  ← default, no setup required
+│  │     Default, no setup   ││
+│  ├─────────────────────────┤│
+│  │ ( ) Finnhub             ││  ← requires free account
+│  │     Free account reqd.  ││
+│  └─────────────────────────┘│
+│                             │
+│  ── shown when Finnhub ──   │
+│  Finnhub API Key            │
+│  [ ••••••••••••        👁 ] │  ← obscured, show/hide toggle
+│                             │
+│  [Get free API key at       │
+│   finnhub.io]               │  ← TextButton, shows snackbar with URL
+│                             │
+│  [ Save API key             ]│
+│                             │
+│  Note: Finnhub works best   │
+│  for US-listed stocks.      │
+│  International: use         │
+│  EXCHANGE:SYMBOL format     │
+│  (e.g. XETRA:ALV).         │
+└─────────────────────────────┘
+```
+
+**Behaviour:**
+- Selecting a provider saves immediately (no Save button needed for the radio selection).
+- The API key section is shown only when Finnhub is selected.
+- The API key is stored in `flutter_secure_storage`; it is never written to the SQLite database.
+- Switching providers or saving a new API key invalidates all cached analyst data so the next Analysis tab open re-fetches from the new source.
+- The "API key required" prompt in the Analysis card (when key is not set) deep-links directly to this screen.
+
+---
+
 ## Screen Flow Summary
 
 ```
@@ -600,6 +644,7 @@ Brokers
   └─→ Edit broker
 
 Settings
+  ├─→ Market Data settings
   ├─→ Nextcloud configuration
   ├─→ Notification preferences
   └─→ Currency overrides

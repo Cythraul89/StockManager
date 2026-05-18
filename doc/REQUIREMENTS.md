@@ -189,13 +189,15 @@ Features confirmed for a future version. Not in scope for the initial release.
 - A **refresh button** on the analysis card allows the user to force a re-fetch at any time.
 - Data is cached for 10 minutes per stock (no network round-trip on quick navigation away and back).
 
-### 10.2 Configurable Market Data Provider
+### 10.2 Configurable Market Data Provider ✓ *(delivered)*
 - The user can choose the **market data provider** for analyst consensus data in Settings → Market Data.
 - Supported providers:
   - **Yahoo Finance** (default) — no account or API key required; unofficial API, subject to rate-limiting.
   - **Finnhub** (optional) — requires a free Finnhub API key entered by the user; provides more reliable and structured analyst data (price targets, consensus ratings, EPS estimates).
 - The API key for Finnhub is stored in `flutter_secure_storage` alongside the Nextcloud credentials.
 - Switching providers invalidates any cached analyst data so the next screen open re-fetches from the new source.
+- When Finnhub is the active provider, any fields it does not supply (e.g. `fiveYearAvgDividendYield`, `trailingAnnualDividendRate` for non-US stocks) are supplemented from a parallel Yahoo Finance request, so dividend data is always shown when available.
+- When Finnhub is selected but no API key is configured, the Analysis card shows an 'API key required' prompt with a tap-through link to Settings → Market Data.
 - A link to the Finnhub free registration page is shown next to the API key field.
 
 ### 10.3 Trailing Stop-Loss Notification
