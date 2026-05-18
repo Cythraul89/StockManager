@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/analyst_data.dart';
 import '../../core/models/app_settings.dart';
+import '../../core/models/news_article.dart';
 import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
@@ -150,6 +152,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final analystAsync = ref.watch(analystDataProvider(widget.id));
+    final newsAsync = ref.watch(newsProvider(widget.id));
     final settingsValue = ref.watch(settingsStreamProvider).valueOrNull;
     final finnhubKeyValue = ref.watch(finnhubApiKeyProvider).valueOrNull;
     final isFinnhubMisconfigured =
@@ -372,6 +375,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     : _buildAnalystUnavailableCard(context,
                         isFinnhubMisconfigured: isFinnhubMisconfigured),
               ),
+              const SizedBox(height: 16),
+
+              // News card
+              _buildNewsCard(context, newsAsync.value),
               const SizedBox(height: 16),
 
               _sectionHeader(
@@ -645,6 +652,69 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               .update((n) => n + 1),
         ),
       ],
+    );
+  }
+
+  Widget _buildNewsCard(BuildContext context, List<NewsArticle>? articles) {
+    if (articles == null || articles.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final shown = articles.take(5).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('News', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            for (var i = 0; i < shown.length; i++) ...[
+              if (i > 0) const Divider(height: 1),
+              _buildNewsItem(context, shown[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsItem(BuildContext context, NewsArticle article) {
+    final theme = Theme.of(context);
+    final diff = DateTime.now().difference(article.publishedAt);
+    final timeAgo = diff.inDays >= 1
+        ? '${diff.inDays}d ago'
+        : diff.inHours >= 1
+            ? '${diff.inHours}h ago'
+            : '${diff.inMinutes}m ago';
+
+    return InkWell(
+      onTap: () async {
+        final uri = Uri.tryParse(article.url);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              article.headline,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              '${article.source} · $timeAgo',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

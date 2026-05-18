@@ -11,9 +11,10 @@ import '../../core/models/analyst_data.dart';
 import '../../core/models/app_settings.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/chart_range.dart';
-import '../../core/models/price_point.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/fetched_dividend.dart';
+import '../../core/models/news_article.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
@@ -157,6 +158,27 @@ final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
   return ref
       .read(marketDataServiceProvider)
       .fetchPriceHistory(stock.symbol, range);
+});
+
+// ── News (fetched on open, cached 30 min, keyed by stockId) ─────────────────
+
+final newsProvider =
+    FutureProvider.family<List<NewsArticle>, String>((ref, stockId) async {
+  final stock = await ref.watch(stockByIdProvider(stockId).future);
+  if (stock == null) return [];
+
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 30), link.close);
+
+  final settings = await ref.watch(settingsProvider.future);
+  String? finnhubKey;
+  if (settings.marketDataProvider == MarketDataProvider.finnhub) {
+    finnhubKey = await ref.watch(finnhubApiKeyProvider.future);
+  }
+
+  return ref
+      .read(marketDataServiceProvider)
+      .fetchNews(stock.symbol, finnhubApiKey: finnhubKey);
 });
 
 // ── Price quote cache (in-memory, refreshed on demand) ───────────────────────────

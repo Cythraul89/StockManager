@@ -4,9 +4,12 @@ import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:intl/intl.dart';
+
 import '../models/analyst_data.dart';
 import '../models/chart_range.dart';
 import '../models/fetched_dividend.dart';
+import '../models/news_article.dart';
 import '../models/price_point.dart';
 import '../models/price_quote.dart';
 import '../utils/decimal_math.dart';
@@ -571,6 +574,81 @@ class MarketDataService {
           'MarketDataService: price history fetch failed for $symbol: $e');
       return [];
     }
+  }
+
+  /// Returns up to 10 recent news articles for [symbol].
+  /// Uses Finnhub company-news when [finnhubApiKey] is provided; falls back to
+  /// Yahoo Finance search otherwise.
+  Future<List<NewsArticle>> fetchNews(String symbol,
+      {String? finnhubApiKey}) async {
+    if (finnhubApiKey != null && finnhubApiKey.isNotEmpty) {
+      try {
+        return await _fetchNewsFromFinnhub(symbol, finnhubApiKey);
+      } catch (e) {
+        debugPrint('MarketDataService: Finnhub news failed for $symbol: $e');
+      }
+    }
+    try {
+      return await _fetchNewsFromYahoo(symbol);
+    } catch (e) {
+      debugPrint('MarketDataService: Yahoo news failed for $symbol: $e');
+      return [];
+    }
+  }
+
+  Future<List<NewsArticle>> _fetchNewsFromFinnhub(
+      String symbol, String apiKey) async {
+    const base = 'https://finnhub.io/api/v1';
+    final fmt = DateFormat('yyyy-MM-dd');
+    final now = DateTime.now();
+    final response = await _dio.get<dynamic>(
+      '$base/company-news',
+      queryParameters: {
+        'symbol': symbol,
+        'from': fmt.format(now.subtract(const Duration(days: 7))),
+        'to': fmt.format(now),
+        'token': apiKey,
+      },
+    );
+    final list = (response.data as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>() ??
+        [];
+    return list.take(10).map((item) {
+      final ts = item['datetime'] as int? ?? 0;
+      return NewsArticle(
+        headline: item['headline'] as String? ?? '',
+        url: item['url'] as String? ?? '',
+        source: item['source'] as String? ?? '',
+        publishedAt: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
+        summary: item['summary'] as String?,
+      );
+    }).where((a) => a.headline.isNotEmpty && a.url.isNotEmpty).toList();
+  }
+
+  Future<List<NewsArticle>> _fetchNewsFromYahoo(String symbol) async {
+    await _ensureSession();
+    final response =
+        await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
+              'https://query2.finance.yahoo.com/v1/finance/search',
+              queryParameters: {
+                'q': symbol,
+                'newsCount': '10',
+                'enableNavLinks': 'false',
+                'enableCb': 'false',
+              },
+            ));
+    final news = (response.data?['news'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>() ??
+        [];
+    return news.map((item) {
+      final ts = item['providerPublishTime'] as int? ?? 0;
+      return NewsArticle(
+        headline: item['title'] as String? ?? '',
+        url: item['link'] as String? ?? '',
+        source: item['publisher'] as String? ?? '',
+        publishedAt: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
+      );
+    }).where((a) => a.headline.isNotEmpty && a.url.isNotEmpty).toList();
   }
 
   /// Fetches dividend history (paid, up to 5 years) and the next expected
