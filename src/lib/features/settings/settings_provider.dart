@@ -106,6 +106,9 @@ class SettingsActions {
     );
   }
 
+  Future<void> saveCertFingerprint(String? fingerprint) =>
+      _db.settingsDao.updateCertFingerprint(fingerprint);
+
   Future<void> saveFinnhubApiKey(String? key) async {
     final trimmed = key?.trim();
     await _db.settingsDao
