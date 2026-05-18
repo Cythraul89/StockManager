@@ -47,6 +47,10 @@ class AppDatabase extends _$AppDatabase {
 
   AppDatabase.forTesting(super.executor);
 
+  // Opens the production DB file directly — for use in WorkManager isolates
+  // where LazyDatabase / createInBackground would spawn a redundant isolate.
+  AppDatabase.background(File file) : super(NativeDatabase(file));
+
   @override
   int get schemaVersion => 9;
 

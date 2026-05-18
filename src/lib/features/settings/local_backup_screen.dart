@@ -1,3 +1,4 @@
+// dart:io is safe here — Flutter Web is not a supported target platform.
 import 'dart:io';
 import 'dart:typed_data';
 

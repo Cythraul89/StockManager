@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:path/path.dart' as p;
@@ -26,7 +25,7 @@ class BackgroundCheckService {
     try {
       final dbFolder = await getApplicationDocumentsDirectory();
       final dbFile = File(p.join(dbFolder.path, 'stock_manager.sqlite'));
-      db = AppDatabase.forTesting(NativeDatabase(dbFile));
+      db = AppDatabase.background(dbFile);
 
       final settings = await db.settingsDao.getSettings();
       if (settings == null || !settings.notificationsEnabled) return true;
@@ -48,6 +47,10 @@ class BackgroundCheckService {
       ));
 
       final stocks = await db.stocksDao.getAll();
+      // Rating and dividend checks run at most once per calendar day to avoid
+      // hammering the analyst API (100+ requests per 15-min cycle) and to
+      // prevent the same dividend notification firing on every cycle.
+      final firstRunToday = await _isFirstRunToday(dbFolder.path);
 
       for (final stock in stocks) {
         try {
@@ -56,19 +59,23 @@ class BackgroundCheckService {
           debugPrint('BackgroundCheck: price failed for ${stock.symbol}: $e');
         }
 
-        try {
-          await _checkRating(
-            db, plugin, marketData, stock, marketDataProvider, finnhubApiKey,
-          );
-        } catch (e) {
-          debugPrint('BackgroundCheck: rating failed for ${stock.symbol}: $e');
+        if (firstRunToday) {
+          try {
+            await _checkRating(
+              db, plugin, marketData, stock, marketDataProvider, finnhubApiKey,
+            );
+          } catch (e) {
+            debugPrint('BackgroundCheck: rating failed for ${stock.symbol}: $e');
+          }
         }
       }
 
-      try {
-        await _checkDividends(db, plugin, stocks, dividendAlertDays);
-      } catch (e) {
-        debugPrint('BackgroundCheck: dividend check failed: $e');
+      if (firstRunToday) {
+        try {
+          await _checkDividends(db, plugin, stocks, dividendAlertDays);
+        } catch (e) {
+          debugPrint('BackgroundCheck: dividend check failed: $e');
+        }
       }
 
       return true;
@@ -77,6 +84,21 @@ class BackgroundCheckService {
       return false;
     } finally {
       await db?.close();
+    }
+  }
+
+  static Future<bool> _isFirstRunToday(String dirPath) async {
+    try {
+      final file = File(p.join(dirPath, 'background_check_last_run.txt'));
+      final today = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      if (await file.exists()) {
+        final last = await file.readAsString();
+        if (last.trim() == today) return false;
+      }
+      await file.writeAsString(today);
+      return true;
+    } catch (_) {
+      return true;
     }
   }
 
