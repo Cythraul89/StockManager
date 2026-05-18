@@ -64,7 +64,7 @@ class StockListTile extends ConsumerWidget {
             ),
           ),
           if (sparkPoints != null && sparkPoints.length >= 2) ...[
-            _buildSparkline(context, sparkPoints),
+            _buildSparkline(context, sparkPoints, sparklineRange),
             const SizedBox(width: 8),
           ],
           Column(
@@ -157,7 +157,8 @@ class StockListTile extends ConsumerWidget {
     return '$shares$converted ($raw)';
   }
 
-  Widget _buildSparkline(BuildContext context, List<PricePoint> points) {
+  Widget _buildSparkline(
+      BuildContext context, List<PricePoint> points, ChartRange range) {
     final isUp = points.last.price >= points.first.price;
     final color =
         isUp ? Colors.green.shade600 : Theme.of(context).colorScheme.error;
@@ -170,6 +171,7 @@ class StockListTile extends ConsumerWidget {
     final pad = (maxY - minY) > 0 ? (maxY - minY) * 0.1 : maxY * 0.05;
 
     return SizedBox(
+      key: ValueKey(range),
       width: 72,
       height: 36,
       child: LineChart(
