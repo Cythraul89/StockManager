@@ -4,9 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:workmanager/workmanager.dart';
 
 import 'app.dart';
 import 'core/database/app_database.dart';
+import 'core/services/background_check_service.dart';
 import 'core/services/currency_service.dart';
 import 'core/services/isin_lookup_service.dart';
 import 'core/services/log_service.dart';
@@ -14,6 +16,17 @@ import 'core/services/market_data_service.dart';
 import 'core/services/notification_service.dart';
 import 'features/settings/settings_provider.dart';
 import 'features/stocks/stocks_provider.dart';
+
+// Top-level entry point for WorkManager background tasks (Android only).
+// Must be annotated so the Dart AOT compiler does not tree-shake it.
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    DartPluginRegistrant.ensureInitialized();
+    return BackgroundCheckService.run();
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,10 +58,17 @@ void main() async {
     );
   });
 
-  // Firebase only needed on Android for FCM push notifications.
-  // Requires google-services.json in android/app/ — see README.
+  // Register WorkManager background task for price/rating/dividend checks.
+  // ExistingWorkPolicy.keep avoids re-registering on every app launch.
   if (Platform.isAndroid) {
-    // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    await Workmanager().registerPeriodicTask(
+      'stockBackgroundCheck',
+      'checkPricesAndAlerts',
+      frequency: const Duration(minutes: 15),
+      constraints: const Constraints(networkType: NetworkType.connected),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+    );
   }
 
   final database = AppDatabase();

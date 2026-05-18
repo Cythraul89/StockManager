@@ -91,5 +91,20 @@ class NotificationService {
     await _plugin.show(id, title, body, details);
   }
 
+  Future<void> showRatingChangeAlert({
+    required String stockName,
+    required String symbol,
+    required String oldRating,
+    required String newRating,
+  }) async {
+    await _show(
+      id: ('rating_$symbol').hashCode & 0x7fffffff,
+      title: 'Analyst rating changed: $stockName',
+      body: '$symbol: $oldRating → $newRating',
+      channelId: 'rating_alerts',
+      channelName: 'Analyst rating alerts',
+    );
+  }
+
   Future<void> cancelAll() => _plugin.cancelAll();
 }

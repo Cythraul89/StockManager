@@ -75,6 +75,10 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
   Future<int> deletePrice(String stockId) =>
       (delete(priceCache)..where((t) => t.stockId.equals(stockId))).go();
 
+  Future<void> updateLastKnownConsensus(String stockId, String? consensus) =>
+      (update(stocks)..where((t) => t.id.equals(stockId)))
+          .write(StocksCompanion(lastKnownConsensus: Value(consensus)));
+
   Future<int> count() async {
     final result = await customSelect(
       'SELECT COUNT(*) AS c FROM stocks',

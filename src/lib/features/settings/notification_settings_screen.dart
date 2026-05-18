@@ -46,17 +46,19 @@ class NotificationSettingsScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            // FCM push section — Android only
             if (Platform.isAndroid)
               const SettingsSection(
-                title: 'Push notifications (Android)',
+                title: 'Background checks (Android)',
                 children: [
                   ListTile(
-                    title: Text('Background price alerts'),
+                    title: Text('Automatic background alerts'),
                     subtitle: Text(
-                        'Uses WorkManager to check prices in the background '
-                        '(approximately every 15 minutes).'),
+                      'Runs approximately every 15 minutes when connected. '
+                      'Checks price movements, analyst rating changes, and '
+                      'upcoming dividends — even when the app is closed.',
+                    ),
                     isThreeLine: true,
+                    leading: Icon(Icons.update),
                   ),
                 ],
               ),
