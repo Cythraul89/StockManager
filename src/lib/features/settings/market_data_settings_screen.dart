@@ -71,35 +71,30 @@ class _MarketDataSettingsScreenState
               const SizedBox(height: 8),
               Card(
                 clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    RadioListTile<MarketDataProvider>(
-                      title: const Text('Yahoo Finance'),
-                      subtitle: const Text('Default, no setup required'),
-                      value: MarketDataProvider.yahoo,
-                      groupValue: settings.marketDataProvider,
-                      onChanged: (v) async {
-                        if (v == null) return;
-                        await ref
-                            .read(settingsActionsProvider)
-                            .saveSettings(
-                                settings.copyWith(marketDataProvider: v));
-                      },
-                    ),
-                    RadioListTile<MarketDataProvider>(
-                      title: const Text('Finnhub'),
-                      subtitle: const Text('Free account required, more reliable'),
-                      value: MarketDataProvider.finnhub,
-                      groupValue: settings.marketDataProvider,
-                      onChanged: (v) async {
-                        if (v == null) return;
-                        await ref
-                            .read(settingsActionsProvider)
-                            .saveSettings(
-                                settings.copyWith(marketDataProvider: v));
-                      },
-                    ),
-                  ],
+                child: RadioGroup<MarketDataProvider>(
+                  groupValue: settings.marketDataProvider,
+                  onChanged: (v) async {
+                    if (v == null) return;
+                    await ref
+                        .read(settingsActionsProvider)
+                        .saveSettings(
+                            settings.copyWith(marketDataProvider: v));
+                  },
+                  child: Column(
+                    children: [
+                      RadioListTile<MarketDataProvider>(
+                        title: const Text('Yahoo Finance'),
+                        subtitle: const Text('Default, no setup required'),
+                        value: MarketDataProvider.yahoo,
+                      ),
+                      RadioListTile<MarketDataProvider>(
+                        title: const Text('Finnhub'),
+                        subtitle:
+                            const Text('Free account required, more reliable'),
+                        value: MarketDataProvider.finnhub,
+                      ),
+                    ],
+                  ),
                 ),
               ),
               if (settings.marketDataProvider == MarketDataProvider.finnhub) ...[
