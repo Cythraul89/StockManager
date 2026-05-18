@@ -251,7 +251,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       final utcNow = DateTime.now().toUtc();
       // Use full UTC timestamp so cross-device _remoteIsNewer comparisons work
       // within the same day. Colons replaced with hyphens for filename safety.
-      final dateTimeStr = utcNow.toIso8601String().substring(0, 19).replaceAll(':', '-') + 'Z';
+      final dateTimeStr = '${utcNow.toIso8601String().substring(0, 19).replaceAll(':', '-')}Z';
       final dir = creds.path;
       final remotePath =
           '${dir.endsWith('/') ? dir : '$dir/'}stockmanager_backup_$dateTimeStr.zip';
