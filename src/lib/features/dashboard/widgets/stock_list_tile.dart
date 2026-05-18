@@ -171,7 +171,7 @@ class StockListTile extends ConsumerWidget {
     final pad = (maxY - minY) > 0 ? (maxY - minY) * 0.1 : maxY * 0.05;
 
     return SizedBox(
-      key: ValueKey(range),
+      key: ValueKey((item.stock.id, range)),
       width: 72,
       height: 36,
       child: LineChart(
