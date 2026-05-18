@@ -23,7 +23,6 @@ import 'features/stocks/stocks_provider.dart';
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
-    DartPluginRegistrant.ensureInitialized();
     return BackgroundCheckService.run();
   });
 }
@@ -66,7 +65,7 @@ void main() async {
       'stockBackgroundCheck',
       'checkPricesAndAlerts',
       frequency: const Duration(minutes: 15),
-      constraints: const Constraints(networkType: NetworkType.connected),
+      constraints: Constraints(networkType: NetworkType.connected),
       existingWorkPolicy: ExistingWorkPolicy.keep,
     );
   }
