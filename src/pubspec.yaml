@@ -30,8 +30,6 @@ dependencies:
 
   # Notifications
   flutter_local_notifications: ^17.1.2
-  firebase_core: ^3.1.1
-  firebase_messaging: ^15.0.1
 
   # Background tasks (Android only — WorkManager)
   workmanager: ^0.6.0
