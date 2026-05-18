@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/analyst_data.dart';
+import '../../core/models/app_settings.dart';
 import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
@@ -149,6 +150,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final analystAsync = ref.watch(analystDataProvider(widget.id));
+    final settingsValue = ref.watch(settingsStreamProvider).valueOrNull;
+    final finnhubKeyValue = ref.watch(finnhubApiKeyProvider).valueOrNull;
+    final isFinnhubMisconfigured =
+        settingsValue?.marketDataProvider == MarketDataProvider.finnhub &&
+            (finnhubKeyValue == null || finnhubKeyValue.isEmpty);
     final dayHistoryAsync =
         ref.watch(priceHistoryProvider((widget.id, ChartRange.oneDay)));
     final weekHistoryAsync =
@@ -363,7 +369,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     ? _buildAnalystCard(
                         context, data, stock.currency, quoteCurrency,
                         currentPrice, rates, position.sharesHeld)
-                    : _buildAnalystUnavailableCard(context),
+                    : _buildAnalystUnavailableCard(context,
+                        isFinnhubMisconfigured: isFinnhubMisconfigured),
               ),
               const SizedBox(height: 16),
 
@@ -641,11 +648,24 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     );
   }
 
-  Widget _buildAnalystUnavailableCard(BuildContext context) {
+  Widget _buildAnalystUnavailableCard(BuildContext context,
+      {bool isFinnhubMisconfigured = false}) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: _analystCardHeader(context, subtitle: 'No data available'),
+        child: isFinnhubMisconfigured
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _analystCardHeader(context, subtitle: 'API key required'),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => context.push('/settings/market-data'),
+                    child: const Text('Configure in Settings → Market Data'),
+                  ),
+                ],
+              )
+            : _analystCardHeader(context, subtitle: 'No data available'),
       ),
     );
   }

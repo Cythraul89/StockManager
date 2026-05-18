@@ -414,7 +414,8 @@ class MarketDataService {
 
       // ── Recommendation trend (most-recent period first) ─────────────────
       final recList = (responses[1].data as List<dynamic>?)
-          ?.cast<Map<String, dynamic>>();
+          ?.whereType<Map<String, dynamic>>()
+          .toList();
       final rec = recList?.firstOrNull;
       final sb = rec?['strongBuy']  as int? ?? 0;
       final b  = rec?['buy']        as int? ?? 0;
