@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:intl/intl.dart';
+import 'package:xml/xml.dart';
 
 import '../models/analyst_data.dart';
 import '../models/chart_range.dart';
@@ -626,29 +627,48 @@ class MarketDataService {
   }
 
   Future<List<NewsArticle>> _fetchNewsFromYahoo(String symbol) async {
-    await _ensureSession();
-    final response =
-        await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
-              'https://query2.finance.yahoo.com/v1/finance/search',
-              queryParameters: {
-                'q': symbol,
-                'newsCount': '10',
-                'enableNavLinks': 'false',
-                'enableCb': 'false',
-              },
-            ));
-    final news = (response.data?['news'] as List<dynamic>?)
-            ?.whereType<Map<String, dynamic>>() ??
-        [];
-    return news.map((item) {
-      final ts = item['providerPublishTime'] as int? ?? 0;
+    // Use the Yahoo Finance RSS feed — it filters strictly by symbol, unlike
+    // the search endpoint which returns general news for any matching query.
+    final response = await _dio.get<String>(
+      'https://feeds.finance.yahoo.com/rss/2.0/headline',
+      queryParameters: {'s': symbol, 'region': 'US', 'lang': 'en-US'},
+    );
+    if (response.data == null || response.data!.isEmpty) return [];
+
+    final document = XmlDocument.parse(response.data!);
+    final items = document.findAllElements('item');
+
+    return items.take(10).map((item) {
+      final title = item.findElements('title').firstOrNull?.innerText ?? '';
+      // In RSS 2.0 <link> is a text sibling, not a child element — use the
+      // next sibling text node trick, but innerText on the element works for
+      // feeds that wrap the URL in the element content.
+      final link = item.findElements('link').firstOrNull?.innerText ??
+          item.findElements('guid').firstOrNull?.innerText ??
+          '';
+      final pubDateStr =
+          item.findElements('pubDate').firstOrNull?.innerText ?? '';
+      final source = item.findElements('source').firstOrNull?.innerText ?? '';
+
       return NewsArticle(
-        headline: item['title'] as String? ?? '',
-        url: item['link'] as String? ?? '',
-        source: item['publisher'] as String? ?? '',
-        publishedAt: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
+        headline: title,
+        url: link,
+        source: source,
+        publishedAt: _parseRssDate(pubDateStr),
       );
     }).where((a) => a.headline.isNotEmpty && a.url.isNotEmpty).toList();
+  }
+
+  // RFC 822 date format used in RSS feeds: "Mon, 19 May 2026 14:30:00 +0000"
+  static final _rssFmt =
+      DateFormat('EEE, dd MMM yyyy HH:mm:ss Z', 'en_US');
+
+  static DateTime _parseRssDate(String s) {
+    try {
+      return _rssFmt.parse(s.trim(), true).toLocal();
+    } catch (_) {
+      return DateTime.now();
+    }
   }
 
   /// Fetches dividend history (paid, up to 5 years) and the next expected
