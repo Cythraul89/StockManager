@@ -283,7 +283,8 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                 const SizedBox(height: 8),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<AssetType>(
-                  value: _assetType,
+                  key: ValueKey<AssetType>(_assetType),
+                  initialValue: _assetType,
                   decoration: const InputDecoration(
                     labelText: 'Asset type',
                     border: OutlineInputBorder(),

@@ -381,7 +381,8 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<AssetType>(
-              value: _assetType,
+              key: ValueKey<AssetType>(_assetType),
+              initialValue: _assetType,
               decoration: const InputDecoration(
                 labelText: 'Asset type',
                 border: OutlineInputBorder(),
