@@ -112,6 +112,7 @@ class BackupService {
     if (zipBytes == null) throw const BackupException('Failed to create ZIP archive');
 
     final tempDir = await getTemporaryDirectory();
+    await tempDir.create(recursive: true);
     final dateStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
     final file = File(p.join(tempDir.path, 'stockmanager_backup_$dateStr.zip'));
     await file.writeAsBytes(zipBytes);
@@ -225,6 +226,7 @@ class BackupService {
     if (zipBytes == null) throw const BackupException('Failed to create ODS file');
 
     final tempDir = await getTemporaryDirectory();
+    await tempDir.create(recursive: true);
     final dateStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
     final file = File(p.join(tempDir.path, 'stockmanager_backup_$dateStr.ods'));
     await file.writeAsBytes(zipBytes);
