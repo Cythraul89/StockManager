@@ -260,7 +260,12 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
       // Prune old backups according to the keep-exports setting.
       await _pruneOldBackups(creds: creds);
     } catch (e) {
-      state = state.copyWith(status: SyncStatus.error, error: e.toString());
+      final msg = e.toString();
+      final friendly = msg.contains('CERTIFICATE_VERIFY_FAILED') ||
+              msg.contains('HandshakeException')
+          ? 'Certificate not trusted. Open Nextcloud Sync settings and press "Test connection" to re-accept the certificate.'
+          : msg;
+      state = state.copyWith(status: SyncStatus.error, error: friendly);
     }
   }
 
