@@ -206,6 +206,20 @@ jobs:
       - name: Build macOS
         run: flutter build macos --release
 
+      - name: Re-sign macOS app (ad-hoc, no sandbox)
+        working-directory: src/build/macos/Build/Products/Release
+        run: |
+          cat > /tmp/nosandbox.entitlements << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict/>
+          </plist>
+          EOF
+          codesign --deep --force --sign - \
+            --entitlements /tmp/nosandbox.entitlements \
+            stock_manager.app
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
