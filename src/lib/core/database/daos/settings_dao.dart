@@ -30,6 +30,10 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
       (update(settings)..where((t) => t.id.equals(_settingsId)))
           .write(SettingsCompanion(lastSyncAt: Value(time)));
 
+  Future<void> updateFinnhubApiKey(String? key) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(finnhubApiKey: Value(key)));
+
   // Exchange rates
   Stream<List<ExchangeRateCacheRow>> watchExchangeRates() =>
       (select(exchangeRateCache)

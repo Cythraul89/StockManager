@@ -92,16 +92,12 @@ class _NextcloudSettingsScreenState
     setState(() => _isSaving = true);
 
     try {
-      // 1. Persist credentials.
-      await ref
-          .read(secureStorageProvider)
-          .write(key: nextcloudPasswordKey, value: _passwordCtrl.text);
-
       final settings = await ref.read(settingsProvider.future);
       await ref.read(settingsActionsProvider).saveSettings(
             settings.copyWith(
               nextcloudUrl: _urlCtrl.text.trim(),
               nextcloudUsername: _usernameCtrl.text.trim(),
+              nextcloudPassword: _passwordCtrl.text,
               nextcloudPath: _pathCtrl.text.trim(),
             ),
           );
@@ -257,11 +253,9 @@ class _NextcloudSettingsScreenState
             _connectionVerified = settings.nextcloudUrl?.isNotEmpty == true &&
                 settings.nextcloudUsername?.isNotEmpty == true &&
                 settings.lastSyncAt != null;
-            ref.read(secureStorageProvider).read(key: nextcloudPasswordKey).then((pw) {
-              if (mounted && pw != null) {
-                setState(() => _passwordCtrl.text = pw);
-              }
-            });
+            if (settings.nextcloudPassword != null) {
+              _passwordCtrl.text = settings.nextcloudPassword!;
+            }
           }
 
           return Form(

@@ -16,18 +16,13 @@ import '../stocks/stocks_provider.dart';
 // ── Core service providers ────────────────────────────────────────────────────────────────────────────────────────
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
-  return const FlutterSecureStorage(
-    // Data Protection Keychain requires a real Team ID (breaks ad-hoc builds).
-    // Legacy keychain works on non-sandboxed macOS without entitlements.
-    mOptions: MacOsOptions(useDataProtectionKeychain: false),
-  );
+  return const FlutterSecureStorage();
 });
 
-const _finnhubApiKeyStorageKey = 'finnhub_api_key';
-
-/// Reads the Finnhub API key from secure storage. Null = not configured.
+/// Reads the Finnhub API key from the settings table.
 final finnhubApiKeyProvider = FutureProvider<String?>((ref) async {
-  return ref.watch(secureStorageProvider).read(key: _finnhubApiKeyStorageKey);
+  final row = await ref.watch(databaseProvider).settingsDao.getSettings();
+  return row?.finnhubApiKey;
 });
 
 /// Increment to bust all cached analyst data (provider switch or key change).
@@ -95,6 +90,7 @@ class SettingsActions {
         preferredCurrency: Value(s.preferredCurrency),
         nextcloudUrl: Value(s.nextcloudUrl),
         nextcloudUsername: Value(s.nextcloudUsername),
+        nextcloudPassword: Value(s.nextcloudPassword?.isEmpty == true ? null : s.nextcloudPassword),
         nextcloudPath: Value(s.nextcloudPath),
         theme: Value(s.theme.name),
         notificationsEnabled: Value(s.notificationsEnabled),
@@ -104,17 +100,15 @@ class SettingsActions {
         nextcloudKeepExports: Value(s.nextcloudKeepExports),
         sparklineRange: Value(s.sparklineRange.label),
         marketDataProvider: Value(s.marketDataProvider == MarketDataProvider.finnhub ? 'finnhub' : 'yahoo'),
+        finnhubApiKey: Value(s.finnhubApiKey?.isEmpty == true ? null : s.finnhubApiKey),
       ),
     );
   }
 
   Future<void> saveFinnhubApiKey(String? key) async {
-    final storage = _ref.read(secureStorageProvider);
-    if (key == null || key.trim().isEmpty) {
-      await storage.delete(key: _finnhubApiKeyStorageKey);
-    } else {
-      await storage.write(key: _finnhubApiKeyStorageKey, value: key.trim());
-    }
+    final trimmed = key?.trim();
+    await _db.settingsDao
+        .updateFinnhubApiKey(trimmed == null || trimmed.isEmpty ? null : trimmed);
     _ref.read(analystCacheVersionProvider.notifier).update((v) => v + 1);
     _ref.invalidate(finnhubApiKeyProvider);
   }
@@ -158,6 +152,7 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       preferredCurrency: r.preferredCurrency,
       nextcloudUrl: r.nextcloudUrl,
       nextcloudUsername: r.nextcloudUsername,
+      nextcloudPassword: r.nextcloudPassword,
       nextcloudPath: r.nextcloudPath,
       theme: _themeFromString(r.theme),
       notificationsEnabled: r.notificationsEnabled,
@@ -167,6 +162,7 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       nextcloudKeepExports: r.nextcloudKeepExports,
       sparklineRange: _chartRangeFromLabel(r.sparklineRange),
       marketDataProvider: _marketDataProviderFromString(r.marketDataProvider),
+      finnhubApiKey: r.finnhubApiKey,
     );
 
 ExchangeRate _rateFromRow(ExchangeRateCacheRow r) => ExchangeRate(

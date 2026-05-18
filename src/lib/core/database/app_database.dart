@@ -48,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -69,6 +69,10 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 6) {
             await m.addColumn(stocks, stocks.assetType);
+          }
+          if (from < 7) {
+            await m.addColumn(settings, settings.nextcloudPassword);
+            await m.addColumn(settings, settings.finnhubApiKey);
           }
         },
         beforeOpen: (details) async {

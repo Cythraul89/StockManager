@@ -12,6 +12,7 @@ class AppSettings extends Equatable {
     required this.preferredCurrency,
     this.nextcloudUrl,
     this.nextcloudUsername,
+    this.nextcloudPassword,
     required this.nextcloudPath,
     required this.theme,
     required this.notificationsEnabled,
@@ -21,11 +22,13 @@ class AppSettings extends Equatable {
     required this.nextcloudKeepExports,
     required this.sparklineRange,
     required this.marketDataProvider,
+    this.finnhubApiKey,
   });
 
   final String preferredCurrency;
   final String? nextcloudUrl;
   final String? nextcloudUsername;
+  final String? nextcloudPassword;
   final String nextcloudPath;
   final AppTheme theme;
   final bool notificationsEnabled;
@@ -35,6 +38,7 @@ class AppSettings extends Equatable {
   final int nextcloudKeepExports;
   final ChartRange sparklineRange;
   final MarketDataProvider marketDataProvider;
+  final String? finnhubApiKey;
 
   static AppSettings get defaults => AppSettings(
         preferredCurrency: 'EUR',
@@ -52,6 +56,7 @@ class AppSettings extends Equatable {
     String? preferredCurrency,
     String? nextcloudUrl,
     String? nextcloudUsername,
+    String? nextcloudPassword,
     String? nextcloudPath,
     AppTheme? theme,
     bool? notificationsEnabled,
@@ -61,11 +66,13 @@ class AppSettings extends Equatable {
     int? nextcloudKeepExports,
     ChartRange? sparklineRange,
     MarketDataProvider? marketDataProvider,
+    String? finnhubApiKey,
   }) =>
       AppSettings(
         preferredCurrency: preferredCurrency ?? this.preferredCurrency,
         nextcloudUrl: nextcloudUrl ?? this.nextcloudUrl,
         nextcloudUsername: nextcloudUsername ?? this.nextcloudUsername,
+        nextcloudPassword: nextcloudPassword ?? this.nextcloudPassword,
         nextcloudPath: nextcloudPath ?? this.nextcloudPath,
         theme: theme ?? this.theme,
         notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
@@ -76,6 +83,7 @@ class AppSettings extends Equatable {
         nextcloudKeepExports: nextcloudKeepExports ?? this.nextcloudKeepExports,
         sparklineRange: sparklineRange ?? this.sparklineRange,
         marketDataProvider: marketDataProvider ?? this.marketDataProvider,
+        finnhubApiKey: finnhubApiKey ?? this.finnhubApiKey,
       );
 
   @override
@@ -83,6 +91,7 @@ class AppSettings extends Equatable {
         preferredCurrency,
         nextcloudUrl,
         nextcloudUsername,
+        nextcloudPassword,
         nextcloudPath,
         theme,
         notificationsEnabled,
@@ -92,5 +101,6 @@ class AppSettings extends Equatable {
         nextcloudKeepExports,
         sparklineRange,
         marketDataProvider,
+        finnhubApiKey,
       ];
 }

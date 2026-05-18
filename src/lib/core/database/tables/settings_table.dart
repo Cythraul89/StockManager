@@ -28,6 +28,8 @@ class Settings extends Table {
   // 'yahoo' | 'finnhub'
   TextColumn get marketDataProvider =>
       text().withDefault(const Constant('yahoo'))();
+  TextColumn get nextcloudPassword => text().nullable()();
+  TextColumn get finnhubApiKey => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

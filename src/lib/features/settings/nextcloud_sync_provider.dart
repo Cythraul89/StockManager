@@ -10,8 +10,6 @@ import 'settings_provider.dart';
 
 export '../../core/services/nextcloud_service.dart' show RemoteBackupInfo;
 
-// Shared across NextcloudSyncNotifier and NextcloudSettingsScreen.
-const nextcloudPasswordKey = 'nextcloud_password';
 
 enum SyncStatus { idle, syncing, error }
 
@@ -89,8 +87,7 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     if (url == null || url.isEmpty || username == null || username.isEmpty) {
       return null;
     }
-    final password =
-        await ref.read(secureStorageProvider).read(key: nextcloudPasswordKey);
+    final password = row?.nextcloudPassword;
     if (password == null || password.isEmpty) return null;
     return (
       url: url,
