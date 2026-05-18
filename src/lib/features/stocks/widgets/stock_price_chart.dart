@@ -483,7 +483,7 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
           ),
           lineBarsData: lineBarsData,
         ),
-        duration: const Duration(milliseconds: 250),
+        duration: Duration.zero,
       ),
     );
   }
