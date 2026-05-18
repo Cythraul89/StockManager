@@ -86,7 +86,7 @@ class _AllocationChartState extends State<AllocationChart> {
                         _view = s.first;
                         _touched = null;
                       }),
-                  style: ButtonStyle(
+                  style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
