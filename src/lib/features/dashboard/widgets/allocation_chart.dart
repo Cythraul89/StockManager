@@ -2,7 +2,10 @@ import 'package:decimal/decimal.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/models/asset_type.dart';
 import '../dashboard_provider.dart';
+
+enum _View { holdings, type }
 
 class AllocationChart extends StatefulWidget {
   const AllocationChart({super.key, required this.summary});
@@ -15,9 +18,10 @@ class AllocationChart extends StatefulWidget {
 
 class _AllocationChartState extends State<AllocationChart> {
   int? _touched;
+  _View _view = _View.holdings;
 
-  // Fixed palette — chosen to read well in both light and dark modes.
-  static const _palette = [
+  // Palette for the Holdings view (index-based).
+  static const _holdingPalette = [
     Color(0xFF4C7CE5),
     Color(0xFF2DB87D),
     Color(0xFFE5A23C),
@@ -28,13 +32,21 @@ class _AllocationChartState extends State<AllocationChart> {
     Color(0xFF73B83E),
   ];
 
+  // Fixed colours per asset type for the Type view.
+  static const _typeColor = {
+    AssetType.stock: Color(0xFF4C7CE5),
+    AssetType.etf: Color(0xFF2DB87D),
+    AssetType.etc: Color(0xFFE5784C),
+    AssetType.fund: Color(0xFF9C6DE5),
+    AssetType.bond: Color(0xFFE5A23C),
+    AssetType.warrant: Color(0xFF8E8E8E),
+    AssetType.other: Color(0xFFB0B0B0),
+  };
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Only stocks with a known price, no missing exchange rate, and a positive
-    // value in the preferred currency contribute. Stocks with missingRate have
-    // currentValue in their native currency, which would corrupt the percentages.
     final priced = widget.summary.stockItems
         .where((i) =>
             i.hasPrice && !i.missingRate && i.currentValue > Decimal.zero)
@@ -43,28 +55,8 @@ class _AllocationChartState extends State<AllocationChart> {
 
     if (priced.isEmpty) return const SizedBox.shrink();
 
-    const maxSlices = 7;
-    final slices = <_Slice>[];
-
-    for (var i = 0; i < priced.length && i < maxSlices; i++) {
-      slices.add(_Slice(
-        label: priced[i].stock.symbol,
-        value: priced[i].currentValue,
-        color: _palette[i % _palette.length],
-      ));
-    }
-    if (priced.length > maxSlices) {
-      final rest = priced.skip(maxSlices).fold(
-            Decimal.zero,
-            (sum, it) => sum + it.currentValue,
-          );
-      slices.add(_Slice(
-        label: 'Others',
-        value: rest,
-        color: _palette[maxSlices % _palette.length],
-      ));
-    }
-
+    final slices =
+        _view == _View.holdings ? _holdingSlices(priced) : _typeSlices(priced);
     final total = slices.fold(Decimal.zero, (s, sl) => s + sl.value);
 
     return Card(
@@ -73,7 +65,34 @@ class _AllocationChartState extends State<AllocationChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Allocation', style: theme.textTheme.titleMedium),
+            Row(
+              children: [
+                Text('Allocation', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                SegmentedButton<_View>(
+                  segments: const [
+                    ButtonSegment(
+                      value: _View.holdings,
+                      label: Text('Holdings'),
+                    ),
+                    ButtonSegment(
+                      value: _View.type,
+                      label: Text('Type'),
+                    ),
+                  ],
+                  selected: {_view},
+                  onSelectionChanged: (s) =>
+                      setState(() {
+                        _view = s.first;
+                        _touched = null;
+                      }),
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -111,15 +130,52 @@ class _AllocationChartState extends State<AllocationChart> {
                   ),
                 ),
                 const SizedBox(width: 16),
-                Expanded(
-                  child: _buildLegend(context, slices, total),
-                ),
+                Expanded(child: _buildLegend(context, slices, total)),
               ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  List<_Slice> _holdingSlices(List<StockSummaryItem> priced) {
+    const maxSlices = 7;
+    final slices = <_Slice>[];
+    for (var i = 0; i < priced.length && i < maxSlices; i++) {
+      slices.add(_Slice(
+        label: priced[i].stock.symbol,
+        value: priced[i].currentValue,
+        color: _holdingPalette[i % _holdingPalette.length],
+      ));
+    }
+    if (priced.length > maxSlices) {
+      final rest = priced
+          .skip(maxSlices)
+          .fold(Decimal.zero, (sum, it) => sum + it.currentValue);
+      slices.add(_Slice(
+        label: 'Others',
+        value: rest,
+        color: _holdingPalette[maxSlices % _holdingPalette.length],
+      ));
+    }
+    return slices;
+  }
+
+  List<_Slice> _typeSlices(List<StockSummaryItem> priced) {
+    final totals = <AssetType, Decimal>{};
+    for (final item in priced) {
+      final t = item.stock.assetType;
+      totals[t] = (totals[t] ?? Decimal.zero) + item.currentValue;
+    }
+    return (totals.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value)))
+        .map((e) => _Slice(
+              label: e.key.label,
+              value: e.value,
+              color: _typeColor[e.key] ?? const Color(0xFFB0B0B0),
+            ))
+        .toList();
   }
 
   Widget _buildLegend(

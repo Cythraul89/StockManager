@@ -1,6 +1,7 @@
 enum AssetType {
   stock('Stock', 'stock'),
   etf('ETF', 'etf'),
+  etc('ETC', 'etc'),
   fund('Fund', 'fund'),
   bond('Bond', 'bond'),
   warrant('Warrant', 'warrant'),
@@ -13,6 +14,7 @@ enum AssetType {
 
   static AssetType fromDb(String? value) => switch (value?.toLowerCase()) {
         'etf' => etf,
+        'etc' => etc,
         'fund' => fund,
         'bond' => bond,
         'warrant' => warrant,
@@ -21,11 +23,25 @@ enum AssetType {
       };
 
   // Derives the asset type from the raw OpenFIGI securityType string.
+  // ETC is checked before the broader ETF/ETP patterns to avoid
+  // misclassifying commodity products as equity ETFs.
   static AssetType fromSecurityType(String securityType) {
     final s = securityType.toLowerCase();
-    if (s.contains('etf') ||
-        s.contains('etp') ||
-        s.contains('exchange traded')) {
+
+    if (s == 'etc' ||
+        s.contains('exchange traded commodity') ||
+        s.contains('commodity certificate')) {
+      return etc;
+    }
+    // ETN (Exchange Traded Note) is debt-like — treat as bond.
+    if (s == 'etn' || s.contains('exchange traded note')) {
+      return bond;
+    }
+    if (s == 'etf' ||
+        s == 'etp' ||
+        s.contains('etf') ||
+        s.contains('exchange traded fund') ||
+        s.contains('exchange traded product')) {
       return etf;
     }
     if (s.contains('bond') ||

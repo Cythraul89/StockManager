@@ -538,6 +538,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   Widget _assetTypeChip(BuildContext context, AssetType type) {
     final color = switch (type) {
       AssetType.etf => Colors.teal.shade700,
+      AssetType.etc => Colors.orange.shade800,
       AssetType.fund => Colors.purple.shade700,
       AssetType.bond => Colors.amber.shade800,
       AssetType.warrant || AssetType.other => Colors.grey.shade600,
