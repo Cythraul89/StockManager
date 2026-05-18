@@ -236,3 +236,20 @@ Features confirmed for a future version. Not in scope for the initial release.
 - Each supported broker has a named **import profile** that maps the broker's column layout to the app's data model (date, shares, price, fees, type, ISIN/ticker).
 - Unrecognised rows or mapping conflicts are flagged for manual review before import is confirmed; no data is written until the user approves.
 - Import profiles are bundled for common brokers (e.g. Scalable Capital, Trade Republic, comdirect, Degiro) and can be extended in future updates.
+
+### 10.8 AI Portfolio Analysis (Claude)
+- The user can request an **AI-powered analysis of their portfolio** via the Claude API (Anthropic).
+- The feature requires the user to supply their own **Anthropic API key**, stored in the settings table (same pattern as the Finnhub key).
+- On request, the app serialises all portfolio data (stocks, transactions, dividends, current valuations) to a structured JSON payload and sends it to the Claude API.
+- The response is displayed in a dedicated **Analysis screen** as streamed text.
+- Example analyses the user can request:
+  - Portfolio concentration and diversification
+  - Sector / geographic exposure breakdown
+  - P&L trend and performance attribution
+  - Dividend income projection
+  - Risk commentary (volatility, single-stock weight)
+  - Natural-language Q&A over the user's own data
+- A **privacy notice** is shown before the first request, clearly stating that portfolio data is transmitted to Anthropic's servers.
+- The user can opt out at any time by removing the API key; no data is ever sent automatically.
+- API calls are always user-triggered (no background analysis).
+
