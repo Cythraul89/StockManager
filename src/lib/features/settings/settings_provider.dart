@@ -16,7 +16,11 @@ import '../stocks/stocks_provider.dart';
 // ── Core service providers ────────────────────────────────────────────────────────────────────────────────────────
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
-  return const FlutterSecureStorage();
+  return const FlutterSecureStorage(
+    // Data Protection Keychain requires a real Team ID (breaks ad-hoc builds).
+    // Legacy keychain works on non-sandboxed macOS without entitlements.
+    mOptions: MacOsOptions(useDataProtectionKeychain: false),
+  );
 });
 
 const _finnhubApiKeyStorageKey = 'finnhub_api_key';
