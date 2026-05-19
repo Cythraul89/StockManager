@@ -176,8 +176,22 @@ Providers that **must be overridden** in `ProviderScope` at startup:
 
 ## Testing
 
-The single widget test in `test/widget_test.dart` verifies the app renders the
-dashboard. Key overrides required:
+The test suite lives in `test/` and has **80 tests** across 7 files:
+
+| File | What it covers |
+|---|---|
+| `test/widget_test.dart` | App renders dashboard (smoke test) |
+| `test/manual_price_dialog_test.dart` | ManualPriceDialog validation and return values |
+| `test/calculators/portfolio_calculator_test.dart` | `PortfolioCalculator`: single buy, weighted avg, partial/full sell, 4:1 and 1:2 splits, `splitMultiplierAfter`, `sharesAtDate` |
+| `test/calculators/pnl_calculator_test.dart` | `PnlCalculator`: unrealised/realised P&L, fee handling, oversell clamping, `convert` |
+| `test/calculators/dividend_calculator_test.dart` | `DividendCalculator`: `estimatedTotal`, allTime/yearTotal, annualYield 12-month window, zero-division guard, `convert`, `Dividend.netAmount` |
+| `test/utils/decimal_math_test.dart` | `DecimalX` predicates, `percentChangeFrom`, `weightedAverage`, `clampMin` |
+| `test/models/exchange_rate_test.dart` | `ExchangeRate.find`, `convert`, `isStale`, Equatable equality |
+| `test/database/trailing_stop_test.dart` | `StocksDao.updateTrailingStop` / `updateTrailingStopHighWater` with in-memory Drift DB |
+
+### Widget test setup
+
+Key overrides required for `widget_test.dart`:
 
 ```dart
 ProviderScope(
@@ -196,17 +210,23 @@ ProviderScope(
 Close the in-memory DB via `tester.runAsync(db.close)` to exit the FakeAsync
 zone before Drift's internal futures resolve.
 
+### DB unit test setup
+
+Database tests use `AppDatabase.forTesting(NativeDatabase.memory())` with
+`setUp`/`tearDown` to give each test a fresh isolated schema. FK constraints
+are enforced — insert a broker before inserting a stock.
+
 ---
 
 ## CI pipeline (`.github/workflows/ci.yml`)
 
 | Job | Runner | Key steps |
 |---|---|---|
-| Analyze & Test | ubuntu-latest | `pub get` → `build_runner` → `flutter analyze` → `flutter test` |
-| Build Android | ubuntu-latest | pub get → build_runner → `flutter create --platforms=android .` → patch `build.gradle.kts` for core library desugaring → `flutter build apk --debug` |
+| Analyze & Test | ubuntu-latest | `pub get` → `build_runner` → `flutter analyze --fatal-infos` → `flutter test` |
+| Build Android | ubuntu-latest | pub get → build_runner → `flutter create --platforms=android .` → Python patch: set `compileSdk = 36` in `android/app/build.gradle.kts`, enable core library desugaring, patch `file_picker`'s `build.gradle` in the pub cache to `compileSdkVersion 36` → `flutter build apk --debug` |
 | Build Linux | ubuntu-latest | apt-get `clang cmake ninja-build libgtk-3-dev libsecret-1-dev` → pub get → build_runner → `flutter create --platforms=linux .` → `flutter build linux --release` |
 | Build Windows | windows-latest | pub get → build_runner → `flutter create --platforms=windows .` → `flutter build windows --release` |
-| Build macOS | macos-latest | pub get → build_runner → `flutter create --platforms=macos .` → `flutter build macos --release` |
+| Build macOS | macos-latest | pub get → build_runner → `flutter create --platforms=macos .` → `flutter build macos --release` → ad-hoc re-sign (no sandbox entitlements) |
 
 Platform directories (`android/`, `linux/`, `windows/`, `macos/`) are **not
 committed**; they are scaffolded on the fly with `flutter create --platforms=<platform> .`.

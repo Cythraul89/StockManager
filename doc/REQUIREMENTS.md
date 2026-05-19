@@ -163,6 +163,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - **Dark mode**: the app supports light and dark themes on all platforms, following the system preference by default.
 - **Performance**: the app must load the portfolio overview within 2 seconds on a modern device (offline data only).
 - **Data integrity**: transactions and portfolio data must not be lost during sync or app updates.
+- **Automated testing**: all domain logic (portfolio calculations, P&L, dividends, currency conversion, decimal math) is covered by unit tests that run in CI on every push. The test suite must pass with zero failures before any build job runs.
 
 ---
 

@@ -629,3 +629,39 @@ This approach avoids globally disabling TLS verification — only the explicitly
 ```
 
 All routes are nested inside the `ShellRoute` so the navigation chrome (sidebar / bottom bar) is always present.
+
+---
+
+## 7. Testing
+
+### 7.1 Test layout
+
+```
+test/
+├── widget_test.dart                    # App smoke test (dashboard renders)
+├── manual_price_dialog_test.dart       # ManualPriceDialog widget tests
+├── calculators/
+│   ├── portfolio_calculator_test.dart  # PortfolioCalculator — all public methods
+│   ├── pnl_calculator_test.dart        # PnlCalculator — unrealised/realised P&L
+│   └── dividend_calculator_test.dart   # DividendCalculator + Dividend.netAmount
+├── utils/
+│   └── decimal_math_test.dart          # DecimalX extensions + DecimalMath
+├── models/
+│   └── exchange_rate_test.dart         # ExchangeRate.find / convert / isStale
+└── database/
+    └── trailing_stop_test.dart         # StocksDao trailing stop DAO methods
+```
+
+### 7.2 Testing strategy
+
+**Pure domain logic** (`calculators/`, `models/`, `utils/`) — plain Dart unit tests using `flutter_test`. No Flutter framework, no I/O. Each test is self-contained and deterministic.
+
+**Database integration** (`database/`) — use `AppDatabase.forTesting(NativeDatabase.memory())` to run real Drift queries against an in-memory SQLite database. Each test gets a fresh schema via `setUp`/`tearDown`. FK constraints are enforced: a broker must be inserted before a stock.
+
+**Widget tests** — use `ProviderScope` with overrides for all infrastructure providers (`databaseProvider`, `marketDataServiceProvider`, etc.). `portfolioSummaryProvider` is overridden with a static value to prevent Drift's `StreamQueryStore` from leaking `Timer` instances into the `FakeAsync` zone. In-memory DBs are closed via `tester.runAsync(db.close)`.
+
+### 7.3 What is not tested
+
+- Individual screen widgets beyond the dashboard smoke test — acceptable for a portfolio app where the domain logic (tested) drives correctness; UI structure is verified by the build CI jobs.
+- `BackgroundCheckService` — runs in a WorkManager isolate and has no seams for unit injection without a full Android integration test harness.
+- `MarketDataService` / `CurrencyService` — HTTP services; covered by manual testing against live APIs and by `_NoOpMarketDataService` in widget tests.
