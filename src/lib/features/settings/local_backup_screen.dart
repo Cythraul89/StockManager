@@ -38,9 +38,11 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
       if (savePath == null) return; // user cancelled
       await file.copy(savePath);
     } else {
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'StockManager Backup',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          subject: 'StockManager Backup',
+        ),
       );
     }
   }

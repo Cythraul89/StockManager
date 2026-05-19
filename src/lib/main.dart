@@ -60,13 +60,13 @@ void main() async {
   // Register WorkManager background task for price/rating/dividend checks.
   // ExistingWorkPolicy.keep avoids re-registering on every app launch.
   if (Platform.isAndroid) {
-    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
+    await Workmanager().initialize(callbackDispatcher);
     await Workmanager().registerPeriodicTask(
       'stockBackgroundCheck',
       'checkPricesAndAlerts',
       frequency: const Duration(minutes: 15),
       constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     );
   }
 

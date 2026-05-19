@@ -103,9 +103,11 @@ class AboutScreen extends ConsumerWidget {
               final logService = ref.read(logServiceProvider);
               final path = logService.filePath;
               if (path.isEmpty) return;
-              await Share.shareXFiles(
-                [XFile(path)],
-                subject: 'StockManager debug log',
+              await SharePlus.instance.share(
+                ShareParams(
+                  files: [XFile(path)],
+                  subject: 'StockManager debug log',
+                ),
               );
             },
           ),
