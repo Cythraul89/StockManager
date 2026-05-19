@@ -90,6 +90,12 @@ jobs:
           path = 'android/app/build.gradle.kts'
           with open(path) as f:
               content = f.read()
+          # flutter_plugin_android_lifecycle requires compileSdk >= 36
+          content = content.replace(
+              'compileSdk = flutter.compileSdkVersion',
+              'compileSdk = 36',
+              1,
+          )
           content = content.replace(
               'compileOptions {',
               'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
