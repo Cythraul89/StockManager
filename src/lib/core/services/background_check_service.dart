@@ -157,8 +157,7 @@ class BackgroundCheckService {
       final rateRow =
           await db.settingsDao.getRate(stock.currency, quote.currency);
       if (rateRow != null) {
-        stopCheckPrice = (quote.price * rateRow.rate)
-            .toDecimal(scaleOnInfinitePrecision: 10);
+        stopCheckPrice = quote.price * rateRow.rate;
       } else {
         debugPrint(
             'BackgroundCheck: no exchange rate ${quote.currency}→${stock.currency}'

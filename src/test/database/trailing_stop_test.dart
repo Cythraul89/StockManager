@@ -13,7 +13,7 @@ void main() {
     await db.close();
   });
 
-  Future<void> _insertBrokerAndStock(String stockId) async {
+  Future<void> insertBrokerAndStock(String stockId) async {
     await db.brokersDao.upsert(
       BrokersCompanion.insert(id: 'b1', name: 'Test Broker'),
     );
@@ -32,7 +32,7 @@ void main() {
 
   group('StocksDao — trailing stop', () {
     test('updateTrailingStop sets pct and highWater', () async {
-      await _insertBrokerAndStock('s1');
+      await insertBrokerAndStock('s1');
       await db.stocksDao.updateTrailingStop('s1', '10', '150.00');
 
       final row = await db.stocksDao.findById('s1');
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('updateTrailingStop with null clears both fields', () async {
-      await _insertBrokerAndStock('s2');
+      await insertBrokerAndStock('s2');
       await db.stocksDao.updateTrailingStop('s2', '10', '150.00');
       await db.stocksDao.updateTrailingStop('s2', null, null);
 
@@ -52,7 +52,7 @@ void main() {
     });
 
     test('updateTrailingStopHighWater updates only the high-water mark', () async {
-      await _insertBrokerAndStock('s3');
+      await insertBrokerAndStock('s3');
       await db.stocksDao.updateTrailingStop('s3', '15', '200.00');
       await db.stocksDao.updateTrailingStopHighWater('s3', '210.00');
 
@@ -62,7 +62,7 @@ void main() {
     });
 
     test('updateTrailingStopHighWater can reset high-water to null', () async {
-      await _insertBrokerAndStock('s4');
+      await insertBrokerAndStock('s4');
       await db.stocksDao.updateTrailingStop('s4', '10', '180.00');
       await db.stocksDao.updateTrailingStopHighWater('s4', null);
 
@@ -72,7 +72,7 @@ void main() {
     });
 
     test('new stock has null trailing stop fields by default', () async {
-      await _insertBrokerAndStock('s5');
+      await insertBrokerAndStock('s5');
 
       final row = await db.stocksDao.findById('s5');
       expect(row!.trailingStopPct, isNull);

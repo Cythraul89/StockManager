@@ -77,7 +77,7 @@ class AboutScreen extends ConsumerWidget {
             onTap: () => _launch('https://github.com/Cythraul89/StockManager'),
           ),
           const Divider(),
-          _SectionHeader('Data sources'),
+          const _SectionHeader('Data sources'),
           const ListTile(
             dense: true,
             leading: Icon(Icons.currency_exchange, size: 20),
