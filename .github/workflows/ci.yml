@@ -110,6 +110,22 @@ jobs:
               content = content.rstrip() + '\n\ndependencies {\n' + dep + '\n}\n'
           with open(path, 'w') as f:
               f.write(content)
+          # Force compileSdk=36 on all plugin modules (e.g. file_picker) via
+          # a subprojects hook in the root build.gradle.kts.
+          root_path = 'android/build.gradle.kts'
+          with open(root_path) as f:
+              root = f.read()
+          sdk_hook = (
+              '\nsubprojects {\n'
+              '    afterEvaluate {\n'
+              '        (extensions.findByName("android")\n'
+              '            as? com.android.build.gradle.BaseExtension)\n'
+              '            ?.compileSdkVersion(36)\n'
+              '    }\n'
+              '}\n'
+          )
+          with open(root_path, 'w') as f:
+              f.write(root.rstrip() + '\n' + sdk_hook)
 
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug --build-number=${{ github.run_number }}
