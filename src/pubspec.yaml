@@ -39,7 +39,7 @@ dependencies:
 
   # Local backup (export/import)
   file_picker: ^8.1.0
-  share_plus: ^13.0.0
+  share_plus: ^12.0.2
 
   # Charts
   fl_chart: ^0.69.0
