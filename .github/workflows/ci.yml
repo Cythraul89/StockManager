@@ -110,9 +110,10 @@ jobs:
               content = content.rstrip() + '\n\ndependencies {\n' + dep + '\n}\n'
           with open(path, 'w') as f:
               f.write(content)
-          # file_picker hardcodes compileSdk=34 in its own build file.
-          # Patch both Groovy (.gradle) and Kotlin DSL (.gradle.kts) variants
-          # to cover whichever format the installed version uses.
+          # file_picker hardcodes compileSdkVersion=34 in its own build file.
+          # AGP 9+ dropped the compileSdkVersion method from the new DSL — it only
+          # reads compileSdk. Rename it and ensure the value is >= 36.
+          # Patch both Groovy (.gradle) and Kotlin DSL (.gradle.kts) variants.
           import glob, os, re
           pub_cache = os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))
           pattern = os.path.join(
@@ -121,14 +122,27 @@ jobs:
           )
           matched = glob.glob(pattern)
           print(f'file_picker build files found: {matched}')
-          def bump_sdk(m):
-              return m.group(1) if int(m.group(2)) >= 36 else m.group(1).replace(m.group(2), '36')
           for fp in matched:
               with open(fp) as f:
                   txt = f.read()
-              updated = re.sub(r'(compileSdkVersion\s+)(\d+)', bump_sdk, txt)
-              updated = re.sub(r'(compileSdk\s*=\s*)(\d+)', bump_sdk, updated)
-              updated = re.sub(r'(compileSdk\s+)(\d+)', bump_sdk, updated)
+              # compileSdkVersion N → compileSdk N (rename + bump)
+              updated = re.sub(
+                  r'compileSdkVersion\s+(\d+)',
+                  lambda m: 'compileSdk ' + str(max(int(m.group(1)), 36)),
+                  txt,
+              )
+              # compileSdk = N (Kotlin DSL) — bump if below 36
+              updated = re.sub(
+                  r'(compileSdk\s*=\s*)(\d+)',
+                  lambda m: m.group(1) + str(max(int(m.group(2)), 36)),
+                  updated,
+              )
+              # compileSdk N (Groovy DSL, no =) — bump if below 36
+              updated = re.sub(
+                  r'(compileSdk\s+)(\d+)',
+                  lambda m: m.group(1) + str(max(int(m.group(2)), 36)),
+                  updated,
+              )
               if updated != txt:
                   with open(fp, 'w') as f:
                       f.write(updated)
