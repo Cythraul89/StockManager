@@ -24,7 +24,9 @@ classDiagram
         +String exchange
         +String currency
         +bool dripEnabled
-        +String? lastKnownConsensus
+        +AssetType assetType
+        +Decimal? trailingStopPct
+        +Decimal? trailingStopHighWater
         +copyWith() Stock
     }
 
@@ -334,6 +336,11 @@ classDiagram
 
     class BackgroundCheckService {
         +run() Future~bool~$
+        -_checkPrice() Future$
+        -_checkTrailingStop() Future$
+        -_checkRating() Future$
+        -_checkDividends() Future$
+        -_isFirstRunToday() Future~bool~$
     }
 
     class SyncStatus {
@@ -386,13 +393,14 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 9
+        +schemaVersion = 10
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
         +dividendsDao DividendsDao
         +settingsDao SettingsDao
         +forTesting(executor)$ AppDatabase
+        +background(file)$ AppDatabase
     }
 
     class BrokersDao {
@@ -420,6 +428,8 @@ classDiagram
         +upsertSplit(split) Future
         +deleteSplit(id) Future
         +updateLastKnownConsensus(stockId, consensus) Future
+        +updateTrailingStop(stockId, pct, highWater) Future
+        +updateTrailingStopHighWater(stockId, highWater) Future
     }
 
     class TransactionsDao {
@@ -530,7 +540,8 @@ stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStoc
                                          addDividend, updateDividend, deleteDividend,
                                          syncDividends, confirmDividend,
                                          setManualPrice, clearManualPrice, cacheMarketPrice,
-                                         loadManualPrices)
+                                         loadManualPrices,
+                                         setTrailingStop, clearTrailingStop)
 
 settingsActionsProvider ─ SettingsActions (saveSettings, saveFinnhubApiKey, saveCertFingerprint,
                                            saveLastSyncAt, setManualRate, deleteRate, cacheRates)

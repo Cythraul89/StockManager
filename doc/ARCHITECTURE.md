@@ -13,9 +13,8 @@
 | Currency rates | Frankfurter (api.frankfurter.app) | Free, no API key, ECB data, cacheable, supports major ISO 4217 pairs |
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
 | Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
-| Push notifications | firebase_messaging | Android FCM only (per requirements) |
-| Background tasks | WorkManager (via workmanager plugin) | Android only; price, rating, and dividend checks when app is closed |
-| Local notifications | flutter_local_notifications | All platforms; used for alerts on desktop |
+| Background tasks | WorkManager (via workmanager plugin) | Android only; price, rating, dividend, and trailing stop-loss checks when app is closed |
+| Local notifications | flutter_local_notifications | All platforms; WorkManager fires them on Android, running app fires them on desktop |
 | Secure storage | flutter_secure_storage | `last_used_broker_id` only; credentials moved to SQLite settings table |
 
 ---
@@ -96,7 +95,10 @@ Notable provider files:
 | exchange | TEXT | e.g. NASDAQ — resolved from ISIN |
 | currency | TEXT | ISO 4217, e.g. USD — resolved from ISIN |
 | drip_enabled | BOOL | Dividend reinvestment flag |
+| asset_type | TEXT | `stock` \| `etf` \| `bond` \| `crypto` \| `other`; default `stock` |
 | last_known_consensus | TEXT? | Most recent analyst `recommendationKey`; used by `BackgroundCheckService` to detect rating changes between runs |
+| trailing_stop_pct | TEXT? (DECIMAL) | Drop threshold in percent (e.g. `10` = −10%); null = alert disabled |
+| trailing_stop_high_water | TEXT? (DECIMAL) | Peak price in `stock.currency` recorded since the alert was enabled; null = not yet seeded (set on first background check after enabling) |
 
 **transactions**
 | Column | Type | Notes |
@@ -233,13 +235,17 @@ All monetary values are stored and calculated as `Decimal` (via the `decimal` pa
 ### 5.6 Background Checks on Android
 True FCM push requires a backend server to send messages. To avoid a server dependency, background checks on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval, network required). The task is registered in `main.dart` via a top-level `callbackDispatcher` and dispatched to `BackgroundCheckService.run()`.
 
-`BackgroundCheckService` is a static-only class that runs inside a WorkManager isolate (no Riverpod). It opens its own `AppDatabase` connection and `MarketDataService` + `FlutterLocalNotificationsPlugin` instances, then performs three checks per run:
+`BackgroundCheckService` is a static-only class that runs inside a WorkManager isolate (no Riverpod). It opens its own `AppDatabase.background(file)` connection and `MarketDataService` + `FlutterLocalNotificationsPlugin` instances, then performs the following checks:
 
+**Every cycle (every ~15 min):**
 - **Price alert** — fetches a fresh quote via `MarketDataService`, compares against the cached `price_cache` price; fires a `price_alerts` channel notification if the change exceeds `priceAlertThresholdPct`. The cached price is updated after each run so the next comparison is against the most recently seen price.
+- **Trailing stop-loss** — if `trailing_stop_pct` is set for a stock, the quote price is first converted to `stock.currency` using the cached exchange rate (`settingsDao.getRate(stock.currency, quote.currency)`). If the converted price exceeds the current `trailing_stop_high_water`, the high-water mark is updated. If it falls to or below `highWater × (1 − pct/100)`, a `stop_loss_alerts` notification fires and the high-water is reset to null so the alert does not re-fire until the price recovers and makes a new peak. The stop check is skipped when no exchange rate is cached (avoids cross-currency comparisons).
+
+**Once per calendar day** (gated by `background_check_last_run.txt` in app documents):
 - **Analyst rating change** — fetches analyst data (Finnhub or Yahoo based on `settings.marketDataProvider`), compares `recommendationKey` against `stocks.lastKnownConsensus`; fires a `rating_alerts` channel notification on change, then calls `StocksDao.updateLastKnownConsensus()` to persist the new value. No notification is sent on the first run (when `lastKnownConsensus` is null), preventing false alerts at install time.
 - **Dividend alert** — queries expected dividends within the next `dividendAlertDays` days; fires a `dividend_alerts` channel notification for each upcoming payment.
 
-FCM infrastructure (`firebase_core`, `firebase_messaging`) is included in the project so a self-hosted push backend can be added later without client-side changes.
+Rating and dividend checks are gated to once per day to avoid hammering the analyst API (~100 HTTP requests per 15-min cycle for a full portfolio) and to prevent the same dividend notification firing repeatedly.
 
 ### 5.7 ODS Structure
 
