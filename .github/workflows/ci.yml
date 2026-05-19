@@ -110,22 +110,31 @@ jobs:
               content = content.rstrip() + '\n\ndependencies {\n' + dep + '\n}\n'
           with open(path, 'w') as f:
               f.write(content)
-          # file_picker hardcodes compileSdk=34 in its own build.gradle.kts,
-          # which fails the flutter_plugin_android_lifecycle AAR metadata check.
-          # Patch it directly in the pub cache.
+          # file_picker hardcodes compileSdk=34 in its own build file.
+          # Patch both Groovy (.gradle) and Kotlin DSL (.gradle.kts) variants
+          # to cover whichever format the installed version uses.
           import glob, os
           pub_cache = os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))
           pattern = os.path.join(
               pub_cache, 'hosted', 'pub.dev',
-              'file_picker-*', 'android', 'build.gradle.kts',
+              'file_picker-*', 'android', 'build.gradle*',
           )
-          for fp in glob.glob(pattern):
+          matched = glob.glob(pattern)
+          print(f'file_picker build files found: {matched}')
+          for fp in matched:
               with open(fp) as f:
                   txt = f.read()
-              txt = txt.replace('compileSdk = 34', 'compileSdk = 36')
-              with open(fp, 'w') as f:
-                  f.write(txt)
-              print(f'Patched: {fp}')
+              updated = (txt
+                  .replace('compileSdkVersion 34', 'compileSdkVersion 36')
+                  .replace('compileSdk = 34', 'compileSdk = 36')
+                  .replace('compileSdk 34', 'compileSdk 36')
+              )
+              if updated != txt:
+                  with open(fp, 'w') as f:
+                      f.write(updated)
+                  print(f'Patched: {fp}')
+              else:
+                  print(f'No sdk=34 found in: {fp}')
 
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug --build-number=${{ github.run_number }}
