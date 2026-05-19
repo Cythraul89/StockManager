@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,8 @@ class BackgroundCheckService {
   static const _ratingChannelName = 'Analyst rating alerts';
   static const _dividendChannelId = 'dividend_alerts';
   static const _dividendChannelName = 'Dividend alerts';
+  static const _stopLossChannelId = 'stop_loss_alerts';
+  static const _stopLossChannelName = 'Trailing stop-loss alerts';
 
   static Future<bool> run() async {
     AppDatabase? db;
@@ -144,6 +147,47 @@ class BackgroundCheckService {
       fetchedAt: quote.fetchedAt,
       manualOverride: const Value(false),
     ));
+
+    await _checkTrailingStop(db, plugin, stock, quote.price);
+  }
+
+  static Future<void> _checkTrailingStop(
+    AppDatabase db,
+    FlutterLocalNotificationsPlugin plugin,
+    StockRow stock,
+    Decimal newPrice,
+  ) async {
+    final pctStr = stock.trailingStopPct;
+    if (pctStr == null) return;
+    final pct = Decimal.tryParse(pctStr);
+    if (pct == null || pct <= Decimal.zero) return;
+
+    final hwStr = stock.trailingStopHighWater;
+    final highWater = hwStr != null ? Decimal.tryParse(hwStr) : null;
+
+    if (highWater == null || newPrice > highWater) {
+      // Update high-water mark (also handles the very first run after enabling).
+      await db.stocksDao.updateTrailingStopHighWater(stock.id, newPrice.toString());
+      return;
+    }
+
+    final hundred = Decimal.fromInt(100);
+    final stopPrice = (highWater * (hundred - pct) / hundred)
+        .toDecimal(scaleOnInfinitePrecision: 10);
+    if (newPrice <= stopPrice) {
+      await _show(
+        plugin,
+        id: ('stop_${stock.symbol}').hashCode & 0x7fffffff,
+        title: 'Trailing stop triggered: ${stock.name}',
+        body: '${stock.symbol} ${newPrice.toStringAsFixed(2)} ${stock.currency}'
+            ' ≤ stop ${stopPrice.toStringAsFixed(2)} (−${pct.toStringAsFixed(0)}%)',
+        channelId: _stopLossChannelId,
+        channelName: _stopLossChannelName,
+      );
+      // Reset high-water so the alert doesn't re-fire until price recovers
+      // and makes a new peak.
+      await db.stocksDao.updateTrailingStopHighWater(stock.id, null);
+    }
   }
 
   static Future<void> _checkRating(

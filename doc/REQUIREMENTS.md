@@ -193,7 +193,7 @@ Features confirmed for a future version. Not in scope for the initial release.
 - When Finnhub is selected but no API key is configured, the Analysis card shows an 'API key required' prompt with a tap-through link to Settings → Market Data.
 - A link to the Finnhub free registration page is shown next to the API key field.
 
-### 10.3 Trailing Stop-Loss Notification
+### 10.3 Trailing Stop-Loss Notification ✓ *(delivered)*
 - The user can set a **trailing stop-loss threshold** per stock (e.g. −10%).
 - The threshold tracks the stock's highest recorded price since the alert was enabled.
 - A notification is triggered when the current price falls more than the threshold percentage below that peak.

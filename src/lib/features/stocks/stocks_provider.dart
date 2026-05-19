@@ -423,6 +423,21 @@ class StockActions {
     _notifyChange();
   }
 
+  Future<void> setTrailingStop(
+      String stockId, Decimal pct, Decimal? currentPrice) async {
+    await _db.stocksDao.updateTrailingStop(
+      stockId,
+      pct.toString(),
+      currentPrice?.toString(),
+    );
+    _notifyChange();
+  }
+
+  Future<void> clearTrailingStop(String stockId) async {
+    await _db.stocksDao.updateTrailingStop(stockId, null, null);
+    _notifyChange();
+  }
+
   Future<void> cacheMarketPrice(PriceQuote quote) async {
     await _db.stocksDao.upsertPrice(PriceCacheCompanion.insert(
       stockId: quote.stockId,
@@ -467,6 +482,12 @@ Stock _stockFromRow(StockRow r) => Stock(
       currency: r.currency,
       dripEnabled: r.dripEnabled,
       assetType: AssetType.fromDb(r.assetType),
+      trailingStopPct: r.trailingStopPct != null
+          ? Decimal.tryParse(r.trailingStopPct!)
+          : null,
+      trailingStopHighWater: r.trailingStopHighWater != null
+          ? Decimal.tryParse(r.trailingStopHighWater!)
+          : null,
     );
 
 StockTransaction _txFromRow(TransactionRow r) => StockTransaction(

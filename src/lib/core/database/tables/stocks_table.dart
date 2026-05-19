@@ -15,6 +15,8 @@ class Stocks extends Table {
   TextColumn get assetType =>
       text().withDefault(const Constant('stock'))();
   TextColumn get lastKnownConsensus => text().nullable()();
+  TextColumn get trailingStopPct => text().nullable()();
+  TextColumn get trailingStopHighWater => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

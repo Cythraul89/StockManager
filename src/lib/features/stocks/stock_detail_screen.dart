@@ -28,6 +28,7 @@ import 'stocks_provider.dart';
 import 'widgets/add_split_dialog.dart';
 import 'widgets/manual_price_dialog.dart';
 import 'widgets/stock_price_chart.dart';
+import 'widgets/trailing_stop_dialog.dart';
 
 class StockDetailScreen extends ConsumerStatefulWidget {
   const StockDetailScreen({super.key, required this.id});
@@ -358,6 +359,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
               // Price history chart
               StockPriceChart(stockId: widget.id),
+              const SizedBox(height: 16),
+
+              // Trailing stop-loss card
+              _buildTrailingStopCard(context, stock, currentPrice),
               const SizedBox(height: 16),
 
               // Analysis card
@@ -1147,6 +1152,140 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       'sell' || 'strongsell' || 'strong_sell' => ('Sell', Colors.red),
       _ => (null, Colors.transparent),
     };
+  }
+
+  Future<void> _showTrailingStopDialog(Stock stock, Decimal? currentPrice) async {
+    final pct = await showDialog<Decimal>(
+      context: context,
+      builder: (_) => TrailingStopDialog(initialPct: stock.trailingStopPct),
+    );
+    if (pct == null || !mounted) return;
+    try {
+      await ref
+          .read(stockActionsProvider)
+          .setTrailingStop(stock.id, pct, currentPrice);
+    } catch (e) {
+      debugPrint('StockDetail: setTrailingStop failed: $e');
+    }
+  }
+
+  Widget _buildTrailingStopCard(
+      BuildContext context, Stock stock, Decimal? currentPrice) {
+    final theme = Theme.of(context);
+    final pct = stock.trailingStopPct;
+    final highWater = stock.trailingStopHighWater;
+
+    Decimal? stopPrice;
+    if (pct != null && highWater != null) {
+      stopPrice = ((highWater *
+                  (Decimal.fromInt(100) - pct) /
+                  Decimal.fromInt(100))
+              .toDecimal(scaleOnInfinitePrecision: 10));
+    }
+
+    final isTriggered = currentPrice != null &&
+        stopPrice != null &&
+        currentPrice <= stopPrice;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.trending_down,
+                    size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Trailing Stop-Loss',
+                    style: theme.textTheme.titleMedium),
+                const Spacer(),
+                if (pct != null)
+                  Chip(
+                    label: Text(
+                      isTriggered ? 'Triggered' : 'Active',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: isTriggered
+                            ? theme.colorScheme.onError
+                            : Colors.green.shade900,
+                      ),
+                    ),
+                    backgroundColor: isTriggered
+                        ? theme.colorScheme.error
+                        : Colors.green.shade100,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            if (pct == null) ...[
+              const SizedBox(height: 8),
+              Text('No trailing stop configured.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: () =>
+                    _showTrailingStopDialog(stock, currentPrice),
+                child: const Text('Set alert'),
+              ),
+            ] else ...[
+              const Divider(height: 20),
+              _kv(context, 'Threshold', '−${pct.toStringAsFixed(1)}%'),
+              if (highWater != null)
+                _kv(
+                  context,
+                  'High-water mark',
+                  CurrencyFormatter.format(highWater, stock.currency),
+                ),
+              if (stopPrice != null)
+                _kv(
+                  context,
+                  'Stop price',
+                  CurrencyFormatter.format(stopPrice, stock.currency),
+                  valueColor: isTriggered ? theme.colorScheme.error : null,
+                ),
+              if (highWater == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'High-water mark will be set on the next price check.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () =>
+                        _showTrailingStopDialog(stock, currentPrice),
+                    child: const Text('Edit'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(stockActionsProvider)
+                            .clearTrailingStop(stock.id);
+                      } catch (e) {
+                        debugPrint(
+                            'StockDetail: clearTrailingStop failed: $e');
+                      }
+                    },
+                    child: Text('Remove',
+                        style: TextStyle(
+                            color: theme.colorScheme.error)),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _addSplit(String stockId) async {

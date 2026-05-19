@@ -79,6 +79,20 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
       (update(stocks)..where((t) => t.id.equals(stockId)))
           .write(StocksCompanion(lastKnownConsensus: Value(consensus)));
 
+  Future<void> updateTrailingStop(
+          String stockId, String? pct, String? highWater) =>
+      (update(stocks)..where((t) => t.id.equals(stockId))).write(
+        StocksCompanion(
+          trailingStopPct: Value(pct),
+          trailingStopHighWater: Value(highWater),
+        ),
+      );
+
+  Future<void> updateTrailingStopHighWater(String stockId, String? highWater) =>
+      (update(stocks)..where((t) => t.id.equals(stockId))).write(
+        StocksCompanion(trailingStopHighWater: Value(highWater)),
+      );
+
   Future<int> count() async {
     final result = await customSelect(
       'SELECT COUNT(*) AS c FROM stocks',
