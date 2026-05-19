@@ -113,7 +113,7 @@ jobs:
           # file_picker hardcodes compileSdk=34 in its own build file.
           # Patch both Groovy (.gradle) and Kotlin DSL (.gradle.kts) variants
           # to cover whichever format the installed version uses.
-          import glob, os
+          import glob, os, re
           pub_cache = os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))
           pattern = os.path.join(
               pub_cache, 'hosted', 'pub.dev',
@@ -121,20 +121,22 @@ jobs:
           )
           matched = glob.glob(pattern)
           print(f'file_picker build files found: {matched}')
+          def bump_sdk(m):
+              return m.group(1) if int(m.group(2)) >= 36 else m.group(1).replace(m.group(2), '36')
           for fp in matched:
               with open(fp) as f:
                   txt = f.read()
-              updated = (txt
-                  .replace('compileSdkVersion 34', 'compileSdkVersion 36')
-                  .replace('compileSdk = 34', 'compileSdk = 36')
-                  .replace('compileSdk 34', 'compileSdk 36')
-              )
+              updated = re.sub(r'(compileSdkVersion\s+)(\d+)', bump_sdk, txt)
+              updated = re.sub(r'(compileSdk\s*=\s*)(\d+)', bump_sdk, updated)
+              updated = re.sub(r'(compileSdk\s+)(\d+)', bump_sdk, updated)
               if updated != txt:
                   with open(fp, 'w') as f:
                       f.write(updated)
                   print(f'Patched: {fp}')
               else:
-                  print(f'No sdk=34 found in: {fp}')
+                  print(f'No upgrade needed in: {fp}')
+          if not matched:
+              print('WARNING: No file_picker build files found in pub cache')
 
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug --build-number=${{ github.run_number }}
