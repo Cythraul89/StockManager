@@ -110,22 +110,22 @@ jobs:
               content = content.rstrip() + '\n\ndependencies {\n' + dep + '\n}\n'
           with open(path, 'w') as f:
               f.write(content)
-          # Force compileSdk=36 on all plugin modules (e.g. file_picker) via
-          # a subprojects hook in the root build.gradle.kts.
-          root_path = 'android/build.gradle.kts'
-          with open(root_path) as f:
-              root = f.read()
-          sdk_hook = (
-              '\nsubprojects {\n'
-              '    afterEvaluate {\n'
-              '        (extensions.findByName("android")\n'
-              '            as? com.android.build.gradle.BaseExtension)\n'
-              '            ?.compileSdkVersion(36)\n'
-              '    }\n'
-              '}\n'
+          # file_picker hardcodes compileSdk=34 in its own build.gradle.kts,
+          # which fails the flutter_plugin_android_lifecycle AAR metadata check.
+          # Patch it directly in the pub cache.
+          import glob, os
+          pub_cache = os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))
+          pattern = os.path.join(
+              pub_cache, 'hosted', 'pub.dev',
+              'file_picker-*', 'android', 'build.gradle.kts',
           )
-          with open(root_path, 'w') as f:
-              f.write(root.rstrip() + '\n' + sdk_hook)
+          for fp in glob.glob(pattern):
+              with open(fp) as f:
+                  txt = f.read()
+              txt = txt.replace('compileSdk = 34', 'compileSdk = 36')
+              with open(fp, 'w') as f:
+                  f.write(txt)
+              print(f'Patched: {fp}')
 
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug --build-number=${{ github.run_number }}
