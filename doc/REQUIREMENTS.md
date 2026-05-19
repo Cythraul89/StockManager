@@ -144,20 +144,13 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 ## 8. Notifications and Alerts
 
-### 8.1 Local Notifications
-- The app sends **local notifications** (no external server required) for:
+- The app sends **local notifications** (no external server required) on all platforms for:
   - An approaching expected dividend payment date (configurable lead time, e.g. 3 days before)
   - A stock price rising or falling by a user-defined percentage threshold
-- Notifications are optional and individually configurable per stock.
-
-### 8.2 Push Notifications (Android only)
-- **Android only**: the app receives **push notifications** via Firebase Cloud Messaging (FCM) for stock-related events even when the app is not open, including:
-  - Significant price movements (user-defined threshold per stock)
-  - Dividend payment confirmations
-  - Expected dividend dates approaching
-- Push notifications require an active Internet connection.
-- The user can enable or disable push notifications globally and per stock.
-- Desktop platforms (macOS, Windows, Ubuntu) use local notifications only (Section 8.1); no background push service is required on desktop.
+  - An analyst consensus rating changing for a held stock
+- On Android, notifications are delivered via **WorkManager** background tasks (periodic checks every 15 minutes when a network connection is available); no Firebase / FCM dependency.
+- On desktop (macOS, Windows, Ubuntu), local notifications are sent directly by the running app.
+- Notifications are optional and configurable in Settings.
 
 ---
 
