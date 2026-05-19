@@ -1208,12 +1208,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: isTriggered
                             ? theme.colorScheme.onError
-                            : Colors.green.shade900,
+                            : theme.colorScheme.onTertiaryContainer,
                       ),
                     ),
                     backgroundColor: isTriggered
                         ? theme.colorScheme.error
-                        : Colors.green.shade100,
+                        : theme.colorScheme.tertiaryContainer,
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
                   ),
@@ -1265,6 +1265,8 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   ),
                   const SizedBox(width: 8),
                   TextButton(
+                    style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error),
                     onPressed: () async {
                       try {
                         await ref
@@ -1275,9 +1277,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                             'StockDetail: clearTrailingStop failed: $e');
                       }
                     },
-                    child: Text('Remove',
-                        style: TextStyle(
-                            color: theme.colorScheme.error)),
+                    child: const Text('Remove'),
                   ),
                 ],
               ),

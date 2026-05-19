@@ -148,7 +148,26 @@ class BackgroundCheckService {
       manualOverride: const Value(false),
     ));
 
-    await _checkTrailingStop(db, plugin, stock, quote.price);
+    // The high-water mark is stored in stock.currency; convert the quote price
+    // to the same currency so the comparison is not cross-currency.
+    Decimal? stopCheckPrice;
+    if (quote.currency == stock.currency) {
+      stopCheckPrice = quote.price;
+    } else {
+      final rateRow =
+          await db.settingsDao.getRate(stock.currency, quote.currency);
+      if (rateRow != null) {
+        stopCheckPrice = (quote.price * rateRow.rate)
+            .toDecimal(scaleOnInfinitePrecision: 10);
+      } else {
+        debugPrint(
+            'BackgroundCheck: no exchange rate ${quote.currency}→${stock.currency}'
+            ' for trailing stop on ${stock.symbol}, skipping');
+      }
+    }
+    if (stopCheckPrice != null) {
+      await _checkTrailingStop(db, plugin, stock, stopCheckPrice);
+    }
   }
 
   static Future<void> _checkTrailingStop(
