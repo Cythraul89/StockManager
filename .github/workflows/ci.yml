@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Opt into Node.js 24 for all JavaScript actions before the June 2026 forced cutover.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 defaults:
   run:
     working-directory: src
