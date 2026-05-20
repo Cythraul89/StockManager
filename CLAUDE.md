@@ -4,6 +4,9 @@
 > [`doc/ARCHITECTURE.md`](doc/ARCHITECTURE.md). Class diagram is in
 > [`doc/CLASS_DIAGRAM.md`](doc/CLASS_DIAGRAM.md).
 
+> **Branch policy**: Always develop and push on the `develop` branch. Never
+> push to any other branch without explicit user instruction.
+
 ---
 
 ## Flutter / Dart version
