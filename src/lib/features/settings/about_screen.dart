@@ -63,7 +63,7 @@ class AboutScreen extends StatelessWidget {
             leading: const Icon(Icons.privacy_tip_outlined),
             title: const Text('Privacy policy'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/about/privacy-policy'),
+            onTap: () => context.push('/settings/about/privacy-policy'),
           ),
           ListTile(
             leading: const Icon(Icons.code),
@@ -94,7 +94,7 @@ class AboutScreen extends StatelessWidget {
             leading: const Icon(Icons.article_outlined),
             title: const Text('App logs'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.go('/settings/about/logs'),
+            onTap: () => context.push('/settings/about/logs'),
           ),
         ],
       ),

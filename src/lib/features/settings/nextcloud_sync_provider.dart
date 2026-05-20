@@ -177,30 +177,6 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
     }
   }
 
-  // Return any backup found on the server without mutating state.
-  // Reads credentials directly from DB so this is safe to call immediately
-  // after saveSettings() without a provider invalidation cycle.
-  Future<RemoteBackupInfo?> findRemoteBackup() async {
-    final creds = await _credentials();
-    if (creds == null) return null;
-    try {
-      return await ref.read(nextcloudServiceProvider).findLatestBackup(
-            serverUrl: creds.url,
-            username: creds.username,
-            password: creds.password,
-            remotePath: creds.path,
-            pinnedFingerprint: creds.fingerprint,
-          );
-    } catch (e) {
-      debugPrint('NextcloudSync: findRemoteBackup failed: $e');
-      return null;
-    }
-  }
-
-  void setPendingRestore(RemoteBackupInfo info) {
-    state = state.copyWith(pendingRestore: info);
-  }
-
   // Download and import the pending remote backup.
   Future<void> restoreFromRemote() async {
     final info = state.pendingRestore;

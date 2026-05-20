@@ -47,7 +47,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                   style: body,
                 ),
                 const SizedBox(height: 12),
-                _ServiceTable(theme: theme),
+                const _ServiceTable(),
                 const SizedBox(height: 8),
                 Text(
                   'No names, email addresses, passwords, device identifiers, '
@@ -156,12 +156,11 @@ class _Section extends StatelessWidget {
 }
 
 class _ServiceTable extends StatelessWidget {
-  const _ServiceTable({required this.theme});
-
-  final ThemeData theme;
+  const _ServiceTable();
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     const services = [
       (
         'Yahoo Finance',

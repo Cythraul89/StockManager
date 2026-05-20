@@ -39,6 +39,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
     await SharePlus.instance.share(
       ShareParams(files: [XFile(path)], subject: 'StockManager debug log'),
     );
+    if (!mounted) return;
   }
 
   Future<void> _clear() async {
@@ -114,7 +115,6 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
                     child: Text(
                       _lines![i],
                       style: TextStyle(
-                        fontFamily: 'monospace',
                         fontSize: 11,
                         color: _lineColor(context, _lines![i]),
                       ),
