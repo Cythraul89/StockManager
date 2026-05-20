@@ -57,12 +57,15 @@ class LogService {
     return all.length <= lines ? all : all.sublist(all.length - lines);
   }
 
-  /// Clears the log file content.
+  /// Clears the log file content and writes a fresh session header.
   Future<void> clear() async {
     await _sink?.flush();
     await _sink?.close();
     if (_file != null) {
       _sink = _file!.openWrite();
+      _sink!.writeln(
+        '=== StockManager debug log — ${DateTime.now().toIso8601String()} ===',
+      );
     }
   }
 }

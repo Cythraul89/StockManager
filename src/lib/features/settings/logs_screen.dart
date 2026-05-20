@@ -60,6 +60,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
       ),
     );
     if (confirmed != true) return;
+    if (!mounted) return;
     await ref.read(logServiceProvider).clear();
     await _load();
     if (mounted) {

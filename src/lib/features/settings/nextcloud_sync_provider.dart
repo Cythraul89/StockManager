@@ -164,9 +164,12 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
                 pinnedFingerprint: creds.fingerprint,
               );
 
-      final settings = await ref.read(settingsProvider.future);
+      // Read lastSyncAt directly from the DAO so a stale settingsProvider
+      // cache (common when called immediately after saveSettings()) does not
+      // cause _remoteIsNewer to compare against an outdated timestamp.
+      final row = await ref.read(databaseProvider).settingsDao.getSettings();
       if (remote != null &&
-          _remoteIsNewer(settings.lastSyncAt, remote.backupDate)) {
+          _remoteIsNewer(row?.lastSyncAt, remote.backupDate)) {
         state = state.copyWith(pendingRestore: remote);
       }
     } catch (e) {

@@ -98,11 +98,18 @@ class PrivacyPolicyScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 InkWell(
-                  onTap: () => launchUrl(
-                    Uri.parse(
-                        'https://github.com/Cythraul89/StockManager/issues'),
-                    mode: LaunchMode.externalApplication,
-                  ),
+                  onTap: () async {
+                    final ok = await launchUrl(
+                      Uri.parse(
+                          'https://github.com/Cythraul89/StockManager/issues'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                    if (!ok && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Could not open browser')),
+                      );
+                    }
+                  },
                   child: Text(
                     'github.com/Cythraul89/StockManager/issues',
                     style: body?.copyWith(
