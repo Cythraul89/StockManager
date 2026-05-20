@@ -11,6 +11,7 @@ import 'features/dividends/add_dividend_screen.dart';
 import 'features/dividends/dividends_screen.dart';
 import 'features/dividends/edit_dividend_screen.dart';
 import 'features/settings/about_screen.dart';
+import 'features/settings/logs_screen.dart';
 import 'features/settings/privacy_policy_screen.dart';
 import 'features/settings/currency_settings_screen.dart';
 import 'features/settings/local_backup_screen.dart';
@@ -172,6 +173,10 @@ final _router = GoRouter(
                 GoRoute(
                   path: 'privacy-policy',
                   builder: (context, state) => const PrivacyPolicyScreen(),
+                ),
+                GoRoute(
+                  path: 'logs',
+                  builder: (context, state) => const LogsScreen(),
                 ),
               ],
             ),

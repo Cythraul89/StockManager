@@ -49,6 +49,14 @@ class LogService {
   /// Absolute path to the log file, for sharing.
   String get filePath => _file?.path ?? '';
 
+  /// Returns the last [lines] lines of the log file.
+  Future<List<String>> readRecent({int lines = 300}) async {
+    if (_file == null || !await _file!.exists()) return [];
+    await _sink?.flush();
+    final all = await _file!.readAsLines();
+    return all.length <= lines ? all : all.sublist(all.length - lines);
+  }
+
   /// Clears the log file content.
   Future<void> clear() async {
     await _sink?.flush();

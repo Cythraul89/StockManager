@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/services/log_service.dart';
 import '../../core/utils/app_version.dart';
 
-class AboutScreen extends ConsumerWidget {
+class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('About')),
@@ -94,32 +91,10 @@ class AboutScreen extends ConsumerWidget {
           ),
           const Divider(),
           ListTile(
-            leading: const Icon(Icons.bug_report_outlined),
-            title: const Text('Share debug log'),
-            subtitle: const Text('Send log file for troubleshooting'),
-            trailing: const Icon(Icons.share),
-            onTap: () async {
-              final logService = ref.read(logServiceProvider);
-              final path = logService.filePath;
-              if (path.isEmpty) return;
-              await SharePlus.instance.share(
-                ShareParams(
-                  files: [XFile(path)],
-                  subject: 'StockManager debug log',
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline),
-            title: const Text('Clear debug log'),
-            onTap: () async {
-              await ref.read(logServiceProvider).clear();
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Debug log cleared')),
-              );
-            },
+            leading: const Icon(Icons.article_outlined),
+            title: const Text('App logs'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/about/logs'),
           ),
         ],
       ),
