@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -64,10 +65,8 @@ class AboutScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),
             title: const Text('Privacy policy'),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => _launch(
-              'https://github.com/Cythraul89/StockManager/blob/main/PRIVACY.md',
-            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/about/privacy-policy'),
           ),
           ListTile(
             leading: const Icon(Icons.code),
