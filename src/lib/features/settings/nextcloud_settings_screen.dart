@@ -108,24 +108,34 @@ class _NextcloudSettingsScreenState
 
       if (!mounted) return;
 
-      // 2. Check for any existing backup on the server.
       final notifier = ref.read(nextcloudSyncProvider.notifier);
-      final remoteBackup = await notifier.findRemoteBackup();
+
+      // 2. Check for any existing backup on the server. checkForRemoteBackup()
+      //    reads credentials directly from DB (so it sees the just-saved values)
+      //    and stores the result in state, consistent with the startup check.
+      await notifier.checkForRemoteBackup();
       if (!mounted) return;
 
       // 3. Ask what to do (restore vs. upload; null = user dismissed = skip).
+      final remoteBackup = ref.read(nextcloudSyncProvider).pendingRestore;
       final choice = await _showSyncChoiceDialog(remoteBackup);
       if (!mounted) return;
 
       // 4. Execute the chosen action.
       if (choice == _SyncChoice.restore && remoteBackup != null) {
-        notifier.setPendingRestore(remoteBackup);
         await notifier.restoreFromRemote();
         if (!mounted) return;
         if (ref.read(nextcloudSyncProvider).status == SyncStatus.error) return;
       } else if (choice == _SyncChoice.upload) {
+        // Dismiss pendingRestore so syncNow() is not blocked by the guard
+        // that prevents auto-upload while a restore decision is pending.
+        notifier.dismissRestore();
         await notifier.syncNow();
         if (!mounted) return;
+      } else {
+        // User chose "Later" — clear pending so the global shell listener
+        // doesn't re-surface the dialog immediately after navigating away.
+        notifier.dismissRestore();
       }
 
       // 5. Return to settings — invalidate first so re-opening this screen
