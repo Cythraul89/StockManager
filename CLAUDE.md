@@ -173,6 +173,13 @@ Providers that **must be overridden** in `ProviderScope` at startup:
   the shell. Adaptive layout: `DesktopShell` (NavigationRail) at ≥ 600 dp,
   `MobileShell` (BottomNavigationBar) below.
 
+- **Dialog Navigator pitfall** — `showDialog` defaults to `useRootNavigator: true`,
+  so the dialog is placed on the *root* navigator. The `builder` callback receives
+  a dialog-scoped `BuildContext ctx`. Always use `Navigator.pop(ctx, value)` (the
+  dialog's own context), never `Navigator.pop(outerContext, value)` — the outer
+  context belongs to the nested ShellRoute navigator, and popping it removes the
+  current screen instead of the dialog.
+
 - **Analyzer strictness** — CI runs `flutter analyze --fatal-infos`. Keep
   analysis clean. Notable lint rules already enforced: `use_build_context_synchronously`,
   `deprecated_member_use`, `prefer_const_constructors`, `prefer_const_declarations`.

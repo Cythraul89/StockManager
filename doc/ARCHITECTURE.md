@@ -212,6 +212,8 @@ At **≥ 600 dp** the `adaptive_shell` switches to the desktop shell (persistent
 
 The `NavigationRail` inside `DesktopShell` uses **extended mode** (icons + labels, ~220 dp wide) only at **≥ 1200 dp**; between 600 and 1199 dp it shows icons only (~72 dp), which preserves usable screen space on tablets and landscape phones.
 
+`AdaptiveShell` is a `ConsumerStatefulWidget`. Its `initState` registers a `ref.listenManual` subscription on `nextcloudSyncProvider` that detects when `pendingRestore` transitions from null to non-null (startup backup check) and shows a proactive restore dialog. A `_restoreDialogShowing` guard prevents concurrent dialogs if the state transitions rapidly. The listener is cancelled in `dispose`. The dialog is suppressed when the Nextcloud settings screen is already open (it handles the decision inline).
+
 ### 5.2 Split-Adjusted Calculations
 Raw transaction rows are never modified when a stock split is recorded. `PortfolioCalculator.calculate()` applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable. The helper `PortfolioCalculator.splitMultiplierAfter(txDate, splits)` is a public static method so that `PnlCalculator` can share the same logic without duplication.
 
@@ -472,7 +474,7 @@ All three are ratios, so currency conversion is not needed — they remain corre
 
 Each stock tile on the Dashboard shows a 72×36 px mini line chart (sparkline) to the right of the name column. The sparkline fetches price history via the same `priceHistoryProvider` used by `StockPriceChart`, so the result is cached for 5 minutes and shared if the Stock Detail screen has already loaded the same range.
 
-**Configurable range:** The time window is controlled by `AppSettings.sparklineRange` (default: 1M). The user selects a range in Settings → Display → "Sparkline period", which opens a `SimpleDialog` listing all seven `ChartRange` values with a checkmark on the active choice. Changing the setting immediately updates all visible sparklines because tiles watch `settingsStreamProvider`.
+**Configurable range:** The time window is controlled by `AppSettings.sparklineRange` (default: 1M). The user selects a range in Settings → Display → "Sparkline period", which opens a `SimpleDialog` listing all seven `ChartRange` values with a checkmark on the active choice. The dialog uses the builder context `ctx` for `Navigator.pop` — **not** the outer screen context — because `showDialog` defaults to `useRootNavigator: true` and the two navigators are different inside a `ShellRoute`. Changing the setting immediately updates all visible sparklines because tiles watch `settingsStreamProvider`.
 
 **Colour:** Green (`Colors.green.shade600`) when the last price in the period ≥ the first price; red (`colorScheme.error`) otherwise. The area below the line is filled with the same colour at 15 % opacity.
 
@@ -521,8 +523,9 @@ On desktop platforms (macOS, Windows, Linux), `LocalBackupScreen` uses `FilePick
 
 | Trigger | Behaviour |
 |---|---|
-| App startup (4 s delay) | PROPFIND for latest backup; if remote is newer set `pendingRestore`; if PROPFIND fails (network error) silently proceed to upload; a `Timer` (not `Future.delayed`) is used so it can be cancelled on dispose |
-| Credential save | `findRemoteBackup()` → dialog: Restore / Upload / Later; choice is executed before returning to settings |
+| App startup (4 s delay) | `_checkAndSync()`: PROPFIND for latest backup; if remote is newer than `lastSyncAt` → sets `pendingRestore` (suppresses auto-upload); if PROPFIND fails → proceeds to upload. A `Timer` (not `Future.delayed`) is used so it can be cancelled on dispose. |
+| `pendingRestore` set (any trigger) | `AdaptiveShell` listener detects the null→non-null transition and shows a proactive restore/later dialog — unless the Nextcloud settings screen is already open. |
+| Credential save | `checkForRemoteBackup()` → sets `pendingRestore` if server has a newer backup (reads `lastSyncAt` directly from DAO, not stale provider cache); inline dialog on the settings screen offers Restore / Upload current data / Later. `dismissRestore()` is called before `syncNow()` to clear the guard. |
 | Data mutation | `dataVersionProvider` increments; sync debounced by 5 s |
 | Manual "Backup now" tap | `syncNow()` called directly |
 
@@ -530,9 +533,10 @@ On desktop platforms (macOS, Windows, Linux), `LocalBackupScreen` uses `FilePick
 `NextcloudSyncNotifier._credentials()` reads directly from the Drift DAO (bypassing `settingsProvider`) on every invocation. This prevents stale `FutureProvider` cache from being used after `saveSettings()` writes new credentials. `lastSyncAt` is persisted via a targeted `updateLastSyncAt(DateTime)` DAO call rather than a full `upsertSettings()` to avoid overwriting other columns with stale data.
 
 #### Bidirectional conflict resolution
-On startup and after a credential save the app calls `findLatestBackup()` (WebDAV PROPFIND) and compares `backupDate` with `settings.lastSyncAt`. If the remote backup is newer, `pendingRestore` is set in `NextcloudSyncState` and:
-- A card is shown on the Nextcloud settings screen with "Restore from server" / "Dismiss".
-- On first launch a dialog is shown immediately after credential save.
+On startup and after a credential save, `findLatestBackup()` (WebDAV PROPFIND) compares `backupDate` with `lastSyncAt`. If the remote backup is newer, `pendingRestore` is set in `NextcloudSyncState`. This triggers two UI surfaces:
+- **Proactive dialog** — `AdaptiveShell` listens on `nextcloudSyncProvider` and shows a modal "Server backup found / Restore from server? / Later" dialog wherever the user currently is (suppressed on the Nextcloud settings screen itself).
+- **Inline card** — the Nextcloud settings screen always shows a card when `pendingRestore != null`, with "Restore from server" / "Dismiss" buttons.
+
 Auto-upload is **suppressed** while a restore is pending user decision.
 
 On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. If the restore fails the screen stays open to display the error.
@@ -616,7 +620,7 @@ This approach avoids globally disabling TLS verification — only the explicitly
 | `log(String? message)` | Appends `[ISO8601] message\n` to the sink |
 | `filePath` | Absolute path to the log file |
 | `readRecent({int lines = 300})` | Flushes the sink, reads the file, returns the last N lines |
-| `clear()` | Flushes and closes the sink, reopens for writing (truncates) |
+| `clear()` | Flushes and closes the sink, reopens for writing, writes a fresh session header |
 
 `LogsScreen` (at `/settings/about/logs`) is a `ConsumerStatefulWidget` that:
 - Loads lines on `initState()` via `readRecent(lines: 300)`.
