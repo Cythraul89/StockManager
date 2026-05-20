@@ -191,7 +191,6 @@ class _ServiceTable extends StatelessWidget {
     final headerStyle = theme.textTheme.labelSmall
         ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     final cellStyle = theme.textTheme.bodySmall;
-    const border = BorderSide(color: Color(0x22808080));
 
     TableRow headerRow(List<String> cells) => TableRow(
           decoration: BoxDecoration(

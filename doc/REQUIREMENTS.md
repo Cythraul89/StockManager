@@ -156,7 +156,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 ## 9. Non-Functional Requirements
 
-- **Privacy**: all data remains on the user's own device and their own Nextcloud; no third-party cloud storage.
+- **Privacy**: all data remains on the user's own device and their own Nextcloud; no third-party cloud storage. A full privacy policy is displayed in-app (Settings → About → Privacy policy), covering all third-party services contacted and the data sent to each.
 - **Responsive / adaptive UI**: the app uses a single adaptive layout that adjusts to screen size:
   - **Android**: single-column navigation, bottom navigation bar, touch-optimised controls.
   - **Desktop** (macOS, Windows, Ubuntu): multi-column layout making use of the available screen space — e.g. a persistent sidebar for navigation, a master-detail split for stock lists and detail views, and wider dashboard panels showing more data at once without scrolling.

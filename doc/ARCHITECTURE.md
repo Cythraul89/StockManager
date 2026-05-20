@@ -37,7 +37,8 @@ lib/
 │   │   ├── nextcloud_service.dart
 │   │   ├── backup_service.dart
 │   │   ├── notification_service.dart
-│   │   └── background_check_service.dart
+│   │   ├── background_check_service.dart
+│   │   └── log_service.dart
 │   ├── models/                     # Immutable domain models (pure Dart, no Flutter)
 │   ├── calculators/                # P&L, avg price, dividend yield — pure functions
 │   └── utils/                      # Formatting, date helpers, decimal math
@@ -49,6 +50,9 @@ lib/
 │   ├── dividends/
 │   ├── brokers/
 │   └── settings/
+│       ├── about_screen.dart           # Version, GPL-3, privacy policy, app logs links
+│       ├── privacy_policy_screen.dart  # In-app privacy policy
+│       └── logs_screen.dart            # Log viewer with share/clear
 │
 └── shell/
     ├── adaptive_shell.dart         # Picks mobile or desktop shell by screen width
@@ -508,7 +512,7 @@ Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`
 
 The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DDTHH-MM-SSZ.zip` (full UTC timestamp; colons replaced with hyphens for filesystem compatibility). `findLatestBackup` and `_pruneOldBackups` also accept the legacy `YYYY-MM-DD` date-only format for backward compatibility with older backups already on the server.
 
-On desktop platforms (macOS, Windows, Linux), `LocalBackupScreen` uses `FilePicker.platform.saveFile()` to present a native save dialog. On mobile it uses `Share.shareXFiles()` as before.
+On desktop platforms (macOS, Windows, Linux), `LocalBackupScreen` uses `FilePicker.platform.saveFile()` to present a native save dialog. On mobile it uses `SharePlus.instance.share()` as before.
 
 `importFromBytes()` auto-detects the format from the archive contents (presence of `meta.json` → ZIP backup; presence of `content.xml` → ODS import).
 
@@ -601,6 +605,25 @@ The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that su
 
 This approach avoids globally disabling TLS verification — only the explicitly approved certificate is trusted.
 
+### 5.19 Debug Log Service and LogsScreen
+
+`LogService` (in `core/services/log_service.dart`) writes timestamped log entries to a session-scoped flat text file (`stockmanager_debug.log`) in `getApplicationDocumentsDirectory()`. The file is truncated on each app launch so it never grows unbounded. Log entries are written via `IOSink` (serialised, no interleaving).
+
+**Key API:**
+| Method | Description |
+|---|---|
+| `LogService.create()` | Async factory: initialises the file and sink |
+| `log(String? message)` | Appends `[ISO8601] message\n` to the sink |
+| `filePath` | Absolute path to the log file |
+| `readRecent({int lines = 300})` | Flushes the sink, reads the file, returns the last N lines |
+| `clear()` | Flushes and closes the sink, reopens for writing (truncates) |
+
+`LogsScreen` (at `/settings/about/logs`) is a `ConsumerStatefulWidget` that:
+- Loads lines on `initState()` via `readRecent(lines: 300)`.
+- Renders them in a scrollable `ListView.builder` with monospace 11 sp text.
+- Colour-codes lines: `[ERROR]` → `colorScheme.error`, `[WARN ]` → `colorScheme.tertiary`, others → `onSurface`.
+- Provides two app-bar actions: **Export** (shares the log file via `SharePlus.instance.share`) and **Clear** (confirmation dialog → `LogService.clear()` → reload).
+
 ---
 
 ## 6. Navigation Map
@@ -625,7 +648,9 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /settings/nextcloud      → Nextcloud configuration
 /settings/currency       → Currency preferences & overrides
 /settings/notifications  → Notification preferences
-/settings/about          → App version and GPL-3 licence
+/settings/about          → App version, GPL-3 licence, privacy policy, app logs
+/settings/about/privacy-policy  → In-app privacy policy (offline)
+/settings/about/logs     → LogsScreen: scrollable log viewer, share/clear
 ```
 
 All routes are nested inside the `ShellRoute` so the navigation chrome (sidebar / bottom bar) is always present.
