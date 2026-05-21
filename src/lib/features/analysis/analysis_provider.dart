@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/claude_service.dart';
+import '../../core/services/gemini_service.dart';
+import '../../core/services/groq_service.dart';
+import '../../core/services/llm_service.dart';
 import '../dashboard/dashboard_provider.dart';
 import '../stocks/stocks_provider.dart';
 
@@ -61,14 +64,38 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
   Future<void> analyse(String userQuery) async {
     state = const AnalysisState(status: AnalysisStatus.loading);
 
-    // Read API key and model directly from DB to avoid stale provider cache.
+    // Read all LLM settings directly from DB to avoid stale provider cache.
     final row =
         await ref.read(databaseProvider).settingsDao.getSettings();
-    final apiKey = row?.claudeApiKey;
+
+    final provider = LlmProvider.values.firstWhere(
+      (p) => p.name == (row?.llmProvider ?? 'claude'),
+      orElse: () => LlmProvider.claude,
+    );
+
+    final (apiKey, model, service) = switch (provider) {
+      LlmProvider.claude => (
+          row?.claudeApiKey,
+          row?.claudeModel ?? defaultClaudeModel,
+          ref.read(claudeServiceProvider),
+        ),
+      LlmProvider.groq => (
+          row?.groqApiKey,
+          row?.groqModel ?? defaultGroqModel,
+          ref.read(groqServiceProvider),
+        ),
+      LlmProvider.gemini => (
+          row?.geminiApiKey,
+          row?.geminiModel ?? defaultGeminiModel,
+          ref.read(geminiServiceProvider),
+        ),
+    };
+
     if (apiKey == null || apiKey.isEmpty) {
       state = const AnalysisState(
         status: AnalysisStatus.error,
-        error: 'No Claude API key configured. Add your key in Settings → AI Analysis.',
+        error: 'No API key configured for the selected provider. '
+            'Add your key in Settings → AI Analysis.',
       );
       return;
     }
@@ -84,7 +111,6 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
       return;
     }
 
-    final model = row?.claudeModel ?? defaultClaudeModel;
     final portfolioJson = _serialisePortfolio(summary);
     final systemPrompt = _buildSystemPrompt();
     final userMessage = _buildUserMessage(portfolioJson, userQuery);
@@ -93,20 +119,17 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
         status: AnalysisStatus.streaming, responseText: '');
 
     try {
-      await for (final chunk in ref
-          .read(claudeServiceProvider)
-          .streamAnalysis(
-            apiKey: apiKey,
-            model: model,
-            systemPrompt: systemPrompt,
-            userMessage: userMessage,
-          )) {
+      await for (final chunk in service.streamAnalysis(
+        apiKey: apiKey,
+        model: model,
+        systemPrompt: systemPrompt,
+        userMessage: userMessage,
+      )) {
         state = state.copyWith(
           responseText: state.responseText + chunk,
         );
       }
 
-      // Parse suggestions block from the completed response.
       final (displayText, suggestions) =
           _parseSuggestions(state.responseText);
       state = AnalysisState(
@@ -114,7 +137,7 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
         responseText: displayText,
         suggestions: suggestions,
       );
-    } on ClaudeApiException catch (e) {
+    } on LlmApiException catch (e) {
       state = AnalysisState(
         status: AnalysisStatus.error,
         error: e.message,
@@ -212,7 +235,8 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
     }
     if (value is Map) {
       final pairs = value.entries
-          .map((e) => '${_encodeJson(e.key.toString())}: ${_encodeJson(e.value)}')
+          .map((e) =>
+              '${_encodeJson(e.key.toString())}: ${_encodeJson(e.value)}')
           .join(',\n  ');
       return '{\n  $pairs\n}';
     }

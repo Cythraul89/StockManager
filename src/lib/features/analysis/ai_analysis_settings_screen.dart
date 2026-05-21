@@ -1,8 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/services/claude_service.dart';
+import '../../core/services/llm_service.dart';
 import '../settings/settings_provider.dart';
+import '../stocks/stocks_provider.dart';
+
+const _providerMeta = [
+  (
+    provider: LlmProvider.claude,
+    label: 'Claude (Anthropic)',
+    note: 'Paid · Most capable · Prompt caching',
+    console: 'console.anthropic.com',
+  ),
+  (
+    provider: LlmProvider.groq,
+    label: 'Groq',
+    note: 'Free tier · Very fast',
+    console: 'console.groq.com',
+  ),
+  (
+    provider: LlmProvider.gemini,
+    label: 'Google Gemini',
+    note: 'Free tier · 1M tokens/day',
+    console: 'aistudio.google.com',
+  ),
+];
 
 class AiAnalysisSettingsScreen extends ConsumerStatefulWidget {
   const AiAnalysisSettingsScreen({super.key});
@@ -14,51 +36,85 @@ class AiAnalysisSettingsScreen extends ConsumerStatefulWidget {
 
 class _AiAnalysisSettingsScreenState
     extends ConsumerState<AiAnalysisSettingsScreen> {
-  final _controller = TextEditingController();
+  final _keyController = TextEditingController();
   bool _obscure = true;
-  bool _saving = false;
+  bool _savingKey = false;
+  LlmProvider? _keyLoadedFor;
 
   @override
   void initState() {
     super.initState();
-    _loadKey();
-  }
-
-  Future<void> _loadKey() async {
-    final key = await ref.read(claudeApiKeyProvider.future);
-    if (mounted && key != null) {
-      _controller.text = key;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadKey());
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _keyController.dispose();
     super.dispose();
   }
 
-  Future<void> _save() async {
-    setState(() => _saving = true);
-    try {
-      await ref
-          .read(settingsActionsProvider)
-          .saveClaudeApiKey(_controller.text.trim());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('API key saved')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
+  Future<LlmProvider> _currentProvider() async {
+    final row =
+        await ref.read(databaseProvider).settingsDao.getSettings();
+    return LlmProvider.values.firstWhere(
+      (p) => p.name == (row?.llmProvider ?? 'claude'),
+      orElse: () => LlmProvider.claude,
+    );
+  }
+
+  Future<void> _loadKey() async {
+    final row =
+        await ref.read(databaseProvider).settingsDao.getSettings();
+    final provider = LlmProvider.values.firstWhere(
+      (p) => p.name == (row?.llmProvider ?? 'claude'),
+      orElse: () => LlmProvider.claude,
+    );
+    final key = switch (provider) {
+      LlmProvider.claude => row?.claudeApiKey,
+      LlmProvider.groq => row?.groqApiKey,
+      LlmProvider.gemini => row?.geminiApiKey,
+    };
+    if (mounted) {
+      setState(() {
+        _keyController.text = key ?? '';
+        _keyLoadedFor = provider;
+      });
     }
   }
 
-  Future<void> _clear() async {
+  Future<void> _onProviderChanged(LlmProvider p) async {
+    await ref.read(settingsActionsProvider).saveLlmProvider(p.name);
+    // Reload key field for the newly selected provider.
+    await _loadKey();
+  }
+
+  Future<void> _saveKey(LlmProvider provider) async {
+    setState(() => _savingKey = true);
+    try {
+      final key = _keyController.text.trim();
+      switch (provider) {
+        case LlmProvider.claude:
+          await ref.read(settingsActionsProvider).saveClaudeApiKey(key);
+        case LlmProvider.groq:
+          await ref.read(settingsActionsProvider).saveGroqApiKey(key);
+        case LlmProvider.gemini:
+          await ref.read(settingsActionsProvider).saveGeminiApiKey(key);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('API key saved')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingKey = false);
+    }
+  }
+
+  Future<void> _removeKey(LlmProvider provider) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove API key'),
-        content: const Text('Remove your Claude API key from this device?'),
+        content: const Text('Remove this API key from the device?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -72,111 +128,181 @@ class _AiAnalysisSettingsScreenState
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() => _saving = true);
+    setState(() => _savingKey = true);
     try {
-      await ref.read(settingsActionsProvider).saveClaudeApiKey(null);
-      _controller.clear();
+      switch (provider) {
+        case LlmProvider.claude:
+          await ref.read(settingsActionsProvider).saveClaudeApiKey(null);
+        case LlmProvider.groq:
+          await ref.read(settingsActionsProvider).saveGroqApiKey(null);
+        case LlmProvider.gemini:
+          await ref.read(settingsActionsProvider).saveGeminiApiKey(null);
+      }
+      _keyController.clear();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('API key removed')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('API key removed')));
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _savingKey = false);
+    }
+  }
+
+  Future<void> _saveModel(LlmProvider provider, String model) async {
+    switch (provider) {
+      case LlmProvider.claude:
+        await ref.read(settingsActionsProvider).saveClaudeModel(model);
+      case LlmProvider.groq:
+        await ref.read(settingsActionsProvider).saveGroqModel(model);
+      case LlmProvider.gemini:
+        await ref.read(settingsActionsProvider).saveGeminiModel(model);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final modelAsync = ref.watch(claudeModelProvider);
-    final currentModel =
-        modelAsync.whenOrNull(data: (m) => m) ?? defaultClaudeModel;
 
     return Scaffold(
       appBar: AppBar(title: const Text('AI Analysis')),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        children: [
-          Card(
-            color: theme.colorScheme.surfaceContainerHighest,
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Enter your Anthropic Claude API key to enable AI portfolio analysis. '
-                'The key is stored locally in the app database and is only sent to '
-                'api.anthropic.com when you request an analysis.',
+      body: FutureBuilder(
+        future: ref.read(databaseProvider).settingsDao.getSettings(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final row = snapshot.data;
+          final activeProvider = LlmProvider.values.firstWhere(
+            (p) => p.name == (row?.llmProvider ?? 'claude'),
+            orElse: () => LlmProvider.claude,
+          );
+          final currentModel = switch (activeProvider) {
+            LlmProvider.claude => row?.claudeModel ?? defaultClaudeModel,
+            LlmProvider.groq => row?.groqModel ?? defaultGroqModel,
+            LlmProvider.gemini => row?.geminiModel ?? defaultGeminiModel,
+          };
+          final models = modelsFor(activeProvider);
+          final consoleName = _providerMeta
+              .firstWhere((m) => m.provider == activeProvider)
+              .console;
+
+          // Keep key field in sync if provider changed externally.
+          if (_keyLoadedFor != activeProvider) {
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _loadKey());
+          }
+
+          return ListView(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            children: [
+              // ── Provider picker ──────────────────────────────
+              Text(
+                'Provider',
+                style: theme.textTheme.labelMedium
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+              const SizedBox(height: 4),
+              for (final m in _providerMeta)
+                RadioListTile<LlmProvider>(
+                  value: m.provider,
+                  groupValue: activeProvider,
+                  title: Text(m.label),
+                  subtitle: Text(m.note),
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: (v) {
+                    if (v != null) _onProviderChanged(v);
+                  },
+                ),
+
+              const Divider(height: 32),
+
+              // ── API key ──────────────────────────────────────
+              Text(
+                'API Key',
+                style: theme.textTheme.labelMedium
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _keyController,
+                obscureText: _obscure,
+                enabled: !_savingKey,
+                decoration: InputDecoration(
+                  hintText: 'Paste your API key…',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () =>
+                        setState(() => _obscure = !_obscure),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed:
+                          _savingKey ? null : () => _saveKey(activeProvider),
+                      child: _savingKey
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Save key'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: _savingKey
+                        ? null
+                        : () => _removeKey(activeProvider),
+                    child: const Text('Remove'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Get your API key at $consoleName.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _controller,
-            obscureText: _obscure,
-            decoration: InputDecoration(
-              labelText: 'Claude API Key',
-              hintText: 'sk-ant-…',
-              border: const OutlineInputBorder(),
-              suffixIcon: IconButton(
-                icon: Icon(_obscure
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined),
-                onPressed: () => setState(() => _obscure = !_obscure),
+
+              const Divider(height: 32),
+
+              // ── Model picker ─────────────────────────────────
+              Text(
+                'Model',
+                style: theme.textTheme.labelMedium
+                    ?.copyWith(color: theme.colorScheme.primary),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save key'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _saving ? null : _clear,
-            child: const Text('Remove key'),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Get your API key at console.anthropic.com. '
-            'Usage is billed by Anthropic at their standard rates.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            'Model',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.primary),
-          ),
-          const SizedBox(height: 8),
-          for (final m in claudeModels)
-            RadioListTile<String>(
-              value: m.id,
-              groupValue: currentModel,
-              title: Text(m.label),
-              subtitle: Text(m.note),
-              onChanged: _saving
-                  ? null
-                  : (v) {
-                      if (v != null) {
-                        ref
-                            .read(settingsActionsProvider)
-                            .saveClaudeModel(v);
-                      }
-                    },
-            ),
-        ],
+              const SizedBox(height: 4),
+              for (final m in models)
+                RadioListTile<String>(
+                  value: m.id,
+                  groupValue: currentModel,
+                  title: Text(m.label),
+                  subtitle: Text(m.note),
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: _savingKey
+                      ? null
+                      : (v) {
+                          if (v != null) {
+                            _saveModel(activeProvider, v);
+                            // Trigger a rebuild by re-reading snapshot.
+                            setState(() {});
+                          }
+                        },
+                ),
+            ],
+          );
+        },
       ),
     );
   }

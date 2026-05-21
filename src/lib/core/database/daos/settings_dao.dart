@@ -42,6 +42,26 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
       (update(settings)..where((t) => t.id.equals(_settingsId)))
           .write(SettingsCompanion(claudeModel: Value(model)));
 
+  Future<void> updateLlmProvider(String provider) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(llmProvider: Value(provider)));
+
+  Future<void> updateGroqApiKey(String? key) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(groqApiKey: Value(key)));
+
+  Future<void> updateGeminiApiKey(String? key) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(geminiApiKey: Value(key)));
+
+  Future<void> updateGroqModel(String model) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(groqModel: Value(model)));
+
+  Future<void> updateGeminiModel(String model) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(geminiModel: Value(model)));
+
   Future<void> updateCertFingerprint(String? fingerprint) =>
       (update(settings)..where((t) => t.id.equals(_settingsId)))
           .write(SettingsCompanion(nextcloudCertFingerprint: Value(fingerprint)));

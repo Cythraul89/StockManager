@@ -26,6 +26,11 @@ class AppSettings extends Equatable {
     this.finnhubApiKey,
     this.claudeApiKey,
     this.claudeModel = 'claude-opus-4-7',
+    this.llmProvider = 'claude',
+    this.groqApiKey,
+    this.geminiApiKey,
+    this.groqModel = 'llama-3.3-70b-versatile',
+    this.geminiModel = 'gemini-2.0-flash',
   });
 
   final String preferredCurrency;
@@ -45,6 +50,11 @@ class AppSettings extends Equatable {
   final String? finnhubApiKey;
   final String? claudeApiKey;
   final String claudeModel;
+  final String llmProvider;
+  final String? groqApiKey;
+  final String? geminiApiKey;
+  final String groqModel;
+  final String geminiModel;
 
   static AppSettings get defaults => AppSettings(
         preferredCurrency: 'EUR',
@@ -76,6 +86,11 @@ class AppSettings extends Equatable {
     String? finnhubApiKey,
     String? claudeApiKey,
     String? claudeModel,
+    String? llmProvider,
+    String? groqApiKey,
+    String? geminiApiKey,
+    String? groqModel,
+    String? geminiModel,
   }) =>
       AppSettings(
         preferredCurrency: preferredCurrency ?? this.preferredCurrency,
@@ -96,6 +111,11 @@ class AppSettings extends Equatable {
         finnhubApiKey: finnhubApiKey ?? this.finnhubApiKey,
         claudeApiKey: claudeApiKey ?? this.claudeApiKey,
         claudeModel: claudeModel ?? this.claudeModel,
+        llmProvider: llmProvider ?? this.llmProvider,
+        groqApiKey: groqApiKey ?? this.groqApiKey,
+        geminiApiKey: geminiApiKey ?? this.geminiApiKey,
+        groqModel: groqModel ?? this.groqModel,
+        geminiModel: geminiModel ?? this.geminiModel,
       );
 
   @override
@@ -117,5 +137,10 @@ class AppSettings extends Equatable {
         finnhubApiKey,
         claudeApiKey,
         claudeModel,
+        llmProvider,
+        groqApiKey,
+        geminiApiKey,
+        groqModel,
+        geminiModel,
       ];
 }

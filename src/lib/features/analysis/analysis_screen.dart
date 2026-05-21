@@ -55,7 +55,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final analysisState = ref.watch(analysisProvider);
-    final apiKeyAsync = ref.watch(claudeApiKeyProvider);
+    final apiKeyAsync = ref.watch(activeApiKeyProvider);
 
     final bool hasKey =
         apiKeyAsync.whenOrNull(data: (k) => k != null && k.isNotEmpty) ?? false;

@@ -5,11 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'llm_service.dart';
 
-final claudeServiceProvider = Provider<LlmService>((ref) => ClaudeService());
+final groqServiceProvider = Provider<LlmService>((ref) => GroqService());
 
-class ClaudeService implements LlmService {
-  static const _endpoint = 'https://api.anthropic.com/v1/messages';
-  static const _apiVersion = '2023-06-01';
+class GroqService implements LlmService {
+  static const _endpoint =
+      'https://api.groq.com/openai/v1/chat/completions';
 
   @override
   Stream<String> streamAnalysis({
@@ -24,14 +24,8 @@ class ClaudeService implements LlmService {
       'model': model,
       'max_tokens': 4096,
       'stream': true,
-      'system': [
-        {
-          'type': 'text',
-          'text': systemPrompt,
-          'cache_control': {'type': 'ephemeral'},
-        }
-      ],
       'messages': [
+        {'role': 'system', 'content': systemPrompt},
         {'role': 'user', 'content': userMessage},
       ],
     };
@@ -44,8 +38,7 @@ class ClaudeService implements LlmService {
         options: Options(
           responseType: ResponseType.stream,
           headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': _apiVersion,
+            'Authorization': 'Bearer $apiKey',
             'content-type': 'application/json',
           },
         ),
@@ -54,19 +47,19 @@ class ClaudeService implements LlmService {
       final status = e.response?.statusCode;
       if (status == 401) {
         throw const LlmApiException(
-          'Invalid Claude API key. Check your key in Settings → AI Analysis.',
+          'Invalid Groq API key. Check your key in Settings → AI Analysis.',
           statusCode: 401,
         );
       }
       if (status == 429) {
         throw const LlmApiException(
-          'Claude rate limit reached. Please wait a moment and try again.',
+          'Groq rate limit reached. Please wait a moment and try again.',
           statusCode: 429,
         );
       }
       if (status != null && status >= 500) {
         throw LlmApiException(
-          'Anthropic server error ($status). Please try again later.',
+          'Groq server error ($status). Please try again later.',
           statusCode: status,
         );
       }
@@ -94,17 +87,10 @@ class ClaudeService implements LlmService {
           continue;
         }
 
-        if (event['type'] == 'error') {
-          final err = event['error'] as Map<String, dynamic>?;
-          throw LlmApiException(
-            err?['message']?.toString() ?? 'Unknown streaming error',
-          );
-        }
-
-        if (event['type'] != 'content_block_delta') continue;
-        final delta = event['delta'] as Map<String, dynamic>?;
-        if (delta?['type'] != 'text_delta') continue;
-        final text = delta?['text'] as String?;
+        final choices = event['choices'] as List<dynamic>?;
+        final delta =
+            choices?.firstOrNull?['delta'] as Map<String, dynamic>?;
+        final text = delta?['content'] as String?;
         if (text != null && text.isNotEmpty) yield text;
       }
     }
