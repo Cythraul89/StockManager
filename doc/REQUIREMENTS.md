@@ -100,8 +100,10 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - A dividend overview shows:
   - Total dividends received (all-time and per year), converted to the preferred display currency
   - Upcoming expected dividends with dates and estimated totals
+  - **Estimated annual income** — derived from Yahoo Finance's 5-year average dividend yield × current position value for each stock; shown on the dividend overview as a portfolio-wide estimate with a coverage note (how many stocks have cached analyst data)
 - Each stock has an optional **Dividend Reinvestment (DRIP)** flag; when enabled, recorded dividend payments automatically generate a corresponding buy transaction for that stock.
 - Each stock displays its **annual dividend yield** (annual dividend per share ÷ current price × 100).
+- The stock detail **Analysis card** includes a Dividends subsection showing Yahoo Finance data: **annual rate** (`trailingAnnualDividendRate`, hidden when zero/null), **5-year average yield** (`fiveYearAvgDividendYield`, already a percentage), and **estimated annual income** (shares held × current price × 5Y avg yield ÷ 100, in the stock's currency; shown only when shares are held).
 
 ---
 
@@ -142,32 +144,26 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 
 ## 8. Notifications and Alerts
 
-### 8.1 Local Notifications
-- The app sends **local notifications** (no external server required) for:
+- The app sends **local notifications** (no external server required) on all platforms for:
   - An approaching expected dividend payment date (configurable lead time, e.g. 3 days before)
   - A stock price rising or falling by a user-defined percentage threshold
-- Notifications are optional and individually configurable per stock.
-
-### 8.2 Push Notifications (Android only)
-- **Android only**: the app receives **push notifications** via Firebase Cloud Messaging (FCM) for stock-related events even when the app is not open, including:
-  - Significant price movements (user-defined threshold per stock)
-  - Dividend payment confirmations
-  - Expected dividend dates approaching
-- Push notifications require an active Internet connection.
-- The user can enable or disable push notifications globally and per stock.
-- Desktop platforms (macOS, Windows, Ubuntu) use local notifications only (Section 8.1); no background push service is required on desktop.
+  - An analyst consensus rating changing for a held stock
+- On Android, notifications are delivered via **WorkManager** background tasks (periodic checks every 15 minutes when a network connection is available); no Firebase / FCM dependency.
+- On desktop (macOS, Windows, Ubuntu), local notifications are sent directly by the running app.
+- Notifications are optional and configurable in Settings.
 
 ---
 
 ## 9. Non-Functional Requirements
 
-- **Privacy**: all data remains on the user's own device and their own Nextcloud; no third-party cloud storage.
+- **Privacy**: all data remains on the user's own device and their own Nextcloud; no third-party cloud storage. A full privacy policy is displayed in-app (Settings → About → Privacy policy), covering all third-party services contacted and the data sent to each.
 - **Responsive / adaptive UI**: the app uses a single adaptive layout that adjusts to screen size:
   - **Android**: single-column navigation, bottom navigation bar, touch-optimised controls.
   - **Desktop** (macOS, Windows, Ubuntu): multi-column layout making use of the available screen space — e.g. a persistent sidebar for navigation, a master-detail split for stock lists and detail views, and wider dashboard panels showing more data at once without scrolling.
 - **Dark mode**: the app supports light and dark themes on all platforms, following the system preference by default.
 - **Performance**: the app must load the portfolio overview within 2 seconds on a modern device (offline data only).
 - **Data integrity**: transactions and portfolio data must not be lost during sync or app updates.
+- **Automated testing**: all domain logic (portfolio calculations, P&L, dividends, currency conversion, decimal math) is covered by unit tests that run in CI on every push. The test suite must pass with zero failures before any build job runs.
 
 ---
 
@@ -187,16 +183,18 @@ Features confirmed for a future version. Not in scope for the initial release.
 - A **refresh button** on the analysis card allows the user to force a re-fetch at any time.
 - Data is cached for 10 minutes per stock (no network round-trip on quick navigation away and back).
 
-### 10.2 Configurable Market Data Provider
+### 10.2 Configurable Market Data Provider ✓ *(delivered)*
 - The user can choose the **market data provider** for analyst consensus data in Settings → Market Data.
 - Supported providers:
   - **Yahoo Finance** (default) — no account or API key required; unofficial API, subject to rate-limiting.
   - **Finnhub** (optional) — requires a free Finnhub API key entered by the user; provides more reliable and structured analyst data (price targets, consensus ratings, EPS estimates).
-- The API key for Finnhub is stored in `flutter_secure_storage` alongside the Nextcloud credentials.
+- The API key for Finnhub is stored in the settings table alongside other Nextcloud credentials.
 - Switching providers invalidates any cached analyst data so the next screen open re-fetches from the new source.
+- When Finnhub is the active provider, any fields it does not supply (e.g. `fiveYearAvgDividendYield`, `trailingAnnualDividendRate` for non-US stocks) are supplemented from a parallel Yahoo Finance request, so dividend data is always shown when available.
+- When Finnhub is selected but no API key is configured, the Analysis card shows an 'API key required' prompt with a tap-through link to Settings → Market Data.
 - A link to the Finnhub free registration page is shown next to the API key field.
 
-### 10.3 Trailing Stop-Loss Notification
+### 10.3 Trailing Stop-Loss Notification ✓ *(delivered)*
 - The user can set a **trailing stop-loss threshold** per stock (e.g. −10%).
 - The threshold tracks the stock's highest recorded price since the alert was enabled.
 - A notification is triggered when the current price falls more than the threshold percentage below that peak.
@@ -210,18 +208,19 @@ Features confirmed for a future version. Not in scope for the initial release.
 - A watchlist stock can be promoted to a held position at any time by assigning a broker and adding a transaction.
 - *Implementation note:* a stock with no transactions naturally shows zero shares held and no P&L. The existing Add Stock flow covers this without a separate watchlist concept.
 
-### 10.5 Price History Chart ✓ *(delivered — partial)*
+### 10.5 Price History Chart ✓ *(delivered)*
 - Each stock detail view includes a **price history chart** showing closing prices over selectable time ranges: 1D · 1W · 1M · 6M · 1Y · 5Y · MAX.
 - The selected range label is highlighted; switching ranges triggers a fresh fetch.
 - The line is green for a positive period change, red for negative; the area below the line is filled with a matching gradient.
 - The period percentage change (e.g. +1.57%) is shown next to the card title.
 - Touching the chart shows a tooltip with the exact price and date.
 - Data is fetched from Yahoo Finance at an appropriate interval for each range (e.g. 5-minute bars for 1D, daily for 1M, weekly for 1Y).
-- *Not yet delivered:* transaction overlays on the chart; mini sparklines on the dashboard stock list.
+- Buy and sell transactions within the visible date range are shown as coloured dots on the price line; touching near a dot shows the transaction type, share count, and price.
+- Mini sparklines are shown on the dashboard stock list for a configurable time range (default: 1M).
 
-### 10.6 Stock News
+### 10.6 Stock News ✓ *(delivered)*
 - Each stock detail view includes a **news feed** of recent articles related to that stock.
-- News is fetched from a public financial news API (e.g. Finnhub free tier) using the stock's ticker symbol.
+- News is fetched from Finnhub company-news (when an API key is configured) with a fallback to Yahoo Finance search.
 - Articles open in the device's default browser.
 - News requires an Internet connection; a “no connection” placeholder is shown offline.
 
@@ -232,3 +231,20 @@ Features confirmed for a future version. Not in scope for the initial release.
 - Each supported broker has a named **import profile** that maps the broker's column layout to the app's data model (date, shares, price, fees, type, ISIN/ticker).
 - Unrecognised rows or mapping conflicts are flagged for manual review before import is confirmed; no data is written until the user approves.
 - Import profiles are bundled for common brokers (e.g. Scalable Capital, Trade Republic, comdirect, Degiro) and can be extended in future updates.
+
+### 10.8 AI Portfolio Analysis (Claude)
+- The user can request an **AI-powered analysis of their portfolio** via the Claude API (Anthropic).
+- The feature requires the user to supply their own **Anthropic API key**, stored in the settings table (same pattern as the Finnhub key).
+- On request, the app serialises all portfolio data (stocks, transactions, dividends, current valuations) to a structured JSON payload and sends it to the Claude API.
+- The response is displayed in a dedicated **Analysis screen** as streamed text.
+- Example analyses the user can request:
+  - Portfolio concentration and diversification
+  - Sector / geographic exposure breakdown
+  - P&L trend and performance attribution
+  - Dividend income projection
+  - Risk commentary (volatility, single-stock weight)
+  - Natural-language Q&A over the user's own data
+- A **privacy notice** is shown before the first request, clearly stating that portfolio data is transmitted to Anthropic's servers.
+- The user can opt out at any time by removing the API key; no data is ever sent automatically.
+- API calls are always user-triggered (no background analysis).
+

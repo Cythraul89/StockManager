@@ -24,6 +24,9 @@ classDiagram
         +String exchange
         +String currency
         +bool dripEnabled
+        +AssetType assetType
+        +Decimal? trailingStopPct
+        +Decimal? trailingStopHighWater
         +copyWith() Stock
     }
 
@@ -129,6 +132,8 @@ classDiagram
         +Decimal? forwardPE
         +Decimal? trailingEps
         +Decimal? yearChangePct
+        +Decimal? fiveYearAvgDividendYield
+        +Decimal? trailingAnnualDividendRate
         +copyWith() AnalystData
     }
 
@@ -157,6 +162,8 @@ classDiagram
         +String preferredCurrency
         +String? nextcloudUrl
         +String? nextcloudUsername
+        +String? nextcloudPassword
+        +String? nextcloudCertFingerprint
         +String nextcloudPath
         +int nextcloudKeepExports
         +AppTheme theme
@@ -165,6 +172,8 @@ classDiagram
         +int dividendAlertDays
         +DateTime? lastSyncAt
         +ChartRange sparklineRange
+        +MarketDataProvider marketDataProvider
+        +String? finnhubApiKey
         +copyWith() AppSettings
         +defaults AppSettings$
     }
@@ -174,6 +183,12 @@ classDiagram
         system
         light
         dark
+    }
+
+    class MarketDataProvider {
+        <<enumeration>>
+        yahoo
+        finnhub
     }
 
     %% Domain associations
@@ -187,6 +202,7 @@ classDiagram
     PriceQuote --> Stock : cached for
     AppSettings --> AppTheme
     AppSettings --> ChartRange : sparklineRange
+    AppSettings --> MarketDataProvider
 
     %% ─────────────────────────────────────────────────────────
     %% CALCULATORS
@@ -229,6 +245,13 @@ classDiagram
         +Decimal annualYieldPct
     }
 
+    class DividendEstimate {
+        +Decimal total
+        +int coveredStocks
+        +int totalStocks
+        +String currency
+    }
+
     %% Calculator dependencies and outputs
     PortfolioCalculator ..> StockTransaction : consumes
     PortfolioCalculator ..> StockSplit : consumes
@@ -255,6 +278,8 @@ classDiagram
         +fetchPriceHistory(symbol, range) List~PricePoint~
         +fetchDividends(symbol) List~FetchedDividend~
         +fetchAnalystData(symbol) AnalystData?
+        +fetchAnalystDataFromFinnhub(symbol, apiKey) AnalystData?
+        +fetchAnalystDataFinnhubWithFallback(symbol, apiKey) AnalystData?
     }
 
     class CurrencyService {
@@ -276,21 +301,19 @@ classDiagram
         +initialize()
         +showPriceAlert(stock, quote)
         +showDividendAlert(stock, dividend)
+        +showRatingChangeAlert(stockName, symbol, oldRating, newRating)
         +cancelAll()
     }
 
     class NextcloudService {
-        +verifyCredentials(url, user, pw) Future
-        +uploadBackup(url, user, pw, path, bytes) Future
-        +upload(url, user, pw, path, bytes, contentType) Future
-        +listFiles(url, user, pw, path) List~String~
-        +delete(url, user, pw, path) Future
-        +downloadFile(url, user, pw, path) Uint8List
-        +findLatestBackup(url, user, pw, path) RemoteBackupInfo?
+        +verifyCredentials(url, user, pw, pinnedFingerprint) Future
+        +uploadBackup(url, user, pw, path, bytes, pinnedFingerprint) Future
+        +upload(url, user, pw, path, bytes, contentType, pinnedFingerprint) Future
+        +listFiles(url, user, pw, path, pinnedFingerprint) List~String~
+        +delete(url, user, pw, path, pinnedFingerprint) Future
+        +downloadFile(url, user, pw, path, pinnedFingerprint) Uint8List
+        +findLatestBackup(url, user, pw, path, pinnedFingerprint) RemoteBackupInfo?
         +fetchCertificateInfo(url) CertificateInfo?
-        +pinCertificate(fingerprint) Future
-        +unpinCertificate() Future
-        +getPinnedFingerprint() String?
     }
 
     class RemoteBackupInfo {
@@ -309,6 +332,15 @@ classDiagram
         +exportToZip() File
         +exportToOds() File
         +importFromBytes(bytes) Future
+    }
+
+    class BackgroundCheckService {
+        +run() Future~bool~$
+        -_checkPrice() Future$
+        -_checkTrailingStop() Future$
+        -_checkRating() Future$
+        -_checkDividends() Future$
+        -_isFirstRunToday() Future~bool~$
     }
 
     class SyncStatus {
@@ -340,6 +372,9 @@ classDiagram
     NextcloudService --> RemoteBackupInfo : produces
     NextcloudService --> CertificateInfo : produces
     BackupService ..> AppDatabase : reads/writes
+    BackgroundCheckService ..> AppDatabase : opens own connection
+    BackgroundCheckService ..> MarketDataService : fetches quotes/ratings
+    BackgroundCheckService ..> NotificationService : fires alerts
 
     %% Service outputs
     MarketDataService --> PriceQuote : produces
@@ -358,13 +393,14 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 4
+        +schemaVersion = 10
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
         +dividendsDao DividendsDao
         +settingsDao SettingsDao
         +forTesting(executor)$ AppDatabase
+        +background(file)$ AppDatabase
     }
 
     class BrokersDao {
@@ -391,6 +427,9 @@ classDiagram
         +getSplitsForStock(id) Future~List~StockSplit~~
         +upsertSplit(split) Future
         +deleteSplit(id) Future
+        +updateLastKnownConsensus(stockId, consensus) Future
+        +updateTrailingStop(stockId, pct, highWater) Future
+        +updateTrailingStopHighWater(stockId, highWater) Future
     }
 
     class TransactionsDao {
@@ -420,6 +459,9 @@ classDiagram
         +watchSettings() Stream~AppSettings~
         +getSettings() Future~AppSettings~
         +upsertSettings(settings) Future
+        +updateLastSyncAt(time) Future
+        +updateFinnhubApiKey(key) Future
+        +updateCertFingerprint(fingerprint) Future
         +watchExchangeRates() Stream~List~ExchangeRate~~
         +getExchangeRates() Future~List~ExchangeRate~~
         +getRate(base, target) Future~ExchangeRate~~
@@ -457,6 +499,7 @@ stocksStreamProvider  ←── StocksDao.watchAll()                 │
 stocksProvider        ←── StocksDao.getAll()                   ├── AppDatabase
 transactionsByStock   ←── TransactionsDao.watchByStock(id)     │
 dividendsByStock      ←── DividendsDao.watchByStock(id)        │
+allDividendsProvider  ←── DividendsDao.getAll()                │
 settingsStreamProvider←── SettingsDao.watchSettings()          │
 exchangeRatesProvider ←── SettingsDao.watchExchangeRates()     │
 splitsByStockProvider ←── StocksDao.watchSplitsForStock(id)    │
@@ -483,15 +526,25 @@ portfolioSummaryProvider (FutureProvider)
        ├── PnlCalculator.convert()    ← then stock.currency→preferredCurrency
        └── DividendCalculator.calculate() + convert()
 
+allDividendsProvider (FutureProvider)
+  ├── databaseProvider → DividendsDao.getAll()
+  └── dataVersionProvider  ← invalidated on any write; triggers re-fetch
+
+estimatedAnnualDividendProvider (Provider — synchronous, no extra API calls)
+  ├── portfolioSummaryProvider  ← currentValue + sharesHeld per stock
+  └── analystDataProvider(stockId) [per stock, .valueOrNull — skips if not cached]
+       └── AnalystData.fiveYearAvgDividendYield × currentValue / 100 → DividendEstimate
+
 stockActionsProvider  ─── StockActions  (addStock, updateStock, deleteStock,
                                          addTransaction, updateTransaction, deleteTransaction,
                                          addDividend, updateDividend, deleteDividend,
                                          syncDividends, confirmDividend,
                                          setManualPrice, clearManualPrice, cacheMarketPrice,
-                                         loadManualPrices)
+                                         loadManualPrices,
+                                         setTrailingStop, clearTrailingStop)
 
-settingsActionsProvider ─ SettingsActions (saveSettings, setManualRate,
-                                           deleteRate, cacheRates)
+settingsActionsProvider ─ SettingsActions (saveSettings, saveFinnhubApiKey, saveCertFingerprint,
+                                           saveLastSyncAt, setManualRate, deleteRate, cacheRates)
 
 backupServiceProvider  ── BackupService (exportToZip, exportToOds,
                                          importFromBytes)
@@ -510,9 +563,30 @@ nextcloudSyncProvider (NotifierProvider)
 analystRefreshProvider(stockId)  (StateProvider.family&lt;int, String&gt;)
   └── incremented by the refresh button on StockDetailScreen
 
+analystCacheVersionProvider  (StateProvider<int>)
+  └── incremented when market data provider or Finnhub API key changes
+
+finnhubApiKeyProvider  (FutureProvider<String?>)
+  └── reads from settings table (settingsDao.getSettings().finnhubApiKey); invalidated by saveFinnhubApiKey()
+
 analystDataProvider(stockId)  (FutureProvider.family, keepAlive 10 min)
-  ├── analystRefreshProvider(stockId)  ← re-fetches on increment
-  └── marketDataServiceProvider → MarketDataService.fetchAnalystData()
+  ├── analystRefreshProvider(stockId)   ← re-fetches on increment
+  ├── analystCacheVersionProvider       ← busts cache on provider/key change
+  ├── settingsProvider                  ← reads marketDataProvider
+  └── marketDataServiceProvider
+        ├── Yahoo: MarketDataService.fetchAnalystData()
+        └── Finnhub: MarketDataService.fetchAnalystDataFinnhubWithFallback()
+                      (parallel Finnhub fetch + Yahoo fallback for null fields)
+
+estimatedAnnualDividendProvider  (Provider — synchronous, no extra API calls)
+  ├── portfolioSummaryProvider   ← currentValue + sharesHeld per stock
+  └── analystDataProvider(id)    ← reads keepAlive cache for each held stock
+       │
+       └── produces DividendEstimate
+             ├── total: Decimal          (sum of currentValue × 5Y yield / 100)
+             ├── coveredStocks: int      (stocks with cached fiveYearAvgDividendYield)
+             ├── totalStocks: int        (held stocks with shares > 0)
+             └── currency: String        (preferred display currency)
 
 isinLookupServiceProvider  ── IsinLookupService  (must be overridden in ProviderScope)
   └── used by AddStockScreen and EditStockScreen (ISIN lookup / Research button)
@@ -545,5 +619,6 @@ ShellRoute (AdaptiveShell)
 └── /settings                      SettingsScreen
     ├── /settings/nextcloud        NextcloudSettingsScreen
     ├── /settings/currency         CurrencySettingsScreen
-    └── /settings/notifications    NotificationSettingsScreen
+    ├── /settings/notifications    NotificationSettingsScreen
+    └── /settings/market-data      MarketDataSettingsScreen
 ```

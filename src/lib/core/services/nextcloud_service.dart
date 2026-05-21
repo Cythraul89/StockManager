@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:xml/xml.dart';
 
 class NextcloudException implements Exception {
@@ -35,16 +34,11 @@ class CertificateInfo {
   final DateTime validUntil;
 }
 
+// Stateless WebDAV client. Callers are responsible for supplying and persisting
+// the pinnedFingerprint (stored in the settings table, not the Keychain).
 class NextcloudService {
-  NextcloudService(this._secureStorage);
+  const NextcloudService();
 
-  final FlutterSecureStorage _secureStorage;
-
-  static const _fingerprintKey = 'nextcloud_cert_fingerprint';
-
-  // Build a Dio client. baseUrl uses only the server origin (scheme + host + port)
-  // so that absolute DAV paths (/remote.php/dav/…) resolve correctly even when
-  // serverUrl itself contains a sub-path.
   Dio _buildClient({
     required String serverUrl,
     required String username,
@@ -80,7 +74,6 @@ class NextcloudService {
 
   // First-connection: fetch the server certificate fingerprint for user approval.
   // Returns null when the certificate is trusted by the OS (no action needed).
-  // Throws for pre-TLS failures (network error, DNS, timeout).
   Future<CertificateInfo?> fetchCertificateInfo(String serverUrl) async {
     CertificateInfo? info;
     final uri = Uri.parse(serverUrl);
@@ -93,13 +86,11 @@ class NextcloudService {
           issuer: cert.issuer,
           validUntil: cert.endValidity,
         );
-        return false; // reject — we only wanted the info
+        return false;
       };
       final req = await client.getUrl(uri).timeout(const Duration(seconds: 10));
       await req.close();
     } catch (e) {
-      // If badCertificateCallback fired, info is set — this is the expected
-      // TLS rejection path. Any other error is a real network failure.
       if (info == null) rethrow;
     } finally {
       client.close();
@@ -107,33 +98,18 @@ class NextcloudService {
     return info;
   }
 
-  // Persist a trusted fingerprint in secure storage.
-  Future<void> pinCertificate(String fingerprint) =>
-      _secureStorage.write(key: _fingerprintKey, value: fingerprint);
-
-  Future<void> unpinCertificate() =>
-      _secureStorage.delete(key: _fingerprintKey);
-
-  Future<String?> getPinnedFingerprint() =>
-      _secureStorage.read(key: _fingerprintKey);
-
-  // Verify that [username]/[password] are accepted by the server.
-  // Throws [NextcloudException] on auth failure or network error.
   Future<void> verifyCredentials({
     required String serverUrl,
     required String username,
     required String password,
+    String? pinnedFingerprint,
   }) async {
-    final fingerprint = await getPinnedFingerprint();
     final client = _buildClient(
       serverUrl: serverUrl,
       username: username,
       password: password,
-      pinnedFingerprint: fingerprint,
+      pinnedFingerprint: pinnedFingerprint,
     );
-    // PROPFIND to the user's DAV root — always present for valid credentials.
-    // Dio throws DioException on 4xx/5xx, so we catch and translate to a
-    // NextcloudException with a human-readable message.
     try {
       await client.request<String>(
         '/remote.php/dav/files/$username/',
@@ -148,20 +124,19 @@ class NextcloudService {
     }
   }
 
-  // Upload a ZIP backup to [remotePath], creating the parent directory if needed.
   Future<void> uploadBackup({
     required String serverUrl,
     required String username,
     required String password,
     required String remotePath,
     required Uint8List bytes,
+    String? pinnedFingerprint,
   }) async {
-    final fingerprint = await getPinnedFingerprint();
     final client = _buildClient(
       serverUrl: serverUrl,
       username: username,
       password: password,
-      pinnedFingerprint: fingerprint,
+      pinnedFingerprint: pinnedFingerprint,
     );
 
     final davBase = '/remote.php/dav/files/$username';
@@ -169,7 +144,6 @@ class NextcloudService {
         ? '$davBase$remotePath'
         : '$davBase/$remotePath';
 
-    // Ensure parent directory exists (MKCOL; 405 = already exists, ignore it).
     final slash = fullPath.lastIndexOf('/');
     if (slash > 0) {
       final dir = fullPath.substring(0, slash + 1);
@@ -197,7 +171,6 @@ class NextcloudService {
     }
   }
 
-  // Upload [bytes] to [remotePath] via WebDAV PUT.
   Future<void> upload({
     required String serverUrl,
     required String username,
@@ -205,13 +178,13 @@ class NextcloudService {
     required String remotePath,
     required Uint8List bytes,
     required String contentType,
+    String? pinnedFingerprint,
   }) async {
-    final fingerprint = await getPinnedFingerprint();
     final client = _buildClient(
       serverUrl: serverUrl,
       username: username,
       password: password,
-      pinnedFingerprint: fingerprint,
+      pinnedFingerprint: pinnedFingerprint,
     );
 
     final response = await client.put(
@@ -234,22 +207,18 @@ class NextcloudService {
     throw NextcloudException('Upload failed: HTTP ${response.statusCode}');
   }
 
-  // List files at [remotePath] via PROPFIND (WebDAV).
-  // [remotePath] is a logical path (e.g. '/StockManager/'); the DAV base
-  // (/remote.php/dav/files/<username>) is prepended automatically.
-  // Returns server-relative href strings as found in the XML response.
   Future<List<String>> listFiles({
     required String serverUrl,
     required String username,
     required String password,
     required String remotePath,
+    String? pinnedFingerprint,
   }) async {
-    final fingerprint = await getPinnedFingerprint();
     final client = _buildClient(
       serverUrl: serverUrl,
       username: username,
       password: password,
-      pinnedFingerprint: fingerprint,
+      pinnedFingerprint: pinnedFingerprint,
     );
 
     final davBase = '/remote.php/dav/files/$username';
@@ -278,7 +247,6 @@ class NextcloudService {
           .where((s) => s.isNotEmpty)
           .toList();
     } catch (_) {
-      // Fall back to regex if the server returns non-standard XML.
       return RegExp(r'<[^:]*:href>([^<]+)<')
           .allMatches(body)
           .map((m) => m.group(1)!.trim())
@@ -286,36 +254,34 @@ class NextcloudService {
     }
   }
 
-  // Delete [remotePath] via WebDAV DELETE.
   Future<void> delete({
     required String serverUrl,
     required String username,
     required String password,
     required String remotePath,
+    String? pinnedFingerprint,
   }) async {
-    final fingerprint = await getPinnedFingerprint();
     final client = _buildClient(
       serverUrl: serverUrl,
       username: username,
       password: password,
-      pinnedFingerprint: fingerprint,
+      pinnedFingerprint: pinnedFingerprint,
     );
     await client.delete(remotePath);
   }
 
-  // Download [remotePath] and return its raw bytes.
   Future<Uint8List> downloadFile({
     required String serverUrl,
     required String username,
     required String password,
     required String remotePath,
+    String? pinnedFingerprint,
   }) async {
-    final fingerprint = await getPinnedFingerprint();
     final client = _buildClient(
       serverUrl: serverUrl,
       username: username,
       password: password,
-      pinnedFingerprint: fingerprint,
+      pinnedFingerprint: pinnedFingerprint,
     );
     final response = await client.get<List<int>>(
       remotePath,
@@ -329,14 +295,12 @@ class NextcloudService {
     return Uint8List.fromList(response.data ?? []);
   }
 
-  // Find the most recent stockmanager_backup_*.zip in [remotePath].
-  // [remotePath] is a logical path; the DAV base is handled by listFiles.
-  // Returns null if the directory is empty or unreachable.
   Future<RemoteBackupInfo?> findLatestBackup({
     required String serverUrl,
     required String username,
     required String password,
     required String remotePath,
+    String? pinnedFingerprint,
   }) async {
     List<String> hrefs;
     try {
@@ -345,12 +309,14 @@ class NextcloudService {
         username: username,
         password: password,
         remotePath: remotePath,
+        pinnedFingerprint: pinnedFingerprint,
       );
     } catch (_) {
       return null;
     }
 
-    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2})\.zip$');
+    // Matches legacy date-only (YYYY-MM-DD) and current datetime (YYYY-MM-DDTHH-MM-SSZ) formats.
+    final pattern = RegExp(r'stockmanager_backup_(\d{4}-\d{2}-\d{2}(?:T\d{2}-\d{2}-\d{2}Z)?)\.zip$');
     DateTime? latestDate;
     String? latestHref;
 
@@ -358,7 +324,7 @@ class NextcloudService {
       final decoded = Uri.decodeFull(href);
       final match = pattern.firstMatch(decoded);
       if (match == null) continue;
-      final date = DateTime.tryParse(match.group(1)!);
+      final date = _parseBackupTimestamp(match.group(1)!);
       if (date == null) continue;
       if (latestDate == null || date.isAfter(latestDate)) {
         latestDate = date;
@@ -368,6 +334,17 @@ class NextcloudService {
 
     if (latestDate == null || latestHref == null) return null;
     return RemoteBackupInfo(remotePath: latestHref, backupDate: latestDate);
+  }
+
+  static DateTime? _parseBackupTimestamp(String s) {
+    if (s.contains('T')) {
+      final normalized = s.replaceAllMapped(
+        RegExp(r'T(\d{2})-(\d{2})-(\d{2})Z'),
+        (m) => 'T${m[1]}:${m[2]}:${m[3]}Z',
+      );
+      return DateTime.tryParse(normalized);
+    }
+    return DateTime.tryParse(s);
   }
 
   static String _certFingerprint(Uint8List derBytes) {

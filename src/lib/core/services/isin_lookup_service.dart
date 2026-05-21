@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import '../models/asset_type.dart';
+
 class IsinLookupResult {
   const IsinLookupResult({
     required this.symbol,
@@ -8,6 +10,7 @@ class IsinLookupResult {
     required this.exchangeName,
     required this.currency,
     required this.securityType,
+    required this.assetType,
   });
 
   final String symbol;
@@ -16,6 +19,7 @@ class IsinLookupResult {
   final String exchangeName;
   final String currency;
   final String securityType;
+  final AssetType assetType;
 }
 
 class IsinLookupService {
@@ -74,13 +78,15 @@ class IsinLookupService {
         final suffix = exchangeSuffix.isNotEmpty
             ? exchangeSuffix
             : _suffixFromIsin(isin);
+        final securityType = (item['securityType'] as String?) ?? '';
         return IsinLookupResult(
           symbol: suffix.isEmpty ? ticker : '$ticker$suffix',
           name: (item['name'] as String?) ?? '',
           exchange: exchCode,
           exchangeName: _exchangeName(exchCode),
           currency: (item['currency'] as String?) ?? '',
-          securityType: (item['securityType'] as String?) ?? '',
+          securityType: securityType,
+          assetType: AssetType.fromSecurityType(securityType),
         );
       }).toList();
     } on DioException {

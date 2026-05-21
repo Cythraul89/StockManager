@@ -8,18 +8,22 @@ import 'package:uuid/uuid.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/database/app_database.dart';
 import '../../core/models/analyst_data.dart';
+import '../../core/models/app_settings.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/chart_range.dart';
-import '../../core/models/price_point.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/fetched_dividend.dart';
+import '../../core/models/news_article.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
+import '../../core/models/asset_type.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
 import '../../core/services/isin_lookup_service.dart';
 import '../../core/services/market_data_service.dart';
 import '../../core/utils/withholding_tax.dart';
+import '../settings/settings_provider.dart';
 
 final isinLookupServiceProvider = Provider<IsinLookupService>((ref) {
   throw UnimplementedError('isinLookupServiceProvider must be overridden');
@@ -114,6 +118,7 @@ final analystDataProvider =
     FutureProvider.family<AnalystData?, String>((ref, stockId) async {
   // Re-run whenever the manual refresh counter is incremented.
   ref.watch(analystRefreshProvider(stockId));
+  ref.watch(analystCacheVersionProvider); // busts cache on provider/key change
 
   // Keep the result alive for 10 minutes so navigating away and back does not
   // trigger a full Yahoo Finance round-trip on every visit.
@@ -122,6 +127,16 @@ final analystDataProvider =
 
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
+
+  final settings = await ref.watch(settingsProvider.future);
+  if (settings.marketDataProvider == MarketDataProvider.finnhub) {
+    final apiKey = await ref.watch(finnhubApiKeyProvider.future);
+    if (apiKey == null || apiKey.isEmpty) return null;
+    return ref
+        .read(marketDataServiceProvider)
+        .fetchAnalystDataFinnhubWithFallback(stock.symbol, apiKey);
+  }
+
   return ref.read(marketDataServiceProvider).fetchAnalystData(stock.symbol);
 });
 
@@ -144,6 +159,27 @@ final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
   return ref
       .read(marketDataServiceProvider)
       .fetchPriceHistory(stock.symbol, range);
+});
+
+// ── News (fetched on open, cached 30 min, keyed by stockId) ─────────────────
+
+final newsProvider =
+    FutureProvider.family<List<NewsArticle>, String>((ref, stockId) async {
+  final stock = await ref.watch(stockByIdProvider(stockId).future);
+  if (stock == null) return [];
+
+  final link = ref.keepAlive();
+  Timer(const Duration(minutes: 30), link.close);
+
+  final settings = await ref.watch(settingsProvider.future);
+  String? finnhubKey;
+  if (settings.marketDataProvider == MarketDataProvider.finnhub) {
+    finnhubKey = await ref.watch(finnhubApiKeyProvider.future);
+  }
+
+  return ref
+      .read(marketDataServiceProvider)
+      .fetchNews(stock.symbol, finnhubApiKey: finnhubKey);
 });
 
 // ── Price quote cache (in-memory, refreshed on demand) ───────────────────────────
@@ -180,6 +216,7 @@ class StockActions {
       exchange: stock.exchange,
       currency: stock.currency,
       dripEnabled: Value(stock.dripEnabled),
+      assetType: Value(stock.assetType.dbValue),
     ));
     _notifyChange();
     return id;
@@ -196,6 +233,7 @@ class StockActions {
         exchange: Value(stock.exchange),
         currency: Value(stock.currency),
         dripEnabled: Value(stock.dripEnabled),
+        assetType: Value(stock.assetType.dbValue),
       ),
     );
     _notifyChange();
@@ -385,6 +423,21 @@ class StockActions {
     _notifyChange();
   }
 
+  Future<void> setTrailingStop(
+      String stockId, Decimal pct, Decimal? currentPrice) async {
+    await _db.stocksDao.updateTrailingStop(
+      stockId,
+      pct.toString(),
+      currentPrice?.toString(),
+    );
+    _notifyChange();
+  }
+
+  Future<void> clearTrailingStop(String stockId) async {
+    await _db.stocksDao.updateTrailingStop(stockId, null, null);
+    _notifyChange();
+  }
+
   Future<void> cacheMarketPrice(PriceQuote quote) async {
     await _db.stocksDao.upsertPrice(PriceCacheCompanion.insert(
       stockId: quote.stockId,
@@ -428,6 +481,13 @@ Stock _stockFromRow(StockRow r) => Stock(
       exchange: r.exchange,
       currency: r.currency,
       dripEnabled: r.dripEnabled,
+      assetType: AssetType.fromDb(r.assetType),
+      trailingStopPct: r.trailingStopPct != null
+          ? Decimal.tryParse(r.trailingStopPct!)
+          : null,
+      trailingStopHighWater: r.trailingStopHighWater != null
+          ? Decimal.tryParse(r.trailingStopHighWater!)
+          : null,
     );
 
 StockTransaction _txFromRow(TransactionRow r) => StockTransaction(

@@ -49,12 +49,23 @@ class LogService {
   /// Absolute path to the log file, for sharing.
   String get filePath => _file?.path ?? '';
 
-  /// Clears the log file content.
+  /// Returns the last [lines] lines of the log file.
+  Future<List<String>> readRecent({int lines = 300}) async {
+    if (_file == null || !await _file!.exists()) return [];
+    await _sink?.flush();
+    final all = await _file!.readAsLines();
+    return all.length <= lines ? all : all.sublist(all.length - lines);
+  }
+
+  /// Clears the log file content and writes a fresh session header.
   Future<void> clear() async {
     await _sink?.flush();
     await _sink?.close();
     if (_file != null) {
       _sink = _file!.openWrite();
+      _sink!.writeln(
+        '=== StockManager debug log — ${DateTime.now().toIso8601String()} ===',
+      );
     }
   }
 }

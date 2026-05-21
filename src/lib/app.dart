@@ -11,8 +11,11 @@ import 'features/dividends/add_dividend_screen.dart';
 import 'features/dividends/dividends_screen.dart';
 import 'features/dividends/edit_dividend_screen.dart';
 import 'features/settings/about_screen.dart';
+import 'features/settings/logs_screen.dart';
+import 'features/settings/privacy_policy_screen.dart';
 import 'features/settings/currency_settings_screen.dart';
 import 'features/settings/local_backup_screen.dart';
+import 'features/settings/market_data_settings_screen.dart';
 import 'features/settings/nextcloud_settings_screen.dart';
 import 'features/settings/nextcloud_sync_provider.dart';
 import 'features/settings/notification_settings_screen.dart';
@@ -147,6 +150,10 @@ final _router = GoRouter(
               builder: (context, state) => const LocalBackupScreen(),
             ),
             GoRoute(
+              path: 'market-data',
+              builder: (_, __) => const MarketDataSettingsScreen(),
+            ),
+            GoRoute(
               path: 'nextcloud',
               builder: (context, state) => const NextcloudSettingsScreen(),
             ),
@@ -162,6 +169,16 @@ final _router = GoRouter(
             GoRoute(
               path: 'about',
               builder: (context, state) => const AboutScreen(),
+              routes: [
+                GoRoute(
+                  path: 'privacy-policy',
+                  builder: (context, state) => const PrivacyPolicyScreen(),
+                ),
+                GoRoute(
+                  path: 'logs',
+                  builder: (context, state) => const LogsScreen(),
+                ),
+              ],
             ),
           ],
         ),

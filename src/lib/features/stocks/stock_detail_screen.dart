@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/analyst_data.dart';
+import '../../core/models/app_settings.dart';
+import '../../core/models/asset_type.dart';
+import '../../core/models/news_article.dart';
 import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
@@ -24,6 +28,7 @@ import 'stocks_provider.dart';
 import 'widgets/add_split_dialog.dart';
 import 'widgets/manual_price_dialog.dart';
 import 'widgets/stock_price_chart.dart';
+import 'widgets/trailing_stop_dialog.dart';
 
 class StockDetailScreen extends ConsumerStatefulWidget {
   const StockDetailScreen({super.key, required this.id});
@@ -40,29 +45,37 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchPriceOnLoad();
+    _fetchPrice();
   }
 
-  // Fetches a fresh quote for this stock when the screen opens. Skipped when a
-  // non-stale quote is already in the in-memory cache (e.g. put there by the
-  // Dashboard). This ensures the price shows correctly when navigating directly
-  // from the stock list without visiting the Dashboard first.
-  Future<void> _fetchPriceOnLoad() async {
+  // On load: skip when a fresh (non-stale) quote is already in-memory.
+  // On pull-to-refresh (forceRefresh: true): always fetch.
+  // Returns true when a new quote was written, false on skip or error.
+  Future<bool> _fetchPrice({bool forceRefresh = false}) async {
     final stock = await ref.read(stockByIdProvider(widget.id).future);
-    if (stock == null || !mounted) return;
-    final existing = ref.read(priceQuotesProvider)[stock.id];
-    if (existing != null && !existing.withStaleness().isStale) return;
+    if (stock == null || !mounted) return false;
+    if (!forceRefresh) {
+      final existing = ref.read(priceQuotesProvider)[stock.id];
+      if (existing != null && !existing.withStaleness().isStale) return false;
+    }
     try {
       final quote = await ref
           .read(marketDataServiceProvider)
           .fetchQuote(stock.symbol, stock.id, stockCurrency: stock.currency);
-      if (quote == null || !mounted) return;
+      if (quote == null || !mounted) return false;
       await ref.read(stockActionsProvider).cacheMarketPrice(quote);
-      if (!mounted) return;
+      if (!mounted) return false;
       final notifier = ref.read(priceQuotesProvider.notifier);
       notifier.state = Map.from(notifier.state)..[stock.id] = quote;
+      return true;
     } catch (e) {
       debugPrint('StockDetail: fetchPrice failed: $e');
+      if (mounted && forceRefresh) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not refresh price')),
+        );
+      }
+      return false;
     }
   }
 
@@ -141,6 +154,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     final splitsAsync = ref.watch(splitsByStockProvider(widget.id));
     final dividendsAsync = ref.watch(dividendsByStockProvider(widget.id));
     final analystAsync = ref.watch(analystDataProvider(widget.id));
+    final newsAsync = ref.watch(newsProvider(widget.id));
+    final settingsValue = ref.watch(settingsStreamProvider).valueOrNull;
+    final finnhubKeyValue = ref.watch(finnhubApiKeyProvider).valueOrNull;
+    final isFinnhubMisconfigured =
+        settingsValue?.marketDataProvider == MarketDataProvider.finnhub &&
+            (finnhubKeyValue == null || finnhubKeyValue.isEmpty);
     final dayHistoryAsync =
         ref.watch(priceHistoryProvider((widget.id, ChartRange.oneDay)));
     final weekHistoryAsync =
@@ -197,9 +216,11 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               ),
             ],
           ),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
+          body: RefreshIndicator(
+            onRefresh: () => _fetchPrice(forceRefresh: true),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
               // Stock info card
               Card(
                 child: Padding(
@@ -207,8 +228,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(stock.name,
-                          style: Theme.of(context).textTheme.titleMedium),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(stock.name,
+                                style: Theme.of(context).textTheme.titleMedium),
+                          ),
+                          if (stock.assetType != AssetType.stock) ...[
+                            const SizedBox(width: 8),
+                            _assetTypeChip(context, stock.assetType),
+                          ],
+                        ],
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         '${stock.exchange} · ${stock.isin}',
@@ -329,6 +361,10 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               StockPriceChart(stockId: widget.id),
               const SizedBox(height: 16),
 
+              // Trailing stop-loss card
+              _buildTrailingStopCard(context, stock, currentPrice),
+              const SizedBox(height: 16),
+
               // Analysis card
               analystAsync.when(
                 loading: () => Card(
@@ -352,9 +388,14 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                 data: (data) => data != null
                     ? _buildAnalystCard(
                         context, data, stock.currency, quoteCurrency,
-                        currentPrice, rates)
-                    : _buildAnalystUnavailableCard(context),
+                        currentPrice, rates, position.sharesHeld)
+                    : _buildAnalystUnavailableCard(context,
+                        isFinnhubMisconfigured: isFinnhubMisconfigured),
               ),
+              const SizedBox(height: 16),
+
+              // News card
+              _buildNewsCard(context, newsAsync.value),
               const SizedBox(height: 16),
 
               _sectionHeader(
@@ -438,6 +479,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                       ),
               ),
             ],
+            ),
           ),
         );
       },
@@ -496,6 +538,32 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     if (quoteCurrency == stockCurrency) return '$converted$tag';
     final raw = CurrencyFormatter.format(rawPrice, quoteCurrency);
     return '$converted ($raw)$tag';
+  }
+
+  Widget _assetTypeChip(BuildContext context, AssetType type) {
+    final color = switch (type) {
+      AssetType.etf => Colors.teal.shade700,
+      AssetType.etc => Colors.orange.shade800,
+      AssetType.fund => Colors.purple.shade700,
+      AssetType.bond => Colors.amber.shade800,
+      AssetType.warrant || AssetType.other => Colors.grey.shade600,
+      AssetType.stock => Colors.transparent,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        type.label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
   }
 
   Widget _kv(BuildContext context, String label, String value,
@@ -630,11 +698,87 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     );
   }
 
-  Widget _buildAnalystUnavailableCard(BuildContext context) {
+  Widget _buildNewsCard(BuildContext context, List<NewsArticle>? articles) {
+    if (articles == null || articles.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final shown = articles.take(5).toList();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: _analystCardHeader(context, subtitle: 'No data available'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('News', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 12),
+            for (var i = 0; i < shown.length; i++) ...[
+              if (i > 0) const Divider(height: 1),
+              _buildNewsItem(context, shown[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNewsItem(BuildContext context, NewsArticle article) {
+    final theme = Theme.of(context);
+    final diff = DateTime.now().difference(article.publishedAt);
+    final timeAgo = diff.inDays >= 1
+        ? '${diff.inDays}d ago'
+        : diff.inHours >= 1
+            ? '${diff.inHours}h ago'
+            : '${diff.inMinutes}m ago';
+
+    return InkWell(
+      onTap: () async {
+        final uri = Uri.tryParse(article.url);
+        if (uri != null) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              article.headline,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              '${article.source} · $timeAgo',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnalystUnavailableCard(BuildContext context,
+      {bool isFinnhubMisconfigured = false}) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: isFinnhubMisconfigured
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _analystCardHeader(context, subtitle: 'API key required'),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => context.push('/settings/market-data'),
+                    child: const Text('Configure in Settings → Market Data'),
+                  ),
+                ],
+              )
+            : _analystCardHeader(context, subtitle: 'No data available'),
       ),
     );
   }
@@ -646,6 +790,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     String quoteCurrency,
     Decimal? currentPrice,
     List<ExchangeRate> rates,
+    Decimal sharesHeld,
   ) {
     // Yahoo analyst price targets are always denominated in the stock's trading
     // currency (quoteCurrency), not in Yahoo's financialCurrency field which
@@ -806,6 +951,43 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               if (epsConverted != null)
                 _kv(context, 'EPS (TTM)',
                     CurrencyFormatter.format(epsConverted, currency)),
+            ],
+
+            // ── Dividends ──────────────────────────────────────────────────
+            if ((data.trailingAnnualDividendRate?.isPositive ?? false) ||
+                data.fiveYearAvgDividendYield != null) ...[
+              const SizedBox(height: 14),
+              _analyticsSubheader(context, 'Dividends'),
+              if (data.trailingAnnualDividendRate?.isPositive ?? false)
+                _kv(
+                  context,
+                  'Annual rate',
+                  // conv() converts from analysisCurrency → stockCurrency (same
+                  // as target prices above); currency label matches the result.
+                  CurrencyFormatter.format(
+                      conv(data.trailingAnnualDividendRate!), currency),
+                ),
+              if (data.fiveYearAvgDividendYield != null)
+                _kv(
+                  context,
+                  'Avg yield (5Y)',
+                  '${data.fiveYearAvgDividendYield!.toStringFixed(2)}%',
+                ),
+              if (data.fiveYearAvgDividendYield != null &&
+                  currentPrice != null &&
+                  sharesHeld.isPositive)
+                _kv(
+                  context,
+                  'Est. annual income',
+                  CurrencyFormatter.format(
+                    (sharesHeld.toRational() *
+                            currentPrice.toRational() *
+                            data.fiveYearAvgDividendYield!.toRational() /
+                            Decimal.fromInt(100).toRational())
+                        .toDecimal(scaleOnInfinitePrecision: 2),
+                    stockCurrency,
+                  ),
+                ),
             ],
           ],
         ),
@@ -970,6 +1152,140 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       'sell' || 'strongsell' || 'strong_sell' => ('Sell', Colors.red),
       _ => (null, Colors.transparent),
     };
+  }
+
+  Future<void> _showTrailingStopDialog(Stock stock, Decimal? currentPrice) async {
+    final pct = await showDialog<Decimal>(
+      context: context,
+      builder: (_) => TrailingStopDialog(initialPct: stock.trailingStopPct),
+    );
+    if (pct == null || !mounted) return;
+    try {
+      await ref
+          .read(stockActionsProvider)
+          .setTrailingStop(stock.id, pct, currentPrice);
+    } catch (e) {
+      debugPrint('StockDetail: setTrailingStop failed: $e');
+    }
+  }
+
+  Widget _buildTrailingStopCard(
+      BuildContext context, Stock stock, Decimal? currentPrice) {
+    final theme = Theme.of(context);
+    final pct = stock.trailingStopPct;
+    final highWater = stock.trailingStopHighWater;
+
+    Decimal? stopPrice;
+    if (pct != null && highWater != null) {
+      stopPrice = ((highWater *
+                  (Decimal.fromInt(100) - pct) /
+                  Decimal.fromInt(100))
+              .toDecimal(scaleOnInfinitePrecision: 10));
+    }
+
+    final isTriggered = currentPrice != null &&
+        stopPrice != null &&
+        currentPrice <= stopPrice;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.trending_down,
+                    size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Trailing Stop-Loss',
+                    style: theme.textTheme.titleMedium),
+                const Spacer(),
+                if (pct != null)
+                  Chip(
+                    label: Text(
+                      isTriggered ? 'Triggered' : 'Active',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: isTriggered
+                            ? theme.colorScheme.onError
+                            : theme.colorScheme.onTertiaryContainer,
+                      ),
+                    ),
+                    backgroundColor: isTriggered
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.tertiaryContainer,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            if (pct == null) ...[
+              const SizedBox(height: 8),
+              Text('No trailing stop configured.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 8),
+              FilledButton.tonal(
+                onPressed: () =>
+                    _showTrailingStopDialog(stock, currentPrice),
+                child: const Text('Set alert'),
+              ),
+            ] else ...[
+              const Divider(height: 20),
+              _kv(context, 'Threshold', '−${pct.toStringAsFixed(1)}%'),
+              if (highWater != null)
+                _kv(
+                  context,
+                  'High-water mark',
+                  CurrencyFormatter.format(highWater, stock.currency),
+                ),
+              if (stopPrice != null)
+                _kv(
+                  context,
+                  'Stop price',
+                  CurrencyFormatter.format(stopPrice, stock.currency),
+                  valueColor: isTriggered ? theme.colorScheme.error : null,
+                ),
+              if (highWater == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'High-water mark will be set on the next price check.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton(
+                    onPressed: () =>
+                        _showTrailingStopDialog(stock, currentPrice),
+                    child: const Text('Edit'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                        foregroundColor: theme.colorScheme.error),
+                    onPressed: () async {
+                      try {
+                        await ref
+                            .read(stockActionsProvider)
+                            .clearTrailingStop(stock.id);
+                      } catch (e) {
+                        debugPrint(
+                            'StockDetail: clearTrailingStop failed: $e');
+                      }
+                    },
+                    child: const Text('Remove'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _addSplit(String stockId) async {

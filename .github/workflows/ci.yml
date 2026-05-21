@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Opt into Node.js 24 for all JavaScript actions before the June 2026 forced cutover.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 defaults:
   run:
     working-directory: src
@@ -90,6 +94,12 @@ jobs:
           path = 'android/app/build.gradle.kts'
           with open(path) as f:
               content = f.read()
+          # flutter_plugin_android_lifecycle requires compileSdk >= 36
+          content = content.replace(
+              'compileSdk = flutter.compileSdkVersion',
+              'compileSdk = 36',
+              1,
+          )
           content = content.replace(
               'compileOptions {',
               'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
@@ -104,6 +114,47 @@ jobs:
               content = content.rstrip() + '\n\ndependencies {\n' + dep + '\n}\n'
           with open(path, 'w') as f:
               f.write(content)
+          # file_picker hardcodes compileSdkVersion=34 in its own build file.
+          # AGP 9+ dropped the compileSdkVersion method from the new DSL — it only
+          # reads compileSdk. Rename it and ensure the value is >= 36.
+          # Patch both Groovy (.gradle) and Kotlin DSL (.gradle.kts) variants.
+          import glob, os, re
+          pub_cache = os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))
+          pattern = os.path.join(
+              pub_cache, 'hosted', 'pub.dev',
+              'file_picker-*', 'android', 'build.gradle*',
+          )
+          matched = glob.glob(pattern)
+          print(f'file_picker build files found: {matched}')
+          for fp in matched:
+              with open(fp) as f:
+                  txt = f.read()
+              # compileSdkVersion N → compileSdk N (rename + bump)
+              updated = re.sub(
+                  r'compileSdkVersion\s+(\d+)',
+                  lambda m: 'compileSdk ' + str(max(int(m.group(1)), 36)),
+                  txt,
+              )
+              # compileSdk = N (Kotlin DSL) — bump if below 36
+              updated = re.sub(
+                  r'(compileSdk\s*=\s*)(\d+)',
+                  lambda m: m.group(1) + str(max(int(m.group(2)), 36)),
+                  updated,
+              )
+              # compileSdk N (Groovy DSL, no =) — bump if below 36
+              updated = re.sub(
+                  r'(compileSdk\s+)(\d+)',
+                  lambda m: m.group(1) + str(max(int(m.group(2)), 36)),
+                  updated,
+              )
+              if updated != txt:
+                  with open(fp, 'w') as f:
+                      f.write(updated)
+                  print(f'Patched: {fp}')
+              else:
+                  print(f'No upgrade needed in: {fp}')
+          if not matched:
+              print('WARNING: No file_picker build files found in pub cache')
 
       - name: Build APK (debug — unsigned)
         run: flutter build apk --debug --build-number=${{ github.run_number }}
@@ -205,6 +256,25 @@ jobs:
 
       - name: Build macOS
         run: flutter build macos --release
+
+      - name: Re-sign macOS app (ad-hoc, no sandbox)
+        working-directory: src/build/macos/Build/Products/Release
+        run: |
+          cat > /tmp/nosandbox.entitlements << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.network.client</key>
+            <true/>
+            <key>com.apple.security.files.user-selected.read-write</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          codesign --deep --force --sign - \
+            --entitlements /tmp/nosandbox.entitlements \
+            stock_manager.app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4

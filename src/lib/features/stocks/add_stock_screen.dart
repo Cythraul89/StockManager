@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/models/asset_type.dart';
 import '../../core/models/stock.dart';
 import '../../core/services/isin_lookup_service.dart';
 import '../../core/utils/currency_formatter.dart';
@@ -29,6 +30,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
 
   String? _selectedBrokerId;
   String? _selectedCurrency;
+  AssetType _assetType = AssetType.stock;
   bool _dripEnabled = false;
   bool _isLookingUp = false;
   bool _showingPicker = false;
@@ -116,6 +118,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
       _nameCtrl.text = chosen.name;
       _exchangeCtrl.text =
           chosen.exchangeName.isNotEmpty ? chosen.exchangeName : chosen.exchange;
+      _assetType = chosen.assetType;
       // Only apply the resolved currency if it's a non-empty string so the
       // user still sees the "Select currency" hint when OpenFIGI returns nothing.
       if (resolvedCurrency.isNotEmpty) {
@@ -213,6 +216,7 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
         exchange: _exchangeCtrl.text.trim(),
         currency: _selectedCurrency!,
         dripEnabled: _dripEnabled,
+        assetType: _assetType,
       );
       await ref.read(stockActionsProvider).addStock(stock);
       await ref.read(secureStorageProvider).write(
@@ -373,6 +377,21 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
                   onChanged: (v) => setState(() => _selectedBrokerId = v),
                   validator: (v) => v == null ? 'Required' : null,
                 );
+              },
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<AssetType>(
+              key: ValueKey<AssetType>(_assetType),
+              initialValue: _assetType,
+              decoration: const InputDecoration(
+                labelText: 'Asset type',
+                border: OutlineInputBorder(),
+              ),
+              items: AssetType.values
+                  .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
+                  .toList(),
+              onChanged: (v) {
+                if (v != null) setState(() => _assetType = v);
               },
             ),
             const SizedBox(height: 8),

@@ -4,11 +4,16 @@ import 'package:decimal/decimal.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:intl/intl.dart';
+import 'package:xml/xml.dart';
+
 import '../models/analyst_data.dart';
 import '../models/chart_range.dart';
 import '../models/fetched_dividend.dart';
+import '../models/news_article.dart';
 import '../models/price_point.dart';
 import '../models/price_quote.dart';
+import '../utils/decimal_math.dart';
 
 class MarketDataService {
   MarketDataService(this._dio) {
@@ -367,6 +372,9 @@ class MarketDataService {
         trailingEps: raw(dks, 'trailingEps'),
         // 52-week return as a fraction (e.g. 0.157 = +15.7%)
         yearChangePct: raw(dks, '52WeekChange'),
+        // Dividends — fiveYearAvgDividendYield is already in % (e.g. 3.5 = 3.5%)
+        fiveYearAvgDividendYield: raw(sd, 'fiveYearAvgDividendYield'),
+        trailingAnnualDividendRate: raw(sd, 'trailingAnnualDividendRate'),
       );
     } on DioException catch (e) {
       final status = e.response?.statusCode;
@@ -384,7 +392,137 @@ class MarketDataService {
     }
   }
 
-  /// Fetches OHLCV closing prices for [symbol] over the given [range].
+  /// Fetches analyst data from Finnhub using three parallel requests:
+  /// price-target, recommendation trend, and basic financials.
+  Future<AnalystData?> fetchAnalystDataFromFinnhub(
+      String symbol, String apiKey) async {
+    const base = 'https://finnhub.io/api/v1';
+    try {
+      final responses = await Future.wait([
+        _dio.get<dynamic>('$base/stock/price-target',
+            queryParameters: {'symbol': symbol, 'token': apiKey}),
+        _dio.get<dynamic>('$base/stock/recommendation',
+            queryParameters: {'symbol': symbol, 'token': apiKey}),
+        _dio.get<dynamic>('$base/stock/metric',
+            queryParameters: {
+              'symbol': symbol,
+              'metric': 'all',
+              'token': apiKey,
+            }),
+      ]);
+
+      // ── Price target ────────────────────────────────────────────────────
+      final pt = responses[0].data as Map<String, dynamic>?;
+      final targetMean = _fhDecimal(pt, 'targetMean');
+      if (targetMean == null || targetMean.isZero) return null;
+
+      // ── Recommendation trend (most-recent period first) ─────────────────
+      final recList = (responses[1].data as List<dynamic>?)
+          ?.whereType<Map<String, dynamic>>()
+          .toList();
+      final rec = recList?.firstOrNull;
+      final sb = rec?['strongBuy']  as int? ?? 0;
+      final b  = rec?['buy']        as int? ?? 0;
+      final h  = rec?['hold']       as int? ?? 0;
+      final s  = rec?['sell']       as int? ?? 0;
+      final ss = rec?['strongSell'] as int? ?? 0;
+      final total = sb + b + h + s + ss;
+
+      // ── Basic financials ────────────────────────────────────────────────
+      final metricsMap = responses[2].data as Map<String, dynamic>?;
+      final m = metricsMap?['metric'] as Map<String, dynamic>?;
+
+      // Finnhub 52-week return is in % (e.g. 15.7); convert to fraction.
+      final raw52w = _fhDecimal(m, '52WeekPriceReturnDaily');
+      final yearChangePct = raw52w != null
+          ? (raw52w.toRational() / Decimal.fromInt(100).toRational())
+              .toDecimal(scaleOnInfinitePrecision: 4)
+          : null;
+
+      return AnalystData(
+        targetMeanPrice: targetMean,
+        targetLowPrice:  _fhDecimal(pt, 'targetLow'),
+        targetHighPrice: _fhDecimal(pt, 'targetHigh'),
+        recommendationKey:
+            total > 0 ? _fhRecKey(sb, b, h, s, ss, total) : null,
+        numberOfAnalysts: total > 0 ? total : null,
+        financialCurrency: null,
+        strongBuyCount:  sb > 0 ? sb : null,
+        buyCount:        b  > 0 ? b  : null,
+        holdCount:       h  > 0 ? h  : null,
+        sellCount:       s  > 0 ? s  : null,
+        strongSellCount: ss > 0 ? ss : null,
+        fiftyTwoWeekLow:  _fhDecimal(m, '52WeekLow'),
+        fiftyTwoWeekHigh: _fhDecimal(m, '52WeekHigh'),
+        trailingPE: _fhDecimal(m, 'peExclExtraTTM') ??
+            _fhDecimal(m, 'peNormalizedAnnual'),
+        forwardPE:  _fhDecimal(m, 'forwardPE'),
+        trailingEps: _fhDecimal(m, 'epsBasicExclExtraAnnual') ??
+            _fhDecimal(m, 'epsNormalizedAnnual'),
+        yearChangePct: yearChangePct,
+        fiveYearAvgDividendYield:  _fhDecimal(m, 'dividendYield5Y'),
+        trailingAnnualDividendRate: _fhDecimal(m, 'dividendPerShareAnnual'),
+      );
+    } catch (e) {
+      debugPrint(
+          'MarketDataService: Finnhub analyst fetch failed for $symbol: $e');
+      return null;
+    }
+  }
+
+  Future<AnalystData?> fetchAnalystDataFinnhubWithFallback(
+      String symbol, String apiKey) async {
+    final results = await Future.wait([
+      fetchAnalystDataFromFinnhub(symbol, apiKey),
+      fetchAnalystData(symbol),
+    ]);
+    final fh = results[0];
+    final yh = results[1];
+    if (fh == null) return yh;
+    if (yh == null) return fh;
+    return AnalystData(
+      targetMeanPrice: fh.targetMeanPrice,
+      targetLowPrice: fh.targetLowPrice ?? yh.targetLowPrice,
+      targetHighPrice: fh.targetHighPrice ?? yh.targetHighPrice,
+      recommendationKey: fh.recommendationKey ?? yh.recommendationKey,
+      numberOfAnalysts: fh.numberOfAnalysts ?? yh.numberOfAnalysts,
+      financialCurrency: fh.financialCurrency ?? yh.financialCurrency,
+      strongBuyCount: fh.strongBuyCount ?? yh.strongBuyCount,
+      buyCount: fh.buyCount ?? yh.buyCount,
+      holdCount: fh.holdCount ?? yh.holdCount,
+      sellCount: fh.sellCount ?? yh.sellCount,
+      strongSellCount: fh.strongSellCount ?? yh.strongSellCount,
+      fiftyTwoWeekLow: fh.fiftyTwoWeekLow ?? yh.fiftyTwoWeekLow,
+      fiftyTwoWeekHigh: fh.fiftyTwoWeekHigh ?? yh.fiftyTwoWeekHigh,
+      trailingPE: fh.trailingPE ?? yh.trailingPE,
+      forwardPE: fh.forwardPE ?? yh.forwardPE,
+      trailingEps: fh.trailingEps ?? yh.trailingEps,
+      yearChangePct: fh.yearChangePct ?? yh.yearChangePct,
+      fiveYearAvgDividendYield:
+          fh.fiveYearAvgDividendYield ?? yh.fiveYearAvgDividendYield,
+      trailingAnnualDividendRate:
+          fh.trailingAnnualDividendRate ?? yh.trailingAnnualDividendRate,
+    );
+  }
+
+  static Decimal? _fhDecimal(Map<String, dynamic>? map, String key) {
+    final v = map?[key];
+    if (v == null) return null;
+    return Decimal.tryParse(v.toString());
+  }
+
+  // Derives a Yahoo-compatible recommendationKey from Finnhub counts using a
+  // weighted score: strongBuy=+2, buy=+1, hold=0, sell=−1, strongSell=−2.
+  static String _fhRecKey(int sb, int b, int h, int s, int ss, int total) {
+    final score = (sb * 2 + b - s - ss * 2) / total;
+    if (score > 1.2)  return 'strong_buy';
+    if (score > 0.4)  return 'buy';
+    if (score > -0.4) return 'hold';
+    if (score > -1.2) return 'sell';
+    return 'strong_sell';
+  }
+
+
   /// Returns an empty list when the symbol is unknown or the API is unreachable.
   Future<List<PricePoint>> fetchPriceHistory(
       String symbol, ChartRange range) async {
@@ -436,6 +574,100 @@ class MarketDataService {
       debugPrint(
           'MarketDataService: price history fetch failed for $symbol: $e');
       return [];
+    }
+  }
+
+  /// Returns up to 10 recent news articles for [symbol].
+  /// Uses Finnhub company-news when [finnhubApiKey] is provided; falls back to
+  /// Yahoo Finance search otherwise.
+  Future<List<NewsArticle>> fetchNews(String symbol,
+      {String? finnhubApiKey}) async {
+    if (finnhubApiKey != null && finnhubApiKey.isNotEmpty) {
+      try {
+        return await _fetchNewsFromFinnhub(symbol, finnhubApiKey);
+      } catch (e) {
+        debugPrint('MarketDataService: Finnhub news failed for $symbol: $e');
+      }
+    }
+    try {
+      return await _fetchNewsFromYahoo(symbol);
+    } catch (e) {
+      debugPrint('MarketDataService: Yahoo news failed for $symbol: $e');
+      return [];
+    }
+  }
+
+  Future<List<NewsArticle>> _fetchNewsFromFinnhub(
+      String symbol, String apiKey) async {
+    const base = 'https://finnhub.io/api/v1';
+    final fmt = DateFormat('yyyy-MM-dd');
+    final now = DateTime.now();
+    final response = await _dio.get<dynamic>(
+      '$base/company-news',
+      queryParameters: {
+        'symbol': symbol,
+        'from': fmt.format(now.subtract(const Duration(days: 7))),
+        'to': fmt.format(now),
+        'token': apiKey,
+      },
+    );
+    final list = (response.data as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>() ??
+        [];
+    return list.take(10).map((item) {
+      final ts = item['datetime'] as int? ?? 0;
+      return NewsArticle(
+        headline: item['headline'] as String? ?? '',
+        url: item['url'] as String? ?? '',
+        source: item['source'] as String? ?? '',
+        publishedAt: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
+        summary: item['summary'] as String?,
+      );
+    }).where((a) => a.headline.isNotEmpty && a.url.isNotEmpty).toList();
+  }
+
+  Future<List<NewsArticle>> _fetchNewsFromYahoo(String symbol) async {
+    // Use the Yahoo Finance RSS feed — it filters strictly by symbol, unlike
+    // the search endpoint which returns general news for any matching query.
+    final response = await _dio.get<String>(
+      'https://feeds.finance.yahoo.com/rss/2.0/headline',
+      queryParameters: {'s': symbol, 'region': 'US', 'lang': 'en-US'},
+    );
+    if (response.data == null || response.data!.isEmpty) return [];
+
+    final document = XmlDocument.parse(response.data!);
+    final items = document.findAllElements('item');
+
+    return items.take(10).map((item) {
+      final title = item.findElements('title').firstOrNull?.innerText ?? '';
+      // In RSS 2.0 <link> is a text sibling, not a child element — use the
+      // next sibling text node trick, but innerText on the element works for
+      // feeds that wrap the URL in the element content.
+      final link = item.findElements('link').firstOrNull?.innerText ??
+          item.findElements('guid').firstOrNull?.innerText ??
+          '';
+      final pubDateStr =
+          item.findElements('pubDate').firstOrNull?.innerText ?? '';
+      final source = item.findElements('source').firstOrNull?.innerText ?? '';
+
+      return NewsArticle(
+        headline: title,
+        url: link,
+        source: source,
+        publishedAt: _parseRssDate(pubDateStr),
+      );
+    }).where((a) => a.headline.isNotEmpty && a.url.isNotEmpty).toList();
+  }
+
+  // RFC 822 date format used in RSS feeds: "Mon, 19 May 2026 14:30:00 +0000"
+  static final _rssFmt =
+      DateFormat('EEE, dd MMM yyyy HH:mm:ss Z', 'en_US');
+
+  static DateTime _parseRssDate(String s) {
+    try {
+      return _rssFmt.parse(s.trim(), true).toLocal();
+    } catch (_) {
+      return DateTime.now();
     }
   }
 

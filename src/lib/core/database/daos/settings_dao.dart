@@ -30,6 +30,14 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
       (update(settings)..where((t) => t.id.equals(_settingsId)))
           .write(SettingsCompanion(lastSyncAt: Value(time)));
 
+  Future<void> updateFinnhubApiKey(String? key) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(finnhubApiKey: Value(key)));
+
+  Future<void> updateCertFingerprint(String? fingerprint) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(nextcloudCertFingerprint: Value(fingerprint)));
+
   // Exchange rates
   Stream<List<ExchangeRateCacheRow>> watchExchangeRates() =>
       (select(exchangeRateCache)

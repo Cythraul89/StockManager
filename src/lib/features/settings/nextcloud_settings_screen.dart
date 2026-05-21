@@ -59,19 +59,23 @@ class _NextcloudSettingsScreenState
       final certInfo = await service.fetchCertificateInfo(url);
       if (!mounted) return;
 
+      String? fingerprint;
       if (certInfo != null) {
         final approved = await _showCertDialog(certInfo);
         if (approved != true) {
           setState(() => _connectionStatus = 'Certificate not trusted.');
           return;
         }
-        await service.pinCertificate(certInfo.fingerprint);
+        fingerprint = certInfo.fingerprint;
+        await ref.read(settingsActionsProvider).saveCertFingerprint(fingerprint);
       }
 
       await service.verifyCredentials(
         serverUrl: url,
         username: _usernameCtrl.text.trim(),
         password: _passwordCtrl.text,
+        pinnedFingerprint: fingerprint ??
+            (await ref.read(settingsProvider.future)).nextcloudCertFingerprint,
       );
 
       if (mounted) {
@@ -92,40 +96,46 @@ class _NextcloudSettingsScreenState
     setState(() => _isSaving = true);
 
     try {
-      // 1. Persist credentials.
-      await ref
-          .read(secureStorageProvider)
-          .write(key: nextcloudPasswordKey, value: _passwordCtrl.text);
-
       final settings = await ref.read(settingsProvider.future);
       await ref.read(settingsActionsProvider).saveSettings(
             settings.copyWith(
               nextcloudUrl: _urlCtrl.text.trim(),
               nextcloudUsername: _usernameCtrl.text.trim(),
+              nextcloudPassword: _passwordCtrl.text,
               nextcloudPath: _pathCtrl.text.trim(),
             ),
           );
 
       if (!mounted) return;
 
-      // 2. Check for any existing backup on the server.
       final notifier = ref.read(nextcloudSyncProvider.notifier);
-      final remoteBackup = await notifier.findRemoteBackup();
+
+      // 2. Check for any existing backup on the server. checkForRemoteBackup()
+      //    reads credentials directly from DB (so it sees the just-saved values)
+      //    and stores the result in state, consistent with the startup check.
+      await notifier.checkForRemoteBackup();
       if (!mounted) return;
 
       // 3. Ask what to do (restore vs. upload; null = user dismissed = skip).
+      final remoteBackup = ref.read(nextcloudSyncProvider).pendingRestore;
       final choice = await _showSyncChoiceDialog(remoteBackup);
       if (!mounted) return;
 
       // 4. Execute the chosen action.
       if (choice == _SyncChoice.restore && remoteBackup != null) {
-        notifier.setPendingRestore(remoteBackup);
         await notifier.restoreFromRemote();
         if (!mounted) return;
         if (ref.read(nextcloudSyncProvider).status == SyncStatus.error) return;
       } else if (choice == _SyncChoice.upload) {
+        // Dismiss pendingRestore so syncNow() is not blocked by the guard
+        // that prevents auto-upload while a restore decision is pending.
+        notifier.dismissRestore();
         await notifier.syncNow();
         if (!mounted) return;
+      } else {
+        // User chose "Later" — clear pending so the global shell listener
+        // doesn't re-surface the dialog immediately after navigating away.
+        notifier.dismissRestore();
       }
 
       // 5. Return to settings — invalidate first so re-opening this screen
@@ -257,11 +267,9 @@ class _NextcloudSettingsScreenState
             _connectionVerified = settings.nextcloudUrl?.isNotEmpty == true &&
                 settings.nextcloudUsername?.isNotEmpty == true &&
                 settings.lastSyncAt != null;
-            ref.read(secureStorageProvider).read(key: nextcloudPasswordKey).then((pw) {
-              if (mounted && pw != null) {
-                setState(() => _passwordCtrl.text = pw);
-              }
-            });
+            if (settings.nextcloudPassword != null) {
+              _passwordCtrl.text = settings.nextcloudPassword!;
+            }
           }
 
           return Form(

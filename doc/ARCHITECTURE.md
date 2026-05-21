@@ -9,14 +9,13 @@
 | Local database | Drift (SQLite) | Type-safe, reactive streams, first-class migration support |
 | Navigation | go_router | Declarative, shell routes for adaptive layout, deep-link ready |
 | HTTP client | Dio | Interceptors, retry logic, timeout handling |
-| Market data | Yahoo Finance (unofficial JSON) + Stooq CSV fallback | Yahoo primary; Stooq CSV (`f=sdc`) used when Yahoo returns no data |
+| Market data | Yahoo Finance (unofficial JSON) + Stooq CSV fallback + Finnhub (optional) | Yahoo primary for live prices; Stooq CSV fallback for quotes; Finnhub selectable for analyst data (requires free API key) |
 | Currency rates | Frankfurter (api.frankfurter.app) | Free, no API key, ECB data, cacheable, supports major ISO 4217 pairs |
 | Nextcloud sync | WebDAV over HTTP | Nextcloud's native protocol; no extra server needed |
 | Backup / restore | archive + xml (custom BackupService) | ZIP (JSON) for sync backup; ODS for human-readable export |
-| Push notifications | firebase_messaging | Android FCM only (per requirements) |
-| Background tasks | WorkManager (via workmanager plugin) | Android only; polls prices when app is closed |
-| Local notifications | flutter_local_notifications | All platforms; used for alerts on desktop |
-| Secure storage | flutter_secure_storage | Nextcloud credentials, encrypted at rest |
+| Background tasks | WorkManager (via workmanager plugin) | Android only; price, rating, dividend, and trailing stop-loss checks when app is closed |
+| Local notifications | flutter_local_notifications | All platforms; WorkManager fires them on Android, running app fires them on desktop |
+| Secure storage | flutter_secure_storage | `last_used_broker_id` only; credentials moved to SQLite settings table |
 
 ---
 
@@ -37,7 +36,9 @@ lib/
 │   │   ├── currency_service.dart
 │   │   ├── nextcloud_service.dart
 │   │   ├── backup_service.dart
-│   │   └── notification_service.dart
+│   │   ├── notification_service.dart
+│   │   ├── background_check_service.dart
+│   │   └── log_service.dart
 │   ├── models/                     # Immutable domain models (pure Dart, no Flutter)
 │   ├── calculators/                # P&L, avg price, dividend yield — pure functions
 │   └── utils/                      # Formatting, date helpers, decimal math
@@ -49,6 +50,9 @@ lib/
 │   ├── dividends/
 │   ├── brokers/
 │   └── settings/
+│       ├── about_screen.dart           # Version, GPL-3, privacy policy, app logs links
+│       ├── privacy_policy_screen.dart  # In-app privacy policy
+│       └── logs_screen.dart            # Log viewer with share/clear
 │
 └── shell/
     ├── adaptive_shell.dart         # Picks mobile or desktop shell by screen width
@@ -64,6 +68,12 @@ features/<name>/
 ├── <name>_provider.dart        # Riverpod providers (state + async data)
 └── widgets/                    # Feature-local reusable widgets
 ```
+
+Notable provider files:
+
+| File | Key exports |
+|---|---|
+| `features/dividends/dividends_provider.dart` | `estimatedAnnualDividendProvider`, `DividendEstimate` |
 
 ---
 
@@ -89,6 +99,10 @@ features/<name>/
 | exchange | TEXT | e.g. NASDAQ — resolved from ISIN |
 | currency | TEXT | ISO 4217, e.g. USD — resolved from ISIN |
 | drip_enabled | BOOL | Dividend reinvestment flag |
+| asset_type | TEXT | `stock` \| `etf` \| `bond` \| `crypto` \| `other`; default `stock` |
+| last_known_consensus | TEXT? | Most recent analyst `recommendationKey`; used by `BackgroundCheckService` to detect rating changes between runs |
+| trailing_stop_pct | TEXT? (DECIMAL) | Drop threshold in percent (e.g. `10` = −10%); null = alert disabled |
+| trailing_stop_high_water | TEXT? (DECIMAL) | Peak price in `stock.currency` recorded since the alert was enabled; null = not yet seeded (set on first background check after enabling) |
 
 **transactions**
 | Column | Type | Notes |
@@ -159,8 +173,10 @@ features/<name>/
 | last_sync_at | DATETIME? | |
 | nextcloud_keep_exports | INT | remote backups to retain; default 5 |
 | sparkline_range | TEXT | `ChartRange.label` (e.g. `1M`); default `1M` |
-
-> Nextcloud password is stored separately in flutter_secure_storage, not in SQLite.
+| market_data_provider | TEXT: yahoo \| finnhub | default yahoo |
+| nextcloud_password | TEXT? | Nextcloud password / app token (moved from flutter_secure_storage) |
+| finnhub_api_key | TEXT? | Finnhub API key (moved from flutter_secure_storage) |
+| nextcloud_cert_fingerprint | TEXT? | Pinned SHA-256 cert fingerprint (moved from flutter_secure_storage) |
 
 ---
 
@@ -194,6 +210,10 @@ Data always flows upward. Widgets never touch repositories directly — they go 
 ### 5.1 Adaptive Layout Breakpoint
 At **≥ 600 dp** the `adaptive_shell` switches to the desktop shell (persistent sidebar). Below that the mobile shell (bottom navigation bar) is used. The breakpoint is implemented inside a `ShellRoute` in go_router so that navigation state and scroll positions are preserved across the switch.
 
+The `NavigationRail` inside `DesktopShell` uses **extended mode** (icons + labels, ~220 dp wide) only at **≥ 1200 dp**; between 600 and 1199 dp it shows icons only (~72 dp), which preserves usable screen space on tablets and landscape phones.
+
+`AdaptiveShell` is a `ConsumerStatefulWidget`. Its `initState` registers a `ref.listenManual` subscription on `nextcloudSyncProvider` that detects when `pendingRestore` transitions from null to non-null (startup backup check) and shows a proactive restore dialog. A `_restoreDialogShowing` guard prevents concurrent dialogs if the state transitions rapidly. The listener is cancelled in `dispose`. The dialog is suppressed when the Nextcloud settings screen is already open (it handles the decision inline).
+
 ### 5.2 Split-Adjusted Calculations
 Raw transaction rows are never modified when a stock split is recorded. `PortfolioCalculator.calculate()` applies a cumulative split multiplier when reading historical transactions, keeping raw data immutable and auditable. The helper `PortfolioCalculator.splitMultiplierAfter(txDate, splits)` is a public static method so that `PnlCalculator` can share the same logic without duplication.
 
@@ -218,8 +238,20 @@ When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth 
 ### 5.5 Financial Arithmetic
 All monetary values are stored and calculated as `Decimal` (via the `decimal` package), never `double`, to avoid floating-point rounding errors.
 
-### 5.6 Background Price Alerts on Android
-True FCM push requires a backend server to send messages. To avoid a server dependency, price alerts on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval). The task fetches latest prices, checks thresholds, and fires a local notification if triggered. FCM infrastructure is included in the project so a self-hosted backend can be added later without client changes.
+### 5.6 Background Checks on Android
+True FCM push requires a backend server to send messages. To avoid a server dependency, background checks on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval, network required). The task is registered in `main.dart` via a top-level `callbackDispatcher` and dispatched to `BackgroundCheckService.run()`.
+
+`BackgroundCheckService` is a static-only class that runs inside a WorkManager isolate (no Riverpod). It opens its own `AppDatabase.background(file)` connection and `MarketDataService` + `FlutterLocalNotificationsPlugin` instances, then performs the following checks:
+
+**Every cycle (every ~15 min):**
+- **Price alert** — fetches a fresh quote via `MarketDataService`, compares against the cached `price_cache` price; fires a `price_alerts` channel notification if the change exceeds `priceAlertThresholdPct`. The cached price is updated after each run so the next comparison is against the most recently seen price.
+- **Trailing stop-loss** — if `trailing_stop_pct` is set for a stock, the quote price is first converted to `stock.currency` using the cached exchange rate (`settingsDao.getRate(stock.currency, quote.currency)`). If the converted price exceeds the current `trailing_stop_high_water`, the high-water mark is updated. If it falls to or below `highWater × (1 − pct/100)`, a `stop_loss_alerts` notification fires and the high-water is reset to null so the alert does not re-fire until the price recovers and makes a new peak. The stop check is skipped when no exchange rate is cached (avoids cross-currency comparisons).
+
+**Once per calendar day** (gated by `background_check_last_run.txt` in app documents):
+- **Analyst rating change** — fetches analyst data (Finnhub or Yahoo based on `settings.marketDataProvider`), compares `recommendationKey` against `stocks.lastKnownConsensus`; fires a `rating_alerts` channel notification on change, then calls `StocksDao.updateLastKnownConsensus()` to persist the new value. No notification is sent on the first run (when `lastKnownConsensus` is null), preventing false alerts at install time.
+- **Dividend alert** — queries expected dividends within the next `dividendAlertDays` days; fires a `dividend_alerts` channel notification for each upcoming payment.
+
+Rating and dividend checks are gated to once per day to avoid hammering the analyst API (~100 HTTP requests per 15-min cycle for a full portfolio) and to prevent the same dividend notification firing repeatedly.
 
 ### 5.7 ODS Structure
 
@@ -350,9 +382,13 @@ Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchD
 | Module | Fields extracted |
 |---|---|
 | `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency` |
-| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE` |
+| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE`, `fiveYearAvgDividendYield` (already in %, e.g. 3.5 = 3.5%), `trailingAnnualDividendRate` (annual dividend per share in trading currency) |
 | `defaultKeyStatistics` | `trailingEps`, `52WeekChange` (stored as `yearChangePct`, a decimal fraction e.g. `0.157` = +15.7%) |
 | `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
+
+`MarketDataService.fetchAnalystDataFromFinnhub(symbol, apiKey)` fires three parallel requests to Finnhub's v1 API: `/stock/price-target` (mean/low/high targets), `/stock/recommendation` (consensus counts for the most recent period), and `/stock/metric?metric=all` (52-week range, P/E, EPS, 5Y dividend yield, annual dividend per share). A weighted recommendation score `(strongBuy×2 + buy − sell − strongSell×2) / total` is mapped to the same `strong_buy / buy / hold / sell / strong_sell` keys used by Yahoo. Finnhub's `52WeekPriceReturnDaily` is in percent and is divided by 100 to match Yahoo's fraction convention for `yearChangePct`.
+
+`MarketDataService.fetchAnalystDataFinnhubWithFallback(symbol, apiKey)` runs both Finnhub and Yahoo requests in parallel and merges the results: Finnhub fields take precedence; any null fields (common for non-US stocks, e.g. `fiveYearAvgDividendYield`, `trailingAnnualDividendRate`) are filled from the Yahoo result. If Finnhub returns no data, the full Yahoo result is used. This method is called by `analystDataProvider` when Finnhub is the active provider.
 
 The result is an `AnalystData` model. It is exposed via `analystDataProvider` (a `FutureProvider.family` keyed by `stockId`) and displayed in two places:
 - **Stock Detail** — full "Analysis" card with target prices, range bars, consensus breakdown, and valuation metrics.
@@ -362,7 +398,7 @@ Data is not persisted locally.
 
 #### Caching and manual refresh
 
-`analystDataProvider` uses `ref.keepAlive()` with a 10-minute TTL, so navigating away and back does not trigger a full Yahoo round-trip on every visit. A `StateProvider.family<int, String>` counter (`analystRefreshProvider`) is used to force a re-fetch: `analystDataProvider` watches it, and the refresh button on the Analysis card increments it. `ref.invalidate()` is intentionally **not** used here because it interferes with the `keepAlive` link.
+`analystDataProvider` uses `ref.keepAlive()` with a 10-minute TTL, so navigating away and back does not trigger a full Yahoo round-trip on every visit. A `StateProvider.family<int, String>` counter (`analystRefreshProvider`) is used to force a re-fetch: `analystDataProvider` watches it, and the refresh button on the Analysis card increments it. `ref.invalidate()` is intentionally **not** used here because it interferes with the `keepAlive` link. It also watches `analystCacheVersionProvider` (a `StateProvider<int>`) which is incremented when the market data provider is switched or the Finnhub API key is changed, busting all cached analyst data so the next open re-fetches from the new source.
 
 #### Yahoo Finance session (GDPR)
 
@@ -391,6 +427,7 @@ Yahoo Finance returns analyst price targets in the stock's **trading currency** 
 | 52-Week Range | Same gradient bar widget, same current-price marker |
 | Consensus | Stacked colour bar (proportional to analyst counts) with a text legend |
 | Valuation | Trailing P/E · Forward P/E · EPS (TTM), converted to stock currency |
+| Dividends | Annual rate (`trailingAnnualDividendRate`, hidden when zero/null) · 5Y avg yield (`fiveYearAvgDividendYield`, %) · Est. annual income (shares × current price × 5Y yield ÷ 100, in stock currency, shown when shares > 0 and yield is available) |
 
 ### 5.10 Price History Chart and Change Badges
 
@@ -418,6 +455,8 @@ A `ConsumerStatefulWidget` rendered on the Stock Detail screen. State: active `C
 - **Tooltip** — shows exact formatted price and date on touch.
 - **Range selector** — pill buttons at the bottom; selected range highlighted with `primaryContainer`.
 - **Currency toggle** — appears in the header when the stock's trading currency differs from the user's preferred currency **and** a conversion rate exists. Two pills (native code · preferred code) switch the chart, Y-axis labels, and tooltip between currencies. Conversion uses the live `exchangeRatesProvider` rates; if rates are unavailable the toggle is hidden and native prices are shown.
+- **Transaction overlays** — buy and sell transactions within the visible date range are rendered as coloured dots on the price line (green for buys, red for sells). Each dot is placed at the nearest available price point by date using `_nearestPointIndex`. Touching near a dot appends a tooltip item showing the transaction type, share count, and price per share. Dots from overlay bars that are more than 2 data points from the current touch position are suppressed to avoid fl_chart's "always include nearest spot from every bar" behaviour.
+- **Range-switch stability** — the chart is wrapped in `KeyedSubtree(key: ValueKey(_range))`. This forces fl_chart to rebuild its internal state from scratch on every range change, preventing an animation crash that occurs when the new range has a different number of data points than the previous one.
 
 #### Change badges
 
@@ -435,11 +474,26 @@ All three are ratios, so currency conversion is not needed — they remain corre
 
 Each stock tile on the Dashboard shows a 72×36 px mini line chart (sparkline) to the right of the name column. The sparkline fetches price history via the same `priceHistoryProvider` used by `StockPriceChart`, so the result is cached for 5 minutes and shared if the Stock Detail screen has already loaded the same range.
 
-**Configurable range:** The time window is controlled by `AppSettings.sparklineRange` (default: 1M). The user selects a range in Settings → Display → "Sparkline period", which opens a `SimpleDialog` listing all seven `ChartRange` values with a checkmark on the active choice. Changing the setting immediately updates all visible sparklines because tiles watch `settingsStreamProvider`.
+**Configurable range:** The time window is controlled by `AppSettings.sparklineRange` (default: 1M). The user selects a range in Settings → Display → "Sparkline period", which opens a `SimpleDialog` listing all seven `ChartRange` values with a checkmark on the active choice. The dialog uses the builder context `ctx` for `Navigator.pop` — **not** the outer screen context — because `showDialog` defaults to `useRootNavigator: true` and the two navigators are different inside a `ShellRoute`. Changing the setting immediately updates all visible sparklines because tiles watch `settingsStreamProvider`.
 
 **Colour:** Green (`Colors.green.shade600`) when the last price in the period ≥ the first price; red (`colorScheme.error`) otherwise. The area below the line is filled with the same colour at 15 % opacity.
 
 **Rendering:** `duration: Duration.zero` (no animation), no axes, no grid, no border, touch interaction disabled. The sparkline is hidden while the fetch is in progress or when fewer than two data points are available.
+
+### 5.11b Stocks Screen Search and Sort
+
+`StocksScreen` is a `ConsumerStatefulWidget` that adds search and sort on top of `stocksStreamProvider`:
+
+- **Search** — a persistent `TextField` at the top of the body filters the list in real-time by symbol or name (case-insensitive `contains`). A clear button (✕) appears when the field is non-empty.
+- **Sort** — a `PopupMenuButton` in the AppBar offers three orderings:
+  - **Symbol** (A → Z, default)
+  - **Name** (A → Z)
+  - **Price high → low** — uses the raw `PriceQuote.price`; stocks with no quote sort last. *Note: the price is not normalised to a common currency, so cross-currency comparisons are ordinal only.*
+- The active sort option is marked with a checkmark in the popup. Filtering and sorting are applied together in `_applyFilterAndSort` and produce a new list on every build (O(n log n), negligible for portfolio sizes).
+
+### 5.11c Stock Detail Pull-to-Refresh
+
+`StockDetailScreen` wraps its `ListView` in a `RefreshIndicator`. Pulling down calls `_fetchPrice(forceRefresh: true)`, which always fetches a fresh quote regardless of cache staleness (unlike the on-load call which skips when a non-stale quote is already in memory). On network failure during a manual refresh, a `SnackBar` with "Could not refresh price" is shown; silent failure is reserved for the background on-load fetch.
 
 ### 5.12 Manual Price Override
 
@@ -456,7 +510,11 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 ### 5.13 Nextcloud Sync Strategy
 
 #### Backup format
-Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DD.zip`.
+Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature.
+
+The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DDTHH-MM-SSZ.zip` (full UTC timestamp; colons replaced with hyphens for filesystem compatibility). `findLatestBackup` and `_pruneOldBackups` also accept the legacy `YYYY-MM-DD` date-only format for backward compatibility with older backups already on the server.
+
+On desktop platforms (macOS, Windows, Linux), `LocalBackupScreen` uses `FilePicker.platform.saveFile()` to present a native save dialog. On mobile it uses `SharePlus.instance.share()` as before.
 
 `importFromBytes()` auto-detects the format from the archive contents (presence of `meta.json` → ZIP backup; presence of `content.xml` → ODS import).
 
@@ -465,8 +523,9 @@ Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`
 
 | Trigger | Behaviour |
 |---|---|
-| App startup (4 s delay) | PROPFIND for latest backup; if remote is newer set `pendingRestore`; if PROPFIND fails (network error) silently proceed to upload; a `Timer` (not `Future.delayed`) is used so it can be cancelled on dispose |
-| Credential save | `findRemoteBackup()` → dialog: Restore / Upload / Later; choice is executed before returning to settings |
+| App startup (4 s delay) | `_checkAndSync()`: PROPFIND for latest backup; if remote is newer than `lastSyncAt` → sets `pendingRestore` (suppresses auto-upload); if PROPFIND fails → proceeds to upload. A `Timer` (not `Future.delayed`) is used so it can be cancelled on dispose. |
+| `pendingRestore` set (any trigger) | `AdaptiveShell` listener detects the null→non-null transition and shows a proactive restore/later dialog — unless the Nextcloud settings screen is already open. |
+| Credential save | `checkForRemoteBackup()` → sets `pendingRestore` if server has a newer backup (reads `lastSyncAt` directly from DAO, not stale provider cache); inline dialog on the settings screen offers Restore / Upload current data / Later. `dismissRestore()` is called before `syncNow()` to clear the guard. |
 | Data mutation | `dataVersionProvider` increments; sync debounced by 5 s |
 | Manual "Backup now" tap | `syncNow()` called directly |
 
@@ -474,9 +533,10 @@ Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`
 `NextcloudSyncNotifier._credentials()` reads directly from the Drift DAO (bypassing `settingsProvider`) on every invocation. This prevents stale `FutureProvider` cache from being used after `saveSettings()` writes new credentials. `lastSyncAt` is persisted via a targeted `updateLastSyncAt(DateTime)` DAO call rather than a full `upsertSettings()` to avoid overwriting other columns with stale data.
 
 #### Bidirectional conflict resolution
-On startup and after a credential save the app calls `findLatestBackup()` (WebDAV PROPFIND) and compares `backupDate` with `settings.lastSyncAt`. If the remote backup is newer, `pendingRestore` is set in `NextcloudSyncState` and:
-- A card is shown on the Nextcloud settings screen with "Restore from server" / "Dismiss".
-- On first launch a dialog is shown immediately after credential save.
+On startup and after a credential save, `findLatestBackup()` (WebDAV PROPFIND) compares `backupDate` with `lastSyncAt`. If the remote backup is newer, `pendingRestore` is set in `NextcloudSyncState`. This triggers two UI surfaces:
+- **Proactive dialog** — `AdaptiveShell` listens on `nextcloudSyncProvider` and shows a modal "Server backup found / Restore from server? / Later" dialog wherever the user currently is (suppressed on the Nextcloud settings screen itself).
+- **Inline card** — the Nextcloud settings screen always shows a card when `pendingRestore != null`, with "Restore from server" / "Dismiss" buttons.
+
 Auto-upload is **suppressed** while a restore is pending user decision.
 
 On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. If the restore fails the screen stays open to display the error.
@@ -487,18 +547,86 @@ After every successful upload, `_pruneOldBackups` lists the remote directory, fi
 #### Secure storage keys
 | Key | Value |
 |---|---|
-| `nextcloud_password` | Nextcloud password / app token |
-| `nextcloud_cert_fingerprint` | Pinned SHA-256 fingerprint for self-signed certs |
 | `last_used_broker_id` | Pre-selects broker on the Add Stock screen |
 
-### 5.14 Self-Signed Certificate Support
+`nextcloud_password`, `nextcloud_cert_fingerprint`, and `finnhub_api_key` were previously stored in `flutter_secure_storage` and are now columns in the `settings` table (schema v7–v8). This removed the dependency on the macOS Data Protection Keychain, which requires a real Team ID and fails on ad-hoc signed builds.
+
+### 5.15 Portfolio Allocation Chart
+
+`AllocationChart` is a `StatefulWidget` rendered on the Dashboard screen between the portfolio summary card and the holdings list.
+
+**Data source:** `PortfolioSummary.stockItems` (already computed by `portfolioSummaryProvider`). Each `StockSummaryItem.currentValue` is in the user's preferred currency because `portfolioSummaryProvider` converts via `ExchangeRate`. Items where `missingRate = true` are excluded — their `currentValue` is in the stock's native currency and would corrupt the percentages.
+
+**Slices:** Stocks are sorted by `currentValue` descending. The top 7 are individual slices; the remainder are grouped as "Others". A fixed 8-colour palette is used so slice colours are stable across sessions.
+
+**Interaction:** Tapping a slice expands its radius (`46 → 56 dp`) via fl_chart's `PieTouchData`. The legend alongside shows each symbol and its percentage of the total, computed with `Decimal` arithmetic.
+
+**Empty state:** The widget returns `SizedBox.shrink()` when no stock has both a price and a valid exchange rate, so the card never appears as an empty placeholder.
+
+### 5.16 Dividend Income Chart
+
+`DividendIncomeChart` is a `ConsumerStatefulWidget` rendered at the top of the Dividends screen.
+
+**Data source:** `allDividendsProvider` (a `FutureProvider` that re-fires when `dataVersionProvider` increments). Only dividends with `type = paid`, `confirmed = true`, and `netAmount > 0` are included.
+
+**Currency conversion:** Each dividend's `netAmount` is converted to the preferred currency using `ExchangeRate.find(rates, d.currency, preferred)`. Dividends whose currency cannot be converted (no rate available and currency differs from preferred) are **skipped** — including them raw would silently mix currencies in the bar totals.
+
+**Grouping:** Dividends are bucketed by a period key — `"YYYY-MM"` in monthly mode, `"YYYY"` in yearly mode. Buckets are sorted chronologically (string sort on the zero-padded key is equivalent to date sort). A Monthly / Yearly toggle in the card header switches between modes; the toggle state is local `ConsumerState`.
+
+**Chart rendering:** A `BarChart` from fl_chart. Bar width adapts to the number of periods (14 dp ≤ 12 bars, 9 dp ≤ 24, 6 dp otherwise). X-axis labels use a dynamic skip interval (every bar, every 3rd, or every 6th) and format as `"MMM"` for ≤ 12 bars or `"MMM 'yy"` for more. The y-axis shows compact currency labels (e.g. `€1.2k`). Tapping a bar shows a tooltip with the full period label and formatted total.
+
+**Empty state:** Returns `SizedBox.shrink()` when there are no paid+confirmed dividends (e.g. new user, or all dividends are expected only), so the card never appears as an empty placeholder.
+
+### 5.17 Estimated Annual Dividend Provider
+
+`estimatedAnnualDividendProvider` is a synchronous `Provider` (not a `FutureProvider`) defined in `features/dividends/dividends_provider.dart`. It derives the portfolio-wide estimated annual dividend income entirely from already-cached data — no extra API calls are made.
+
+**Data sources:**
+- `portfolioSummaryProvider` — supplies `currentValue` (in preferred currency) and `sharesHeld` per stock.
+- `analystDataProvider(stockId)` — read from the in-memory keepAlive cache for each stock; stocks where the provider has not yet resolved or returned an error are simply skipped.
+
+**Computation:** For each stock that has cached `AnalystData` with a non-null, non-zero `fiveYearAvgDividendYield`, the contribution is `currentValue × fiveYearAvgDividendYield / 100`. Results are summed in the preferred currency.
+
+**Return type — `DividendEstimate`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `total` | `Decimal` | Sum of estimated annual income across covered stocks, in preferred currency |
+| `coveredStocks` | `int` | Number of stocks with cached analyst data contributing to the estimate |
+| `totalStocks` | `int` | Total number of held stocks (shares > 0) |
+| `currency` | `String` | Preferred display currency |
+
+**UI usage:** Shown on the Dividends screen Received tab as "Est. annual income ~€X" with a coverage note "(based on N of M stocks)" so the user understands the estimate is partial when analyst data is missing for some positions.
+
+### 5.18 Self-Signed Certificate Support
 The Nextcloud HTTP client (Dio) is configured with a custom `HttpClient` that supports self-signed certificates via explicit certificate pinning:
 1. On first connection to a new server URL, the app fetches the server's certificate and presents its fingerprint (SHA-256) to the user for manual confirmation.
-2. On confirmation, the fingerprint is stored in `flutter_secure_storage`.
-3. All subsequent WebDAV requests validate against the stored fingerprint; a mismatch aborts the connection and alerts the user.
-4. The certificate can be re-pinned or removed from the Nextcloud settings screen.
+2. On confirmation, `SettingsActions.saveCertFingerprint()` persists the fingerprint to the `settings` table via `SettingsDao.updateCertFingerprint()`.
+3. All subsequent WebDAV requests read the fingerprint from `AppSettings.nextcloudCertFingerprint` and pass it as the `pinnedFingerprint` named parameter to each `NextcloudService` method.
+4. The certificate can be re-pinned by pressing "Test connection" on the Nextcloud settings screen.
+
+`NextcloudService` is a stateless value class (`const NextcloudService()`). It does not manage fingerprint persistence; all WebDAV methods accept an optional `String? pinnedFingerprint` parameter and callers are responsible for supplying the correct value.
 
 This approach avoids globally disabling TLS verification — only the explicitly approved certificate is trusted.
+
+### 5.19 Debug Log Service and LogsScreen
+
+`LogService` (in `core/services/log_service.dart`) writes timestamped log entries to a session-scoped flat text file (`stockmanager_debug.log`) in `getApplicationDocumentsDirectory()`. The file is truncated on each app launch so it never grows unbounded. Log entries are written via `IOSink` (serialised, no interleaving).
+
+**Key API:**
+| Method | Description |
+|---|---|
+| `LogService.create()` | Async factory: initialises the file and sink |
+| `log(String? message)` | Appends `[ISO8601] message\n` to the sink |
+| `filePath` | Absolute path to the log file |
+| `readRecent({int lines = 300})` | Flushes the sink, reads the file, returns the last N lines |
+| `clear()` | Flushes and closes the sink, reopens for writing, writes a fresh session header |
+
+`LogsScreen` (at `/settings/about/logs`) is a `ConsumerStatefulWidget` that:
+- Loads lines on `initState()` via `readRecent(lines: 300)`.
+- Renders them in a scrollable `ListView.builder` with monospace 11 sp text.
+- Colour-codes lines: `[ERROR]` → `colorScheme.error`, `[WARN ]` → `colorScheme.tertiary`, others → `onSurface`.
+- Provides two app-bar actions: **Export** (shares the log file via `SharePlus.instance.share`) and **Clear** (confirmation dialog → `LogService.clear()` → reload).
 
 ---
 
@@ -520,10 +648,49 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /brokers/:id/edit        → Edit broker
 /settings                → Settings
 /settings/backup         → Local backup (export / import ZIP)
+/settings/market-data    → MarketDataSettingsScreen
 /settings/nextcloud      → Nextcloud configuration
 /settings/currency       → Currency preferences & overrides
 /settings/notifications  → Notification preferences
-/settings/about          → App version and GPL-3 licence
+/settings/about          → App version, GPL-3 licence, privacy policy, app logs
+/settings/about/privacy-policy  → In-app privacy policy (offline)
+/settings/about/logs     → LogsScreen: scrollable log viewer, share/clear
 ```
 
 All routes are nested inside the `ShellRoute` so the navigation chrome (sidebar / bottom bar) is always present.
+
+---
+
+## 7. Testing
+
+### 7.1 Test layout
+
+```
+test/
+├── widget_test.dart                    # App smoke test (dashboard renders)
+├── manual_price_dialog_test.dart       # ManualPriceDialog widget tests
+├── calculators/
+│   ├── portfolio_calculator_test.dart  # PortfolioCalculator — all public methods
+│   ├── pnl_calculator_test.dart        # PnlCalculator — unrealised/realised P&L
+│   └── dividend_calculator_test.dart   # DividendCalculator + Dividend.netAmount
+├── utils/
+│   └── decimal_math_test.dart          # DecimalX extensions + DecimalMath
+├── models/
+│   └── exchange_rate_test.dart         # ExchangeRate.find / convert / isStale
+└── database/
+    └── trailing_stop_test.dart         # StocksDao trailing stop DAO methods
+```
+
+### 7.2 Testing strategy
+
+**Pure domain logic** (`calculators/`, `models/`, `utils/`) — plain Dart unit tests using `flutter_test`. No Flutter framework, no I/O. Each test is self-contained and deterministic.
+
+**Database integration** (`database/`) — use `AppDatabase.forTesting(NativeDatabase.memory())` to run real Drift queries against an in-memory SQLite database. Each test gets a fresh schema via `setUp`/`tearDown`. FK constraints are enforced: a broker must be inserted before a stock.
+
+**Widget tests** — use `ProviderScope` with overrides for all infrastructure providers (`databaseProvider`, `marketDataServiceProvider`, etc.). `portfolioSummaryProvider` is overridden with a static value to prevent Drift's `StreamQueryStore` from leaking `Timer` instances into the `FakeAsync` zone. In-memory DBs are closed via `tester.runAsync(db.close)`.
+
+### 7.3 What is not tested
+
+- Individual screen widgets beyond the dashboard smoke test — acceptable for a portfolio app where the domain logic (tested) drives correctness; UI structure is verified by the build CI jobs.
+- `BackgroundCheckService` — runs in a WorkManager isolate and has no seams for unit injection without a full Android integration test harness.
+- `MarketDataService` / `CurrencyService` — HTTP services; covered by manual testing against live APIs and by `_NoOpMarketDataService` in widget tests.

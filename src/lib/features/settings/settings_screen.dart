@@ -47,6 +47,19 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
             SettingsSection(
+              title: 'Market Data',
+              children: [
+                ListTile(
+                  title: const Text('Data Provider'),
+                  subtitle: Text(settings.marketDataProvider == MarketDataProvider.finnhub
+                      ? 'Finnhub'
+                      : 'Yahoo Finance (default)'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/market-data'),
+                ),
+              ],
+            ),
+            SettingsSection(
               title: 'Synchronisation',
               children: [
                 ListTile(
@@ -106,12 +119,12 @@ class SettingsScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, AppSettings settings) async {
     final theme = await showDialog<String>(
       context: context,
-      builder: (_) => SimpleDialog(
+      builder: (ctx) => SimpleDialog(
         title: const Text('Theme'),
         children: [
           for (final t in ['system', 'light', 'dark'])
             SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, t),
+              onPressed: () => Navigator.pop(ctx, t),
               child: Text(t[0].toUpperCase() + t.substring(1)),
             ),
         ],
@@ -133,12 +146,12 @@ class SettingsScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, AppSettings settings) async {
     final picked = await showDialog<ChartRange>(
       context: context,
-      builder: (_) => SimpleDialog(
+      builder: (ctx) => SimpleDialog(
         title: const Text('Sparkline period'),
         children: [
           for (final r in ChartRange.values)
             SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, r),
+              onPressed: () => Navigator.pop(ctx, r),
               child: Row(
                 children: [
                   SizedBox(

@@ -25,6 +25,12 @@ class Settings extends Table {
   // ChartRange.label stored as text, e.g. '1M', '1Y'
   TextColumn get sparklineRange =>
       text().withDefault(const Constant('1M'))();
+  // 'yahoo' | 'finnhub'
+  TextColumn get marketDataProvider =>
+      text().withDefault(const Constant('yahoo'))();
+  TextColumn get nextcloudPassword => text().nullable()();
+  TextColumn get finnhubApiKey => text().nullable()();
+  TextColumn get nextcloudCertFingerprint => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

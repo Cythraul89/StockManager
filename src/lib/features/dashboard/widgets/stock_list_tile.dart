@@ -1,8 +1,10 @@
-import 'package:fl_chart/fl_chart.dart';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/models/asset_type.dart';
 import '../../../core/models/chart_range.dart';
 import '../../../core/models/price_point.dart';
 import '../../../core/utils/currency_formatter.dart';
@@ -49,6 +51,10 @@ class StockListTile extends ConsumerWidget {
                     Text(item.stock.symbol,
                         style: theme.textTheme.titleSmall
                             ?.copyWith(fontWeight: FontWeight.bold)),
+                    if (item.stock.assetType != AssetType.stock) ...[
+                      const SizedBox(width: 6),
+                      _assetTypeBadge(context, item.stock.assetType),
+                    ],
                     if (recLabel != null) ...[
                       const SizedBox(width: 6),
                       _recBadge(context, recLabel, recColor),
@@ -64,7 +70,7 @@ class StockListTile extends ConsumerWidget {
             ),
           ),
           if (sparkPoints != null && sparkPoints.length >= 2) ...[
-            _buildSparkline(context, sparkPoints),
+            _Sparkline(points: sparkPoints),
             const SizedBox(width: 8),
           ],
           Column(
@@ -136,6 +142,34 @@ class StockListTile extends ConsumerWidget {
     );
   }
 
+  Widget _assetTypeBadge(BuildContext context, AssetType type) {
+    final color = switch (type) {
+      AssetType.etf => Colors.teal.shade700,
+      AssetType.etc => Colors.orange.shade800,
+      AssetType.fund => Colors.purple.shade700,
+      AssetType.bond => Colors.amber.shade800,
+      AssetType.warrant => Colors.grey.shade600,
+      AssetType.other => Colors.grey.shade600,
+      AssetType.stock => Colors.transparent,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.35), width: 0.5),
+      ),
+      child: Text(
+        type.label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+            ),
+      ),
+    );
+  }
+
   (String?, Color) _recommendationStyle(String? key) {
     return switch (key?.toLowerCase()) {
       'strongbuy' || 'strong_buy' => ('Str.Buy', Colors.green.shade800),
@@ -156,46 +190,84 @@ class StockListTile extends ConsumerWidget {
         CurrencyFormatter.format(item.rawQuotePrice, item.quoteCurrency);
     return '$shares$converted ($raw)';
   }
+}
 
-  Widget _buildSparkline(BuildContext context, List<PricePoint> points) {
-    final isUp = points.last.price >= points.first.price;
+class _Sparkline extends StatelessWidget {
+  const _Sparkline({required this.points});
+
+  final List<PricePoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = points.map((p) => p.price.toDouble()).toList();
+    final isUp = values.last >= values.first;
     final color =
         isUp ? Colors.green.shade600 : Theme.of(context).colorScheme.error;
-    final spots = List.generate(
-      points.length,
-      (i) => FlSpot(i.toDouble(), points[i].price.toDouble()),
-    );
-    final minY = spots.fold(spots.first.y, (m, s) => s.y < m ? s.y : m);
-    final maxY = spots.fold(spots.first.y, (m, s) => s.y > m ? s.y : m);
-    final pad = (maxY - minY) > 0 ? (maxY - minY) * 0.1 : maxY * 0.05;
-
-    return SizedBox(
-      width: 72,
-      height: 36,
-      child: LineChart(
-        LineChartData(
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              color: color,
-              barWidth: 1.5,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: color.withValues(alpha: 0.15),
-              ),
-            ),
-          ],
-          minY: minY - pad,
-          maxY: maxY + pad,
-          borderData: FlBorderData(show: false),
-          gridData: const FlGridData(show: false),
-          titlesData: const FlTitlesData(show: false),
-          lineTouchData: const LineTouchData(enabled: false),
-        ),
-        duration: Duration.zero,
-      ),
+    return CustomPaint(
+      size: const Size(72, 36),
+      painter: _SparklinePainter(values: values, color: color),
     );
   }
+}
+
+class _SparklinePainter extends CustomPainter {
+  const _SparklinePainter({required this.values, required this.color});
+
+  final List<double> values;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+
+    final minY = values.reduce(math.min);
+    final maxY = values.reduce(math.max);
+    final yRange = maxY - minY;
+    final pad = yRange > 0 ? yRange * 0.1 : maxY * 0.05;
+    final lo = minY - pad;
+    final hi = maxY + pad;
+    final span = hi - lo;
+
+    // Normalize a price value to a canvas y-coordinate (inverted: high = top).
+    double toY(double v) => span > 0 ? (1 - (v - lo) / span) * size.height : size.height / 2;
+
+    final dx = size.width / (values.length - 1);
+
+    // Fill below the line.
+    final fillPath = Path()..moveTo(0, size.height);
+    for (var i = 0; i < values.length; i++) {
+      fillPath.lineTo(i * dx, toY(values[i]));
+    }
+    fillPath
+      ..lineTo((values.length - 1) * dx, size.height)
+      ..close();
+    canvas.drawPath(
+      fillPath,
+      Paint()
+        ..color = color.withValues(alpha: 0.15)
+        ..style = PaintingStyle.fill,
+    );
+
+    // Line.
+    final linePath = Path()..moveTo(0, toY(values.first));
+    for (var i = 1; i < values.length; i++) {
+      linePath.lineTo(i * dx, toY(values[i]));
+    }
+    canvas.drawPath(
+      linePath,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SparklinePainter old) =>
+      old.values.length != values.length ||
+      old.color != color ||
+      (values.isNotEmpty &&
+          (old.values.first != values.first || old.values.last != values.last));
 }

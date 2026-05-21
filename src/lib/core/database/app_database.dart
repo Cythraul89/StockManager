@@ -47,8 +47,12 @@ class AppDatabase extends _$AppDatabase {
 
   AppDatabase.forTesting(super.executor);
 
+  // Opens the production DB file directly — for use in WorkManager isolates
+  // where LazyDatabase / createInBackground would spawn a redundant isolate.
+  AppDatabase.background(File file) : super(NativeDatabase(file));
+
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -63,6 +67,26 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 4) {
             await m.addColumn(settings, settings.sparklineRange);
+          }
+          if (from < 5) {
+            await m.addColumn(settings, settings.marketDataProvider);
+          }
+          if (from < 6) {
+            await m.addColumn(stocks, stocks.assetType);
+          }
+          if (from < 7) {
+            await m.addColumn(settings, settings.nextcloudPassword);
+            await m.addColumn(settings, settings.finnhubApiKey);
+          }
+          if (from < 8) {
+            await m.addColumn(settings, settings.nextcloudCertFingerprint);
+          }
+          if (from < 9) {
+            await m.addColumn(stocks, stocks.lastKnownConsensus);
+          }
+          if (from < 10) {
+            await m.addColumn(stocks, stocks.trailingStopPct);
+            await m.addColumn(stocks, stocks.trailingStopHighWater);
           }
         },
         beforeOpen: (details) async {

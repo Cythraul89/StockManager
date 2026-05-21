@@ -48,20 +48,22 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │                             │
 │  ┌──────────┐ ┌──────────┐  │
 │  │Unrealised│ │Dividends │  │
-│  │+€ 6,430  │ │YTD €Ɔ420 │  │
+│  │+€ 6,430  │ │YTD €420  │  │
 │  └──────────┘ └──────────┘  │
 │                             │
-│  Top Movers                 │
+│  Allocation                 │  ← AllocationChart card
+│  ┌─────────────────────────┐│
+│  │ (●) ●  ● AAPL  45.2%   ││  ← donut + legend
+│  │  ╲●╱    MSFT  30.1%    ││
+│  │         VOW3  14.7%    ││
+│  │         Others  10.0%  ││
+│  └─────────────────────────┘│
+│                             │
+│  Holdings                   │
 │  ┌─────────────────────────┐│
 │  │ AAPL [Buy] ╭╮  +3.2% €189││  ← badge · sparkline · value
 │  │ MSFT [Hold]╯╰  -1.1% €412││
 │  │ VOW3 [Buy] ╭─  +0.8% € 92││
-│  └─────────────────────────┘│
-│                             │
-│  Upcoming Dividends         │
-│  ┌─────────────────────────┐│
-│  │ AAPL  15 May  € 12.40   ││
-│  │ ALV    2 Jun  € 84.00   ││
 │  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
@@ -88,6 +90,7 @@ The sparkline period is configurable in Settings → Display → "Sparkline peri
 ```
 ┌─────────────────────────────┐
 │  Stocks             [+ Add] │
+│  [ 🔍 Search…       ] [⋮↕] │  ← TextField + sort PopupMenuButton
 │  ───────────────────────────  │
 │  Broker: Scalable Capital   │
 │  ┌─────────────────────────┐│
@@ -108,6 +111,8 @@ The sparkline period is configurable in Settings → Display → "Sparkline peri
 │  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
+
+**Search and sort:** A `TextField` below the AppBar filters stocks live by symbol or name (case-insensitive). A `PopupMenuButton` in the AppBar offers three sort orders — **Symbol** (default, alphabetical), **Name** (alphabetical), and **Price** (descending by last known quote). When no stocks match the search query an inline "No results for '…'" message replaces the list. Sort by price is cross-currency (stocks with no quote sort last; JPY prices are not normalised to the preferred currency).
 
 ### Desktop (master-detail)
 ```
@@ -178,6 +183,11 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 │  │ P/E (trailing)  28.4×   ││
 │  │ P/E (forward)   24.1×   ││
 │  │ EPS (TTM)       $ 6.73  ││
+│  │                         ││
+│  │ Dividends               ││
+│  │ Annual rate     $ 1.00  ││  ← trailingAnnualDividendRate; hidden when zero/null
+│  │ Avg yield (5Y)   0.53%  ││  ← fiveYearAvgDividendYield
+│  │ Est. annual inc $ 9.47  ││  ← shares × price × 5Y yield / 100; shown when shares > 0
 │  └─────────────────────────┘│
 │                             │
 │  Transactions       [+ Add] │
@@ -196,7 +206,7 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 └─────────────────────────────┘
 ```
 
-**Price display:** When the screen opens, `_fetchPriceOnLoad()` checks the in-memory cache. If no quote exists or the cached quote is stale, a fresh quote is fetched from Yahoo Finance / Stooq and written to both the DB cache and `priceQuotesProvider`. This ensures the price shows correctly when navigating directly from the stock list without visiting the Dashboard first.
+**Price display:** When the screen opens, `_fetchPrice()` checks the in-memory cache. If no quote exists or the cached quote is stale, a fresh quote is fetched from Yahoo Finance / Stooq and written to both the DB cache and `priceQuotesProvider`. This ensures the price shows correctly when navigating directly from the stock list without visiting the Dashboard first. Pull-to-refresh (dragging down on the scrollable body) calls `_fetchPrice(forceRefresh: true)`, which always fetches a new quote regardless of staleness and shows a `SnackBar` with "Could not refresh price" if the fetch fails.
 
 **Manual price override:** When no market price is available (e.g. OTC or unlisted securities), a **Set price** link replaces the missing price row. Once set, a **(manual)** tag is appended to the price and a **Clear manual price** button appears. Manual prices are never marked stale.
 
@@ -204,7 +214,7 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 
 **Price history chart:** A `StockPriceChart` widget between the info card and analysis card. Shows closing prices for the selected range. The Y-axis displays compact price labels in the active currency. A currency toggle (native code · preferred code) appears when a conversion rate is available and switches all chart prices, Y-axis labels, and tooltip between the stock's trading currency and the user's preferred currency. Chart data is cached for 5 minutes per (stockId, range) key.
 
-**Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails.
+**Analysis card:** Shows analyst consensus data fetched from Yahoo Finance. A refresh button (↺) in the card header increments `analystRefreshProvider`, which triggers `analystDataProvider` to re-fetch. The card shows "No data available" (with the same refresh button) when the symbol is not covered or the fetch fails. At the bottom of the card a **Dividends subsection** shows: `trailingAnnualDividendRate` (hidden when zero or null), `fiveYearAvgDividendYield` (already a percentage from Yahoo), and an estimated annual income computed as `sharesHeld × currentPrice × fiveYearAvgDividendYield / 100` in the stock's currency (shown only when shares held > 0).
 
 **Splits section:** Below dividends, lists all recorded stock splits (ratio + date + forward/reverse label) with a per-row delete button that shows a confirmation dialog. The "Add" button opens `AddSplitDialog` — a date picker and two integer fields (From / To) with a live description line (e.g. "4:1 forward split — each share becomes 4"). The list is driven by `splitsByStockProvider` (a `StreamProvider`), so it reflects add/delete operations immediately without any manual refresh.
 
@@ -373,20 +383,47 @@ When symbol or currency changes on save, the cached price is cleared and re-fetc
 │  └──────────┴──────────────┘ │
 │                             │
 │  ── Received tab ──         │
-│  Total all-time   € 842.40  │
+│  Dividend Income      M | Y │  ← DividendIncomeChart card
+│  ┌─────────────────────────┐│
+│  │ 200┤         ██         ││
+│  │ 100┤  ██  ██ ██ ██      ││
+│  │    └────────────────────││
+│  │   Jan Feb Mar Apr May   ││
+│  └─────────────────────────┘│
+│                             │
+│  Total all-time   € 842.40  │  ← totals summary card
+│  ─────────────────────────  │
 │  Total 2026       € 186.00  │
 │  Total 2025       € 430.00  │
 │                             │
-│  ─ 2026 ─                   │
-│  ALV  02 Jun  € 96.00       │
-│  AAPL 15 May  € 12.40       │
-│  ALV  04 Jan  € 77.60       │
+│  2026              € 186.00 │  ← year section header
+│  ┌─────────────────────────┐│
+│  │ ALV  02 Jun  € 96.00    ││
+│  │ AAPL 15 May  € 12.40    ││
+│  │ ALV  04 Jan  € 77.60    ││
+│  └─────────────────────────┘│
+│                             │
+│  Est. annual income ~€ 42.00│  ← estimatedAnnualDividendProvider card
+│  (based on 3 of 4 stocks)   │  ← coverage note
 │                             │
 │  ── Upcoming tab ──         │
-│  AAPL  15 Aug 2026 ~€ 12    │
-│  ALV   03 Dec 2026 ~€ 96    │
+│  Total expected ~€ 108.00   │  ← grand total card
+│                             │
+│  August 2026      ~€ 12.40  │  ← month section header
+│  ┌─────────────────────────┐│
+│  │ AAPL  15 Aug  ~€ 12.40  ││
+│  └─────────────────────────┘│
+│                             │
+│  December 2026    ~€ 96.00  │
+│  ┌─────────────────────────┐│
+│  │ ALV   03 Dec  ~€ 96.00  ││
+│  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
+
+**Received tab:** The `DividendIncomeChart` card appears at the top (only paid + confirmed dividends). Below it, a totals summary card shows all-time and per-year totals in the preferred currency, followed by paid dividends grouped under year headers. Pending-confirmation dividends (auto-fetched, unreviewed) appear in a separate section above the totals with a "Review" action. At the bottom of the tab an **estimated annual income card** shows the portfolio-wide dividend income estimate (from `estimatedAnnualDividendProvider`) as "Est. annual income ~€X" with a coverage note indicating how many stocks have cached analyst data contributing to the estimate.
+
+**Upcoming tab:** Expected dividends with `date ≥ today` sorted chronologically and grouped by month. A grand total card shows the sum of all `totalAmount` values that can be converted to the preferred currency (prefixed with `~`). Month headers show the per-month estimated total. Months and the grand total are omitted when no `totalAmount` is set (e.g. for expected dividends recorded without a share count). Tapping any tile opens the edit screen.
 
 ### Desktop
 Received history and upcoming calendar shown side by side. Upcoming panel includes a simple month-by-month timeline view.
@@ -441,6 +478,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 │  Preferred currency  EUR ▾  │
 │  Theme          System ▾    │
 │  Sparkline period     1M ▾  │  ← opens SimpleDialog with all 7 ranges
+│  Market Data       Yahoo ▶  │  ← or "Finnhub ▶"
 │                             │
 │  Nextcloud Sync         [▶] │
 │  Last sync: 12 May 14:30    │
@@ -540,6 +578,49 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
+## 15. Market Data Settings
+
+**Purpose:** Select the market data provider for analyst consensus data and configure the Finnhub API key.
+
+```
+┌─────────────────────────────┐
+│  ← Market Data              │
+│                             │
+│  Data Provider              │
+│  ┌─────────────────────────┐│
+│  │ (●) Yahoo Finance       ││  ← default, no setup required
+│  │     Default, no setup   ││
+│  ├─────────────────────────┤│
+│  │ ( ) Finnhub             ││  ← requires free account
+│  │     Free account reqd.  ││
+│  └─────────────────────────┘│
+│                             │
+│  ── shown when Finnhub ──   │
+│  Finnhub API Key            │
+│  [ ••••••••••••        👁 ] │  ← obscured, show/hide toggle
+│                             │
+│  [Get free API key at       │
+│   finnhub.io]               │  ← TextButton, shows snackbar with URL
+│                             │
+│  [ Save API key             ]│
+│                             │
+│  Note: Finnhub works best   │
+│  for US-listed stocks.      │
+│  International: use         │
+│  EXCHANGE:SYMBOL format     │
+│  (e.g. XETRA:ALV).         │
+└─────────────────────────────┘
+```
+
+**Behaviour:**
+- Selecting a provider saves immediately (no Save button needed for the radio selection).
+- The API key section is shown only when Finnhub is selected.
+- The API key is stored in `flutter_secure_storage`; it is never written to the SQLite database.
+- Switching providers or saving a new API key invalidates all cached analyst data so the next Analysis tab open re-fetches from the new source.
+- The "API key required" prompt in the Analysis card (when key is not set) deep-links directly to this screen.
+
+---
+
 ## Screen Flow Summary
 
 ```
@@ -563,6 +644,7 @@ Brokers
   └─→ Edit broker
 
 Settings
+  ├─→ Market Data settings
   ├─→ Nextcloud configuration
   ├─→ Notification preferences
   └─→ Currency overrides

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../../core/models/chart_range.dart';
 import '../../../core/models/exchange_rate.dart';
 import '../../../core/models/price_point.dart';
+import '../../../core/models/transaction.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/decimal_math.dart';
 import '../../settings/settings_provider.dart';
@@ -32,6 +33,8 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
   Widget build(BuildContext context) {
     final historyAsync =
         ref.watch(priceHistoryProvider((widget.stockId, _range)));
+    final transactions =
+        ref.watch(transactionsByStockProvider(widget.stockId)).value ?? [];
     final settings = ref.watch(settingsStreamProvider).value;
     final rates = ref.watch(exchangeRatesProvider).value ?? [];
 
@@ -74,11 +77,17 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
                       height: 160,
                       child: Center(child: Text('No data available')),
                     )
-                  : _buildChart(
-                      context,
-                      points,
-                      convRate: _showConverted ? convRate : null,
-                      preferredCurrency: preferredCurrency,
+                  : KeyedSubtree(
+                      // Force a full chart rebuild on range change so fl_chart
+                      // doesn't try to animate between incompatible datasets.
+                      key: ValueKey(_range),
+                      child: _buildChart(
+                        context,
+                        points,
+                        transactions: transactions,
+                        convRate: _showConverted ? convRate : null,
+                        preferredCurrency: preferredCurrency,
+                      ),
                     ),
             ),
             const SizedBox(height: 8),
@@ -170,6 +179,7 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
   Widget _buildChart(
     BuildContext context,
     List<PricePoint> points, {
+    required List<StockTransaction> transactions,
     ExchangeRate? convRate,
     String? preferredCurrency,
   }) {
@@ -216,6 +226,98 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
     final chartMinY = minY - yPadding;
     final chartMaxY = maxY + yPadding;
     final yRange = chartMaxY - chartMinY;
+
+    // ── Transaction overlay dots ──────────────────────────────────────────────
+    // Each transaction is placed at the nearest chart data point by date.
+    // Separate lists for buys and sells so they get distinct bar indices and
+    // can be identified in the tooltip callback.
+    final chartStart = displayPoints.first.date;
+    final chartEnd = displayPoints.last.date;
+
+    final buySpots = <FlSpot>[];
+    final buyTxs = <StockTransaction>[];
+    final sellSpots = <FlSpot>[];
+    final sellTxs = <StockTransaction>[];
+
+    for (final tx in transactions) {
+      if (tx.executedAt.isBefore(chartStart) ||
+          tx.executedAt.isAfter(chartEnd)) {
+        continue;
+      }
+      final idx = _nearestPointIndex(displayPoints, tx.executedAt);
+      final spot =
+          FlSpot(idx.toDouble(), displayPoints[idx].price.toDouble());
+      if (tx.type == TransactionType.buy) {
+        buySpots.add(spot);
+        buyTxs.add(tx);
+      } else {
+        sellSpots.add(spot);
+        sellTxs.add(tx);
+      }
+    }
+
+    // Build lineBarsData with tracked bar indices so the tooltip can identify
+    // which bar a touch belongs to regardless of which overlays are present.
+    final List<LineChartBarData> lineBarsData = [];
+    const int priceBarIdx = 0;
+    lineBarsData.add(LineChartBarData(
+      spots: spots,
+      isCurved: true,
+      curveSmoothness: 0.2,
+      color: lineColor,
+      barWidth: 2,
+      dotData: const FlDotData(show: false),
+      belowBarData: BarAreaData(
+        show: true,
+        gradient: LinearGradient(
+          colors: [
+            lineColor.withValues(alpha: 0.25),
+            lineColor.withValues(alpha: 0.0),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+    ));
+
+    int? buyBarIdx;
+    int? sellBarIdx;
+
+    if (buySpots.isNotEmpty) {
+      buyBarIdx = lineBarsData.length;
+      lineBarsData.add(LineChartBarData(
+        spots: buySpots,
+        barWidth: 0,
+        color: Colors.transparent,
+        dotData: FlDotData(
+          show: true,
+          getDotPainter: (spot, pct, barData, idx) => FlDotCirclePainter(
+            radius: 5,
+            color: Colors.green.shade600,
+            strokeWidth: 1.5,
+            strokeColor: theme.colorScheme.surface,
+          ),
+        ),
+      ));
+    }
+
+    if (sellSpots.isNotEmpty) {
+      sellBarIdx = lineBarsData.length;
+      lineBarsData.add(LineChartBarData(
+        spots: sellSpots,
+        barWidth: 0,
+        color: Colors.transparent,
+        dotData: FlDotData(
+          show: true,
+          getDotPainter: (spot, pct, barData, idx) => FlDotCirclePainter(
+            radius: 5,
+            color: theme.colorScheme.error,
+            strokeWidth: 1.5,
+            strokeColor: theme.colorScheme.surface,
+          ),
+        ),
+      ));
+    }
 
     return SizedBox(
       height: 180,
@@ -294,54 +396,94 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
             touchTooltipData: LineTouchTooltipData(
               getTooltipColor: (_) =>
                   theme.colorScheme.surfaceContainerHighest,
-              getTooltipItems: (touchedSpots) => touchedSpots.map((s) {
-                final idx = s.spotIndex;
-                if (idx < 0 || idx >= displayPoints.length) return null;
-                final p = displayPoints[idx];
-                return LineTooltipItem(
-                  '${CurrencyFormatter.format(p.price, p.currency)}\n',
-                  TextStyle(
-                    color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                  children: [
-                    TextSpan(
-                      text: _tooltipDate(p.date),
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.normal,
-                        fontSize: 11,
+              getTooltipItems: (touchedSpots) {
+                // Find the x position the price line resolved to — used to
+                // suppress transaction tooltips that are too far from the
+                // actual touch position (fl_chart always includes the nearest
+                // spot from every bar, even when far away).
+                double? priceX;
+                for (final s in touchedSpots) {
+                  if (s.barIndex == priceBarIdx) {
+                    priceX = s.x;
+                    break;
+                  }
+                }
+
+                return touchedSpots.map((s) {
+                  if (s.barIndex == priceBarIdx) {
+                    final idx = s.spotIndex;
+                    if (idx < 0 || idx >= displayPoints.length) return null;
+                    final p = displayPoints[idx];
+                    return LineTooltipItem(
+                      '${CurrencyFormatter.format(p.price, p.currency)}\n',
+                      TextStyle(
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
                       ),
+                      children: [
+                        TextSpan(
+                          text: _tooltipDate(p.date),
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.normal,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  // Suppress transaction tooltip when it is more than 2 data
+                  // points from the touched price position.
+                  if (priceX == null || (s.x - priceX).abs() > 2) {
+                    return null;
+                  }
+
+                  final List<StockTransaction>? txList;
+                  final bool isBuy;
+                  if (s.barIndex == buyBarIdx) {
+                    txList = buyTxs;
+                    isBuy = true;
+                  } else if (s.barIndex == sellBarIdx) {
+                    txList = sellTxs;
+                    isBuy = false;
+                  } else {
+                    return null;
+                  }
+
+                  if (s.spotIndex >= txList.length) return null;
+                  final tx = txList[s.spotIndex];
+                  final label = isBuy ? 'BUY' : 'SELL';
+                  final color = isBuy
+                      ? Colors.green.shade600
+                      : theme.colorScheme.error;
+                  return LineTooltipItem(
+                    '$label  ${tx.shares.toStringFixed(4)} shares\n',
+                    TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
                     ),
-                  ],
-                );
-              }).toList(),
+                    children: [
+                      TextSpan(
+                        text:
+                            '@ ${CurrencyFormatter.format(tx.pricePerShare, tx.currency)}',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.normal,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList();
+              },
             ),
           ),
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              curveSmoothness: 0.2,
-              color: lineColor,
-              barWidth: 2,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                gradient: LinearGradient(
-                  colors: [
-                    lineColor.withValues(alpha: 0.25),
-                    lineColor.withValues(alpha: 0.0),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-            ),
-          ],
+          lineBarsData: lineBarsData,
         ),
-        duration: const Duration(milliseconds: 250),
+        duration: Duration.zero,
       ),
     );
   }
@@ -405,5 +547,22 @@ class _StockPriceChartState extends ConsumerState<StockPriceChart> {
       ChartRange.oneDay => DateFormat('HH:mm').format(date.toLocal()),
       _ => DateFormat('d MMM yyyy').format(date.toLocal()),
     };
+  }
+
+  int _nearestPointIndex(List<PricePoint> points, DateTime date) {
+    var best = 0;
+    var bestDiff = (points[0].date.millisecondsSinceEpoch -
+            date.millisecondsSinceEpoch)
+        .abs();
+    for (var i = 1; i < points.length; i++) {
+      final diff =
+          (points[i].date.millisecondsSinceEpoch - date.millisecondsSinceEpoch)
+              .abs();
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = i;
+      }
+    }
+    return best;
   }
 }
