@@ -24,6 +24,7 @@ class AppSettings extends Equatable {
     required this.sparklineRange,
     required this.marketDataProvider,
     this.finnhubApiKey,
+    this.claudeApiKey,
   });
 
   final String preferredCurrency;
@@ -41,6 +42,7 @@ class AppSettings extends Equatable {
   final ChartRange sparklineRange;
   final MarketDataProvider marketDataProvider;
   final String? finnhubApiKey;
+  final String? claudeApiKey;
 
   static AppSettings get defaults => AppSettings(
         preferredCurrency: 'EUR',
@@ -70,6 +72,7 @@ class AppSettings extends Equatable {
     ChartRange? sparklineRange,
     MarketDataProvider? marketDataProvider,
     String? finnhubApiKey,
+    String? claudeApiKey,
   }) =>
       AppSettings(
         preferredCurrency: preferredCurrency ?? this.preferredCurrency,
@@ -88,6 +91,7 @@ class AppSettings extends Equatable {
         sparklineRange: sparklineRange ?? this.sparklineRange,
         marketDataProvider: marketDataProvider ?? this.marketDataProvider,
         finnhubApiKey: finnhubApiKey ?? this.finnhubApiKey,
+        claudeApiKey: claudeApiKey ?? this.claudeApiKey,
       );
 
   @override
@@ -107,5 +111,6 @@ class AppSettings extends Equatable {
         sparklineRange,
         marketDataProvider,
         finnhubApiKey,
+        claudeApiKey,
       ];
 }

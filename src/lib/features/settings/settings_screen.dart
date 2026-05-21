@@ -60,6 +60,18 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
             SettingsSection(
+              title: 'AI',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  title: const Text('AI Portfolio Analysis'),
+                  subtitle: const Text('Claude-powered portfolio insights'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/ai-analysis'),
+                ),
+              ],
+            ),
+            SettingsSection(
               title: 'Synchronisation',
               children: [
                 ListTile(

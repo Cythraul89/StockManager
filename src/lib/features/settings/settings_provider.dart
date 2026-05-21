@@ -25,6 +25,12 @@ final finnhubApiKeyProvider = FutureProvider<String?>((ref) async {
   return row?.finnhubApiKey;
 });
 
+/// Reads the Claude API key from the settings table.
+final claudeApiKeyProvider = FutureProvider<String?>((ref) async {
+  final row = await ref.watch(databaseProvider).settingsDao.getSettings();
+  return row?.claudeApiKey;
+});
+
 /// Increment to bust all cached analyst data (provider switch or key change).
 final analystCacheVersionProvider = StateProvider<int>((ref) => 0);
 
@@ -117,6 +123,13 @@ class SettingsActions {
     _ref.invalidate(finnhubApiKeyProvider);
   }
 
+  Future<void> saveClaudeApiKey(String? key) async {
+    final trimmed = key?.trim();
+    await _db.settingsDao
+        .updateClaudeApiKey(trimmed == null || trimmed.isEmpty ? null : trimmed);
+    _ref.invalidate(claudeApiKeyProvider);
+  }
+
   Future<void> setManualRate(String base, String target, Decimal rate) =>
       _db.settingsDao.upsertRate(
         ExchangeRateCacheCompanion.insert(
@@ -168,6 +181,7 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       sparklineRange: _chartRangeFromLabel(r.sparklineRange),
       marketDataProvider: _marketDataProviderFromString(r.marketDataProvider),
       finnhubApiKey: r.finnhubApiKey,
+      claudeApiKey: r.claudeApiKey,
     );
 
 ExchangeRate _rateFromRow(ExchangeRateCacheRow r) => ExchangeRate(

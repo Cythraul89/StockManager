@@ -31,6 +31,7 @@ class Settings extends Table {
   TextColumn get nextcloudPassword => text().nullable()();
   TextColumn get finnhubApiKey => text().nullable()();
   TextColumn get nextcloudCertFingerprint => text().nullable()();
+  TextColumn get claudeApiKey => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
