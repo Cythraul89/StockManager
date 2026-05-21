@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/claude_service.dart';
-import '../../core/database/app_database.dart';
 import '../dashboard/dashboard_provider.dart';
 import '../stocks/stocks_provider.dart';
 
@@ -98,12 +97,11 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
     }
   }
 
-  String _buildSystemPrompt() => '''
-You are an expert financial analyst helping a private investor understand their stock portfolio. \
-You provide clear, balanced, and actionable insights. You are not a licensed financial advisor \
-and always remind the user that your analysis is for informational purposes only and does not \
-constitute investment advice. You present both opportunities and risks objectively.
-''';
+  String _buildSystemPrompt() =>
+      'You are an expert financial analyst helping a private investor understand their stock portfolio. '
+      'You provide clear, balanced, and actionable insights. You are not a licensed financial advisor '
+      'and always remind the user that your analysis is for informational purposes only and does not '
+      'constitute investment advice. You present both opportunities and risks objectively.';
 
   String _buildUserMessage(String portfolioJson, String query) =>
       'Here is my current portfolio data (all monetary values are in the currency field shown):\n\n'
@@ -113,7 +111,7 @@ constitute investment advice. You present both opportunities and risks objective
   String _serialisePortfolio(PortfolioSummary summary) {
     final items = summary.stockItems.map((item) {
       return {
-        'ticker': item.stock.ticker,
+        'ticker': item.stock.symbol,
         'name': item.stock.name,
         'broker': item.broker?.name ?? 'Unknown',
         'currency': item.stock.currency,
