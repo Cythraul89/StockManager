@@ -84,7 +84,9 @@ final _router = GoRouter(
           routes: [
             GoRoute(
               path: 'add',
-              builder: (context, state) => const AddStockScreen(),
+              builder: (context, state) => AddStockScreen(
+                initialIsin: state.extra as String?,
+              ),
             ),
             GoRoute(
               path: ':id',

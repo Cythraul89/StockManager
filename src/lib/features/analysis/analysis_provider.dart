@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/claude_service.dart';
@@ -6,31 +8,49 @@ import '../stocks/stocks_provider.dart';
 
 enum AnalysisStatus { idle, loading, streaming, done, error }
 
+class StockSuggestion {
+  const StockSuggestion({
+    required this.isin,
+    required this.name,
+    required this.reason,
+  });
+
+  final String isin;
+  final String name;
+  final String reason;
+}
+
 class AnalysisState {
   const AnalysisState({
     this.status = AnalysisStatus.idle,
     this.responseText = '',
     this.error,
+    this.suggestions = const [],
   });
 
   final AnalysisStatus status;
   final String responseText;
   final String? error;
+  final List<StockSuggestion> suggestions;
 
   AnalysisState copyWith({
     AnalysisStatus? status,
     String? responseText,
     String? error,
+    List<StockSuggestion>? suggestions,
   }) =>
       AnalysisState(
         status: status ?? this.status,
         responseText: responseText ?? this.responseText,
         error: error ?? this.error,
+        suggestions: suggestions ?? this.suggestions,
       );
 }
 
 final analysisProvider =
     NotifierProvider<AnalysisNotifier, AnalysisState>(AnalysisNotifier.new);
+
+const _suggestionDelimiter = '---STOCK_SUGGESTIONS---';
 
 class AnalysisNotifier extends Notifier<AnalysisState> {
   @override
@@ -85,7 +105,15 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
           responseText: state.responseText + chunk,
         );
       }
-      state = state.copyWith(status: AnalysisStatus.done);
+
+      // Parse suggestions block from the completed response.
+      final (displayText, suggestions) =
+          _parseSuggestions(state.responseText);
+      state = AnalysisState(
+        status: AnalysisStatus.done,
+        responseText: displayText,
+        suggestions: suggestions,
+      );
     } on ClaudeApiException catch (e) {
       state = AnalysisState(
         status: AnalysisStatus.error,
@@ -99,11 +127,40 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
     }
   }
 
+  static (String, List<StockSuggestion>) _parseSuggestions(String raw) {
+    final idx = raw.indexOf(_suggestionDelimiter);
+    if (idx == -1) return (raw.trim(), const []);
+
+    final displayText = raw.substring(0, idx).trim();
+    final jsonPart = raw.substring(idx + _suggestionDelimiter.length).trim();
+
+    try {
+      final list = jsonDecode(jsonPart) as List<dynamic>;
+      final suggestions = list
+          .whereType<Map<String, dynamic>>()
+          .map((e) => StockSuggestion(
+                isin: e['isin']?.toString() ?? '',
+                name: e['name']?.toString() ?? '',
+                reason: e['reason']?.toString() ?? '',
+              ))
+          .where((s) => s.isin.isNotEmpty)
+          .toList();
+      return (displayText, suggestions);
+    } catch (_) {
+      return (displayText, const []);
+    }
+  }
+
   String _buildSystemPrompt() =>
       'You are an expert financial analyst helping a private investor understand their stock portfolio. '
       'You provide clear, balanced, and actionable insights. You are not a licensed financial advisor '
       'and always remind the user that your analysis is for informational purposes only and does not '
-      'constitute investment advice. You present both opportunities and risks objectively.';
+      'constitute investment advice. You present both opportunities and risks objectively.\n\n'
+      'If you suggest specific stocks the user should consider adding to their portfolio, append a '
+      'structured block at the very end of your response (after all analysis text):\n\n'
+      '$_suggestionDelimiter\n'
+      '[{"isin":"XX0000000000","name":"Company Name","reason":"One sentence reason"}]\n\n'
+      'Omit the block entirely if you have no specific stock suggestions.';
 
   String _buildUserMessage(String portfolioJson, String query) =>
       'Here is my current portfolio data (all monetary values are in the currency field shown):\n\n'
@@ -140,7 +197,6 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
       'positions': items,
     };
 
-    // Simple hand-rolled JSON so we don't need dart:convert encoder quirks.
     return _encodeJson(portfolio);
   }
 
@@ -149,7 +205,7 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
     if (value is bool) return value.toString();
     if (value is num) return value.toString();
     if (value is String) {
-      return '"${value.replaceAll('"', '\\"')}"';
+      return '"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"';
     }
     if (value is List) {
       return '[${value.map(_encodeJson).join(', ')}]';

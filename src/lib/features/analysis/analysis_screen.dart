@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -83,7 +84,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.key_outlined),
-            tooltip: 'API Key',
+            tooltip: 'API Key & Model',
             onPressed: () => context.push('/settings/ai-analysis/key'),
           ),
         ],
@@ -123,6 +124,14 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
                           analysisState.status == AnalysisStatus.streaming,
                       theme: theme,
                     ),
+                    if (analysisState.status == AnalysisStatus.done &&
+                        analysisState.suggestions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _SuggestionsSection(
+                        suggestions: analysisState.suggestions,
+                        theme: theme,
+                      ),
+                    ],
                   ],
                   if (analysisState.status == AnalysisStatus.error)
                     _ErrorCard(
@@ -309,13 +318,128 @@ class _ResponseCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SelectableText(
-              text,
-              style: theme.textTheme.bodyMedium,
+            MarkdownBody(
+              data: text,
+              selectable: true,
+              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                p: theme.textTheme.bodyMedium,
+                h1: theme.textTheme.titleLarge
+                    ?.copyWith(color: theme.colorScheme.onSurface),
+                h2: theme.textTheme.titleMedium
+                    ?.copyWith(color: theme.colorScheme.onSurface),
+                h3: theme.textTheme.titleSmall
+                    ?.copyWith(color: theme.colorScheme.onSurface),
+                blockquoteDecoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                        color: theme.colorScheme.primary, width: 3),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SuggestionsSection extends StatelessWidget {
+  const _SuggestionsSection({
+    required this.suggestions,
+    required this.theme,
+  });
+
+  final List<StockSuggestion> suggestions;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.add_circle_outline,
+                    size: 16,
+                    color: theme.colorScheme.onTertiaryContainer),
+                const SizedBox(width: 6),
+                Text(
+                  'Suggested stocks to add',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            for (final s in suggestions) ...[
+              _SuggestionTile(suggestion: s, theme: theme),
+              if (s != suggestions.last) const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SuggestionTile extends StatelessWidget {
+  const _SuggestionTile({required this.suggestion, required this.theme});
+
+  final StockSuggestion suggestion;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                suggestion.name,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                suggestion.isin,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                suggestion.reason,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilledButton.tonal(
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.tertiary,
+            foregroundColor: theme.colorScheme.onTertiary,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () =>
+              context.push('/stocks/add', extra: suggestion.isin),
+          child: const Text('Add'),
+        ),
+      ],
     );
   }
 }
@@ -398,9 +522,7 @@ class _InputBar extends StatelessWidget {
             const SizedBox(width: 4),
             IconButton.filled(
               icon: const Icon(Icons.send),
-              onPressed: enabled
-                  ? () => onSubmit(controller.text)
-                  : null,
+              onPressed: enabled ? () => onSubmit(controller.text) : null,
             ),
           ],
         ),

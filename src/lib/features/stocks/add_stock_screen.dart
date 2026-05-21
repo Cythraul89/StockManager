@@ -12,7 +12,9 @@ import '../settings/settings_provider.dart';
 import 'stocks_provider.dart';
 
 class AddStockScreen extends ConsumerStatefulWidget {
-  const AddStockScreen({super.key});
+  const AddStockScreen({super.key, this.initialIsin});
+
+  final String? initialIsin;
 
   @override
   ConsumerState<AddStockScreen> createState() => _AddStockScreenState();
@@ -40,6 +42,18 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   bool _brokerLoaded = false;
 
   static const _lastBrokerKey = 'last_used_broker_id';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialIsin != null) {
+      _isinCtrl.text = widget.initialIsin!.toUpperCase();
+      // Trigger lookup after the first frame so the widget tree is ready.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _lookupIsin();
+      });
+    }
+  }
 
   @override
   void dispose() {
