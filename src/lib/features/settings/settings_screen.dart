@@ -75,6 +75,13 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Synchronisation',
               children: [
                 ListTile(
+                  leading: const Icon(Icons.upload_file_outlined),
+                  title: const Text('Import from Broker'),
+                  subtitle: const Text('Import transactions from a broker export'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/broker-import'),
+                ),
+                ListTile(
                   title: const Text('Local Backup'),
                   subtitle: const Text('Export or import a local ZIP backup'),
                   trailing: const Icon(Icons.chevron_right),
