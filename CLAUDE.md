@@ -90,10 +90,15 @@ src/
 │       ├── transactions/               # AddTransactionScreen
 │       ├── dividends/                  # DividendsScreen, AddDividendScreen
 │       ├── brokers/                    # BrokersScreen, CRUD screens
+│       ├── analysis/                   # AI portfolio analysis feature
+│       │   ├── analysis_screen.dart        # Prompt chips, streaming response, ISIN suggestions
+│       │   ├── analysis_provider.dart      # AnalysisNotifier, StockSuggestion, _parseSuggestions
+│       │   └── ai_analysis_settings_screen.dart  # Provider/key/model picker
 │       └── settings/                   # settingsProvider, settingsActionsProvider
-│           ├── about_screen.dart       # Version, GPL-3 notice, privacy policy, app logs
+│           ├── about_screen.dart           # Version, GPL-3 notice, privacy policy, app logs
+│           ├── broker_import_screen.dart   # Broker import entry-point (scaffold, parsers TBD)
 │           ├── privacy_policy_screen.dart  # In-app privacy policy viewer
-│           └── logs_screen.dart        # Log viewer with share/clear app-bar actions
+│           └── logs_screen.dart            # Log viewer with share/clear app-bar actions
 └── test/
     └── widget_test.dart
 ```
@@ -269,3 +274,6 @@ from the Actions run summary for 90 days.
 | Open Exchange Rates | `openexchangerates.org/api/latest.json` | App ID (free tier) | USD base only on free tier |
 | OpenFIGI | `api.openfigi.com/v3/mapping` | None (basic) | ISIN → ticker/name/exchange/currency |
 | Nextcloud | WebDAV (`/remote.php/dav/files/…`) | Basic auth | Self-signed cert support via fingerprint pinning |
+| Anthropic Claude | `api.anthropic.com/v1/messages` | `x-api-key` header | SSE streaming; prompt caching on system block; stored in `settings.claude_api_key` |
+| Groq | `api.groq.com/openai/v1/chat/completions` | Bearer token | OpenAI-compatible SSE; free tier; stored in `settings.groq_api_key` |
+| Google Gemini | `generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent` | API key query param | SSE with `?alt=sse`; free tier (1M tokens/day); stored in `settings.gemini_api_key` |

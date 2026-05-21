@@ -173,7 +173,7 @@ class _PrivacyCard extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Your portfolio data is sent to Anthropic to generate the analysis. '
+                'Your portfolio data is sent to the selected AI provider to generate the analysis. '
                 'No data is stored by StockManager — see the Privacy Policy for details.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSecondaryContainer,
@@ -207,7 +207,7 @@ class _NoKeyCard extends StatelessWidget {
                     color: theme.colorScheme.onErrorContainer),
                 const SizedBox(width: 8),
                 Text(
-                  'No Claude API Key',
+                  'No API Key configured',
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.onErrorContainer,
                   ),
@@ -216,7 +216,7 @@ class _NoKeyCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add your Anthropic Claude API key in Settings → AI Analysis to enable this feature.',
+              'Add your API key in Settings → AI Analysis to enable this feature.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onErrorContainer,
               ),
@@ -300,7 +300,7 @@ class _ResponseCard extends StatelessWidget {
                     size: 16, color: theme.colorScheme.primary),
                 const SizedBox(width: 6),
                 Text(
-                  'Claude Analysis',
+                  'AI Analysis',
                   style: theme.textTheme.labelMedium
                       ?.copyWith(color: theme.colorScheme.primary),
                 ),

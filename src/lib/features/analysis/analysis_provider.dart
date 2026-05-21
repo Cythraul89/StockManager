@@ -220,26 +220,6 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
       'positions': items,
     };
 
-    return _encodeJson(portfolio);
-  }
-
-  String _encodeJson(Object? value) {
-    if (value == null) return 'null';
-    if (value is bool) return value.toString();
-    if (value is num) return value.toString();
-    if (value is String) {
-      return '"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"';
-    }
-    if (value is List) {
-      return '[${value.map(_encodeJson).join(', ')}]';
-    }
-    if (value is Map) {
-      final pairs = value.entries
-          .map((e) =>
-              '${_encodeJson(e.key.toString())}: ${_encodeJson(e.value)}')
-          .join(',\n  ');
-      return '{\n  $pairs\n}';
-    }
-    return '"$value"';
+    return jsonEncode(portfolio);
   }
 }

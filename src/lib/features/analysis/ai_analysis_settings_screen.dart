@@ -40,26 +40,27 @@ class _AiAnalysisSettingsScreenState
   bool _obscure = true;
   bool _savingKey = false;
   LlmProvider? _keyLoadedFor;
+  late Future<dynamic> _settingsFuture;
 
   @override
   void initState() {
     super.initState();
+    _settingsFuture =
+        ref.read(databaseProvider).settingsDao.getSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadKey());
+  }
+
+  void _refreshSettings() {
+    setState(() {
+      _settingsFuture =
+          ref.read(databaseProvider).settingsDao.getSettings();
+    });
   }
 
   @override
   void dispose() {
     _keyController.dispose();
     super.dispose();
-  }
-
-  Future<LlmProvider> _currentProvider() async {
-    final row =
-        await ref.read(databaseProvider).settingsDao.getSettings();
-    return LlmProvider.values.firstWhere(
-      (p) => p.name == (row?.llmProvider ?? 'claude'),
-      orElse: () => LlmProvider.claude,
-    );
   }
 
   Future<void> _loadKey() async {
@@ -84,7 +85,7 @@ class _AiAnalysisSettingsScreenState
 
   Future<void> _onProviderChanged(LlmProvider p) async {
     await ref.read(settingsActionsProvider).saveLlmProvider(p.name);
-    // Reload key field for the newly selected provider.
+    _refreshSettings();
     await _loadKey();
   }
 
@@ -157,6 +158,7 @@ class _AiAnalysisSettingsScreenState
       case LlmProvider.gemini:
         await ref.read(settingsActionsProvider).saveGeminiModel(model);
     }
+    _refreshSettings();
   }
 
   @override
@@ -166,7 +168,7 @@ class _AiAnalysisSettingsScreenState
     return Scaffold(
       appBar: AppBar(title: const Text('AI Analysis')),
       body: FutureBuilder(
-        future: ref.read(databaseProvider).settingsDao.getSettings(),
+        future: _settingsFuture,
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -292,11 +294,9 @@ class _AiAnalysisSettingsScreenState
                   contentPadding: EdgeInsets.zero,
                   onChanged: _savingKey
                       ? null
-                      : (v) {
+                      : (v) async {
                           if (v != null) {
-                            _saveModel(activeProvider, v);
-                            // Trigger a rebuild by re-reading snapshot.
-                            setState(() {});
+                            await _saveModel(activeProvider, v);
                           }
                         },
                 ),

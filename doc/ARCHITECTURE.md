@@ -16,6 +16,8 @@
 | Background tasks | WorkManager (via workmanager plugin) | Android only; price, rating, dividend, and trailing stop-loss checks when app is closed |
 | Local notifications | flutter_local_notifications | All platforms; WorkManager fires them on Android, running app fires them on desktop |
 | Secure storage | flutter_secure_storage | `last_used_broker_id` only; credentials moved to SQLite settings table |
+| Markdown rendering | flutter_markdown | Renders AI analysis responses in the portfolio analysis screen |
+| AI analysis | Anthropic Claude / Groq / Gemini (user-selectable) | SSE streaming via Dio; provider and model stored in settings; abstract `LlmService` interface |
 
 ---
 
@@ -38,7 +40,11 @@ lib/
 │   │   ├── backup_service.dart
 │   │   ├── notification_service.dart
 │   │   ├── background_check_service.dart
-│   │   └── log_service.dart
+│   │   ├── log_service.dart
+│   │   ├── llm_service.dart            # Abstract LlmService interface + LlmProvider enum + model lists
+│   │   ├── claude_service.dart         # Anthropic SSE streaming implementation
+│   │   ├── groq_service.dart           # Groq (OpenAI-compatible) SSE streaming
+│   │   └── gemini_service.dart         # Google Gemini SSE streaming
 │   ├── models/                     # Immutable domain models (pure Dart, no Flutter)
 │   ├── calculators/                # P&L, avg price, dividend yield — pure functions
 │   └── utils/                      # Formatting, date helpers, decimal math
@@ -49,8 +55,13 @@ lib/
 │   ├── transactions/
 │   ├── dividends/
 │   ├── brokers/
+│   ├── analysis/                       # AI portfolio analysis
+│   │   ├── analysis_screen.dart        # Prompt chips, streaming response, ISIN suggestions
+│   │   ├── analysis_provider.dart      # AnalysisNotifier, StockSuggestion, portfolio serialisation
+│   │   └── ai_analysis_settings_screen.dart  # Provider / key / model picker
 │   └── settings/
 │       ├── about_screen.dart           # Version, GPL-3, privacy policy, app logs links
+│       ├── broker_import_screen.dart   # Broker import entry-point (scaffold; parsers TBD)
 │       ├── privacy_policy_screen.dart  # In-app privacy policy
 │       └── logs_screen.dart            # Log viewer with share/clear
 │
@@ -177,6 +188,13 @@ Notable provider files:
 | nextcloud_password | TEXT? | Nextcloud password / app token (moved from flutter_secure_storage) |
 | finnhub_api_key | TEXT? | Finnhub API key (moved from flutter_secure_storage) |
 | nextcloud_cert_fingerprint | TEXT? | Pinned SHA-256 cert fingerprint (moved from flutter_secure_storage) |
+| claude_api_key | TEXT? | Anthropic Claude API key (schema v11) |
+| claude_model | TEXT | Selected Claude model; default `claude-opus-4-7` (schema v11) |
+| llm_provider | TEXT | Active AI provider: `claude` \| `groq` \| `gemini`; default `claude` (schema v12) |
+| groq_api_key | TEXT? | Groq API key (schema v12) |
+| gemini_api_key | TEXT? | Google Gemini API key (schema v12) |
+| groq_model | TEXT | Selected Groq model; default `llama-3.3-70b-versatile` (schema v13) |
+| gemini_model | TEXT | Selected Gemini model; default `gemini-2.0-flash` (schema v13) |
 
 ---
 
@@ -628,6 +646,35 @@ This approach avoids globally disabling TLS verification — only the explicitly
 - Colour-codes lines: `[ERROR]` → `colorScheme.error`, `[WARN ]` → `colorScheme.tertiary`, others → `onSurface`.
 - Provides two app-bar actions: **Export** (shares the log file via `SharePlus.instance.share`) and **Clear** (confirmation dialog → `LogService.clear()` → reload).
 
+### 5.20 AI Portfolio Analysis
+
+`AnalysisScreen` (`/settings/ai-analysis`) provides a conversational portfolio analysis feature backed by a user-selectable LLM provider.
+
+**Provider abstraction:** `LlmService` (in `core/services/llm_service.dart`) is an abstract interface with a single method `Stream<String> streamAnalysis(...)`. Three concrete implementations handle SSE streaming:
+- `ClaudeService` — `POST api.anthropic.com/v1/messages` with `x-api-key` and `anthropic-version: 2023-06-01` headers; uses `cache_control: {type: ephemeral}` on the system prompt block for prompt caching.
+- `GroqService` — OpenAI-compatible endpoint at `api.groq.com/openai/v1/chat/completions`; Bearer token auth; parses `choices[0].delta.content`.
+- `GeminiService` — `generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={apiKey}`; parses `candidates[0].content.parts[0].text`.
+
+All three use `Dio` with `ResponseType.stream` and a shared line-buffer SSE parser pattern.
+
+**Active provider selection:** `AnalysisNotifier.analyse()` reads the active provider, model, and API key directly from the Drift DAO on each invocation — not from cached Riverpod providers — to always use the latest settings without stale-cache issues.
+
+**Portfolio serialisation:** `_serialisePortfolio()` converts `PortfolioSummary` to JSON via `jsonEncode`. Includes per-position fields (ticker, shares, avg buy price, current value, P&L) and portfolio-level totals. Sent as the user message payload alongside the query.
+
+**ISIN suggestions:** The system prompt instructs the LLM to optionally append a `---STOCK_SUGGESTIONS---` delimiter followed by a JSON array of `{isin, name, reason}` objects. `_parseSuggestions()` splits on this delimiter after streaming completes, decodes the JSON, and exposes suggestions as `List<StockSuggestion>`. Each suggestion is displayed with an "Add" button that routes to `/stocks/add` with the ISIN pre-filled via `state.extra`.
+
+**State machine:** `AnalysisState` cycles through `idle → loading → streaming → done | error`. The UI shows predefined prompt chips in the idle state, a spinner during loading, a streaming `MarkdownBody` during streaming (auto-scrolls via `ScrollController`), and the completed response plus optional suggestion chips when done.
+
+**Settings screen (`AiAnalysisSettingsScreen`):** Provider radio buttons, a single `TextEditingController` for the API key (reloaded when the provider changes), and a model radio group that updates via `modelsFor(activeProvider)`. Settings are read via a `Future` cached in `_settingsFuture` (initialised in `initState`, refreshed after each write) to avoid showing a loading flash on every `setState`.
+
+### 5.21 Broker Import Scaffold
+
+`BrokerImportScreen` (`/settings/broker-import`) provides the entry point for importing transaction history from broker CSV/export files.
+
+**Current state:** Six brokers are listed — Flatex, DEGIRO, Interactive Brokers, Trade Republic, Scalable Capital, and Comdirect — all with `status = BrokerImportStatus.comingSoon`. Tiles are greyed out with a "Coming soon" chip; the "Import" button and tap gesture are suppressed.
+
+**Extension point:** When a parser is implemented for a broker, set its `status` to `BrokerImportStatus.available` in the `_brokers` const list in `broker_import_screen.dart`. The `_onImport()` method provides the navigation hook for the broker-specific import flow.
+
 ---
 
 ## 6. Navigation Map
@@ -647,6 +694,9 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /brokers/add             → Add broker
 /brokers/:id/edit        → Edit broker
 /settings                → Settings
+/settings/ai-analysis    → AI Portfolio Analysis (AnalysisScreen)
+/settings/ai-analysis/key → Provider / API key / model picker (AiAnalysisSettingsScreen)
+/settings/broker-import  → Import from Broker (scaffold; parsers TBD)
 /settings/backup         → Local backup (export / import ZIP)
 /settings/market-data    → MarketDataSettingsScreen
 /settings/nextcloud      → Nextcloud configuration
