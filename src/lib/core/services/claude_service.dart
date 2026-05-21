@@ -17,20 +17,29 @@ class ClaudeApiException implements Exception {
   String toString() => message;
 }
 
+/// Available Claude models ordered from most to least capable.
+const claudeModels = [
+  (id: 'claude-opus-4-7',   label: 'Opus 4.7',   note: 'Most capable · \$5 / \$25 per 1M tokens'),
+  (id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', note: 'Balanced · \$3 / \$15 per 1M tokens'),
+  (id: 'claude-haiku-4-5',  label: 'Haiku 4.5',  note: 'Fastest & cheapest · \$1 / \$5 per 1M tokens'),
+];
+
+const defaultClaudeModel = 'claude-opus-4-7';
+
 class ClaudeService {
   static const _endpoint = 'https://api.anthropic.com/v1/messages';
-  static const _model = 'claude-opus-4-7';
   static const _apiVersion = '2023-06-01';
 
   Stream<String> streamAnalysis({
     required String apiKey,
+    required String model,
     required String systemPrompt,
     required String userMessage,
   }) async* {
     final dio = Dio();
 
     final body = {
-      'model': _model,
+      'model': model,
       'max_tokens': 4096,
       'stream': true,
       'system': [

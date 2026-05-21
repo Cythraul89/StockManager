@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.background(File file) : super(NativeDatabase(file));
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -90,6 +90,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 11) {
             await m.addColumn(settings, settings.claudeApiKey);
+          }
+          if (from < 12) {
+            await m.addColumn(settings, settings.claudeModel);
           }
         },
         beforeOpen: (details) async {

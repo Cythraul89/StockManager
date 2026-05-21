@@ -31,6 +31,12 @@ final claudeApiKeyProvider = FutureProvider<String?>((ref) async {
   return row?.claudeApiKey;
 });
 
+/// Reads the selected Claude model from the settings table.
+final claudeModelProvider = FutureProvider<String>((ref) async {
+  final row = await ref.watch(databaseProvider).settingsDao.getSettings();
+  return row?.claudeModel ?? 'claude-opus-4-7';
+});
+
 /// Increment to bust all cached analyst data (provider switch or key change).
 final analystCacheVersionProvider = StateProvider<int>((ref) => 0);
 
@@ -130,6 +136,11 @@ class SettingsActions {
     _ref.invalidate(claudeApiKeyProvider);
   }
 
+  Future<void> saveClaudeModel(String model) async {
+    await _db.settingsDao.updateClaudeModel(model);
+    _ref.invalidate(claudeModelProvider);
+  }
+
   Future<void> setManualRate(String base, String target, Decimal rate) =>
       _db.settingsDao.upsertRate(
         ExchangeRateCacheCompanion.insert(
@@ -182,6 +193,7 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       marketDataProvider: _marketDataProviderFromString(r.marketDataProvider),
       finnhubApiKey: r.finnhubApiKey,
       claudeApiKey: r.claudeApiKey,
+      claudeModel: r.claudeModel,
     );
 
 ExchangeRate _rateFromRow(ExchangeRateCacheRow r) => ExchangeRate(

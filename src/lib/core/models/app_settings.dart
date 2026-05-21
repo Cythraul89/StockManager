@@ -25,6 +25,7 @@ class AppSettings extends Equatable {
     required this.marketDataProvider,
     this.finnhubApiKey,
     this.claudeApiKey,
+    this.claudeModel = 'claude-opus-4-7',
   });
 
   final String preferredCurrency;
@@ -43,6 +44,7 @@ class AppSettings extends Equatable {
   final MarketDataProvider marketDataProvider;
   final String? finnhubApiKey;
   final String? claudeApiKey;
+  final String claudeModel;
 
   static AppSettings get defaults => AppSettings(
         preferredCurrency: 'EUR',
@@ -73,6 +75,7 @@ class AppSettings extends Equatable {
     MarketDataProvider? marketDataProvider,
     String? finnhubApiKey,
     String? claudeApiKey,
+    String? claudeModel,
   }) =>
       AppSettings(
         preferredCurrency: preferredCurrency ?? this.preferredCurrency,
@@ -92,6 +95,7 @@ class AppSettings extends Equatable {
         marketDataProvider: marketDataProvider ?? this.marketDataProvider,
         finnhubApiKey: finnhubApiKey ?? this.finnhubApiKey,
         claudeApiKey: claudeApiKey ?? this.claudeApiKey,
+        claudeModel: claudeModel ?? this.claudeModel,
       );
 
   @override
@@ -112,5 +116,6 @@ class AppSettings extends Equatable {
         marketDataProvider,
         finnhubApiKey,
         claudeApiKey,
+        claudeModel,
       ];
 }

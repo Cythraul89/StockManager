@@ -41,7 +41,7 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
   Future<void> analyse(String userQuery) async {
     state = const AnalysisState(status: AnalysisStatus.loading);
 
-    // Read API key directly from DB to avoid stale provider cache.
+    // Read API key and model directly from DB to avoid stale provider cache.
     final row =
         await ref.read(databaseProvider).settingsDao.getSettings();
     final apiKey = row?.claudeApiKey;
@@ -64,6 +64,7 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
       return;
     }
 
+    final model = row?.claudeModel ?? defaultClaudeModel;
     final portfolioJson = _serialisePortfolio(summary);
     final systemPrompt = _buildSystemPrompt();
     final userMessage = _buildUserMessage(portfolioJson, userQuery);
@@ -76,6 +77,7 @@ class AnalysisNotifier extends Notifier<AnalysisState> {
           .read(claudeServiceProvider)
           .streamAnalysis(
             apiKey: apiKey,
+            model: model,
             systemPrompt: systemPrompt,
             userMessage: userMessage,
           )) {

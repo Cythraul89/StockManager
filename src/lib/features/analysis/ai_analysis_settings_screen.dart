@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/claude_service.dart';
 import '../settings/settings_provider.dart';
 
 class AiAnalysisSettingsScreen extends ConsumerStatefulWidget {
@@ -88,6 +89,9 @@ class _AiAnalysisSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final modelAsync = ref.watch(claudeModelProvider);
+    final currentModel =
+        modelAsync.whenOrNull(data: (m) => m) ?? defaultClaudeModel;
 
     return Scaffold(
       appBar: AppBar(title: const Text('AI Analysis')),
@@ -118,8 +122,9 @@ class _AiAnalysisSettingsScreenState
               hintText: 'sk-ant-…',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
-                icon: Icon(
-                    _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                icon: Icon(_obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined),
                 onPressed: () => setState(() => _obscure = !_obscure),
               ),
             ),
@@ -140,7 +145,7 @@ class _AiAnalysisSettingsScreenState
             onPressed: _saving ? null : _clear,
             child: const Text('Remove key'),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
           Text(
             'Get your API key at console.anthropic.com. '
             'Usage is billed by Anthropic at their standard rates.',
@@ -148,6 +153,29 @@ class _AiAnalysisSettingsScreenState
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          const SizedBox(height: 32),
+          Text(
+            'Model',
+            style: theme.textTheme.labelMedium
+                ?.copyWith(color: theme.colorScheme.primary),
+          ),
+          const SizedBox(height: 8),
+          for (final m in claudeModels)
+            RadioListTile<String>(
+              value: m.id,
+              groupValue: currentModel,
+              title: Text(m.label),
+              subtitle: Text(m.note),
+              onChanged: _saving
+                  ? null
+                  : (v) {
+                      if (v != null) {
+                        ref
+                            .read(settingsActionsProvider)
+                            .saveClaudeModel(v);
+                      }
+                    },
+            ),
         ],
       ),
     );

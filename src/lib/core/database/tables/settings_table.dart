@@ -32,6 +32,8 @@ class Settings extends Table {
   TextColumn get finnhubApiKey => text().nullable()();
   TextColumn get nextcloudCertFingerprint => text().nullable()();
   TextColumn get claudeApiKey => text().nullable()();
+  TextColumn get claudeModel =>
+      text().withDefault(const Constant('claude-opus-4-7'))();
 
   @override
   Set<Column> get primaryKey => {id};

@@ -38,6 +38,10 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
       (update(settings)..where((t) => t.id.equals(_settingsId)))
           .write(SettingsCompanion(claudeApiKey: Value(key)));
 
+  Future<void> updateClaudeModel(String model) =>
+      (update(settings)..where((t) => t.id.equals(_settingsId)))
+          .write(SettingsCompanion(claudeModel: Value(model)));
+
   Future<void> updateCertFingerprint(String? fingerprint) =>
       (update(settings)..where((t) => t.id.equals(_settingsId)))
           .write(SettingsCompanion(nextcloudCertFingerprint: Value(fingerprint)));
