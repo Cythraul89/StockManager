@@ -207,9 +207,7 @@ class _AiAnalysisSettingsScreenState
               const SizedBox(height: 4),
               RadioGroup<LlmProvider>(
                 groupValue: activeProvider,
-                onChanged: (v) {
-                  if (v != null) _onProviderChanged(v);
-                },
+                onChanged: (v) { _onProviderChanged(v); },
                 child: Column(
                   children: [
                     for (final m in _providerMeta)
@@ -293,11 +291,9 @@ class _AiAnalysisSettingsScreenState
               const SizedBox(height: 4),
               RadioGroup<String>(
                 groupValue: currentModel,
-                onChanged: _savingKey
-                    ? null
-                    : (v) {
-                        if (v != null) _saveModel(activeProvider, v);
-                      },
+                onChanged: (v) {
+                  if (!_savingKey) _saveModel(activeProvider, v);
+                },
                 child: Column(
                   children: [
                     for (final m in models)
