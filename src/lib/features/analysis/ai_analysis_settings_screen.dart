@@ -205,17 +205,23 @@ class _AiAnalysisSettingsScreenState
                     ?.copyWith(color: theme.colorScheme.primary),
               ),
               const SizedBox(height: 4),
-              for (final m in _providerMeta)
-                RadioListTile<LlmProvider>(
-                  value: m.provider,
-                  groupValue: activeProvider,
-                  title: Text(m.label),
-                  subtitle: Text(m.note),
-                  contentPadding: EdgeInsets.zero,
-                  onChanged: (v) {
-                    if (v != null) _onProviderChanged(v);
-                  },
+              RadioGroup<LlmProvider>(
+                groupValue: activeProvider,
+                onChanged: (v) {
+                  if (v != null) _onProviderChanged(v);
+                },
+                child: Column(
+                  children: [
+                    for (final m in _providerMeta)
+                      RadioListTile<LlmProvider>(
+                        value: m.provider,
+                        title: Text(m.label),
+                        subtitle: Text(m.note),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                  ],
                 ),
+              ),
 
               const Divider(height: 32),
 
@@ -285,21 +291,27 @@ class _AiAnalysisSettingsScreenState
                     ?.copyWith(color: theme.colorScheme.primary),
               ),
               const SizedBox(height: 4),
-              for (final m in models)
-                RadioListTile<String>(
-                  value: m.id,
-                  groupValue: currentModel,
-                  title: Text(m.label),
-                  subtitle: Text(m.note),
-                  contentPadding: EdgeInsets.zero,
-                  onChanged: _savingKey
-                      ? null
-                      : (v) async {
-                          if (v != null) {
-                            await _saveModel(activeProvider, v);
-                          }
-                        },
+              RadioGroup<String>(
+                groupValue: currentModel,
+                onChanged: _savingKey
+                    ? null
+                    : (v) async {
+                        if (v != null) {
+                          await _saveModel(activeProvider, v);
+                        }
+                      },
+                child: Column(
+                  children: [
+                    for (final m in models)
+                      RadioListTile<String>(
+                        value: m.id,
+                        title: Text(m.label),
+                        subtitle: Text(m.note),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                  ],
                 ),
+              ),
             ],
           );
         },
