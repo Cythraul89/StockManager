@@ -253,6 +253,21 @@ committed**; they are scaffolded on the fly with `flutter create --platforms=<pl
 Build artifacts are uploaded via `actions/upload-artifact@v4` and downloadable
 from the Actions run summary for 90 days.
 
+## SBOM (`.github/workflows/sbom.yml`)
+
+Generates a **CycloneDX JSON** Software Bill of Materials on every push/PR
+using `anchore/sbom-action` (Syft). Runs independently of the build pipeline.
+
+| Step | Detail |
+|---|---|
+| `flutter pub get` | Resolves transitive dependencies and writes `pubspec.lock`, which Syft reads to enumerate all packages |
+| `anchore/sbom-action@v0` | Scans `src/` directory; emits `sbom.cdx.json` in CycloneDX JSON format |
+| Artifact | Uploaded as `sbom-cyclonedx.json` on every run; downloadable from the Actions summary |
+
+The SBOM covers all direct and transitive pub packages with their exact resolved
+versions. It is not committed to the repository — it is regenerated from
+`pubspec.lock` on every CI run.
+
 ---
 
 ## Adding a new Drift table

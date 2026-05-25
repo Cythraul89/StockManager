@@ -1,0 +1,45 @@
+name: SBOM
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+defaults:
+  run:
+    working-directory: src
+
+jobs:
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # pub get resolves transitive dependencies and writes pubspec.lock,
+      # which Syft reads to enumerate all packages (direct + transitive).
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # Generate a CycloneDX JSON SBOM from the resolved pubspec.lock.
+      # The action uploads the result as a workflow artifact automatically.
+      - name: Generate SBOM (CycloneDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          path: src
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          artifact-name: sbom-cyclonedx.json
