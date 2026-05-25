@@ -295,10 +295,8 @@ class _AiAnalysisSettingsScreenState
                 groupValue: currentModel,
                 onChanged: _savingKey
                     ? null
-                    : (v) async {
-                        if (v != null) {
-                          await _saveModel(activeProvider, v);
-                        }
+                    : (v) {
+                        if (v != null) _saveModel(activeProvider, v);
                       },
                 child: Column(
                   children: [
