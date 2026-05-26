@@ -554,7 +554,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${total} transaction${total == 1 ? '' : 's'} imported'
+              '$total transaction${total == 1 ? '' : 's'} imported'
               '${_estimatedImportedCount > 0 ? ' ($_estimatedImportedCount with estimated price)' : ''}'
               '${_duplicateCount > 0 ? ', $_duplicateCount already existed' : ''}'
               '${_skippedCount > 0 ? ', $_skippedCount failed' : ''}.',
