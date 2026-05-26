@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 enum BrokerImportStatus { available, comingSoon }
 
@@ -20,7 +21,8 @@ const _brokers = [
   BrokerImportOption(
     id: 'flatex',
     name: 'Flatex',
-    subtitle: 'CSV account statement export',
+    subtitle: 'CSV orders export',
+    status: BrokerImportStatus.available,
   ),
   BrokerImportOption(
     id: 'degiro',
@@ -143,7 +145,7 @@ class _BrokerTile extends StatelessWidget {
   }
 
   void _onImport(BuildContext context, BrokerImportOption broker) {
-    // TODO: navigate to broker-specific import flow
+    context.push('/settings/broker-import/${broker.id}');
   }
 }
 

@@ -13,6 +13,7 @@ import 'features/dividends/edit_dividend_screen.dart';
 import 'features/analysis/ai_analysis_settings_screen.dart';
 import 'features/analysis/analysis_screen.dart';
 import 'features/settings/broker_import_screen.dart';
+import 'features/settings/flatex_import_screen.dart';
 import 'features/settings/about_screen.dart';
 import 'features/settings/logs_screen.dart';
 import 'features/settings/privacy_policy_screen.dart';
@@ -163,6 +164,12 @@ final _router = GoRouter(
             GoRoute(
               path: 'broker-import',
               builder: (_, __) => const BrokerImportScreen(),
+              routes: [
+                GoRoute(
+                  path: 'flatex',
+                  builder: (_, __) => const FlatexImportScreen(),
+                ),
+              ],
             ),
             GoRoute(
               path: 'backup',
