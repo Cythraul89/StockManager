@@ -99,6 +99,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
       _estimationFailed = [];
     });
 
+    final db = ref.read(databaseProvider);
     final marketData = ref.read(marketDataServiceProvider);
     final isinLookup = ref.read(isinLookupServiceProvider);
     final currencyService = ref.read(currencyServiceProvider);
@@ -110,17 +111,31 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
 
     for (final o in result.unpricedOrders) {
       try {
-        final lookupResults = await isinLookup.lookup(o.isin);
-        final first = lookupResults?.firstOrNull;
-        final symbol = first?.symbol;
+        // Prefer the symbol already stored in the database — avoids an extra
+        // OpenFIGI round-trip and uses the same ticker that live quotes use.
+        final existingStock = await db.stocksDao.findByIsin(o.isin);
+
+        String? symbol;
+        String nativeCcy;
+
+        if (existingStock != null && existingStock.symbol.isNotEmpty) {
+          symbol = existingStock.symbol;
+          // The stock currency stored at import time is the execution currency
+          // (EUR for Xetra/Tradegate trades). Normalise GBp/GBX just in case.
+          nativeCcy = existingStock.currency.toUpperCase();
+        } else {
+          final lookupResults = await isinLookup.lookup(o.isin);
+          final first = lookupResults?.firstOrNull;
+          symbol = first?.symbol;
+          // Normalise GBp/GBX → GBP so the currency lookup works correctly
+          // (Yahoo already returns the GBp price divided by 100).
+          nativeCcy = (first?.currency ?? 'EUR').toUpperCase();
+        }
+
         if (symbol == null || symbol.isEmpty) {
           failed.add(o.name);
           continue;
         }
-
-        // Normalise GBp/GBX → GBP so the currency lookup works correctly
-        // (Yahoo already returns the GBp price divided by 100).
-        final nativeCcy = (first.currency).toUpperCase();
 
         final price = await marketData.fetchHistoricalPrice(symbol, o.executedAt);
         if (price == null || price <= Decimal.zero) {
