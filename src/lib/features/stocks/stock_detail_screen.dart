@@ -208,7 +208,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(stock.symbol),
+            title: Text(stock.name),
             actions: [
               IconButton(
                 icon: const Icon(Icons.edit),
@@ -229,11 +229,22 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: Text(stock.name,
-                                style: Theme.of(context).textTheme.titleMedium),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(stock.name,
+                                    style: Theme.of(context).textTheme.titleMedium),
+                                const SizedBox(height: 2),
+                                Text(
+                                  stock.symbol,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
                           ),
                           if (stock.assetType != AssetType.stock) ...[
                             const SizedBox(width: 8),
@@ -249,6 +260,15 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                                 .colorScheme
                                 .onSurfaceVariant),
                       ),
+                      if (!position.sharesHeld.isZero) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_fmtShares(position.sharesHeld)} shares'
+                          '${!position.avgBuyPrice.isZero ? ' · avg ${CurrencyFormatter.format(position.avgBuyPrice, stock.currency)}' : ''}',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
                       const Divider(height: 24),
                       _kv(context, 'Shares held',
                           position.sharesHeld.toStringAsFixed(6)),
@@ -1334,6 +1354,15 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     } catch (e) {
       debugPrint('StockDetail: deleteSplit failed: $e');
     }
+  }
+
+  String _fmtShares(Decimal d) {
+    if ((d % Decimal.one) == Decimal.zero) {
+      return d.truncate().toBigInt().toString();
+    }
+    return d.toStringAsFixed(4)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
   }
 
   Widget _splitTile(BuildContext context, StockSplit split) {
