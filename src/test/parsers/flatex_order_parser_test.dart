@@ -213,15 +213,35 @@ void main() {
       }
     });
 
-    // KVG market order — EUR-unit, no execution price in CSV → skipped.
+    // KVG market order — EUR-unit, no execution price in CSV → unpricedOrders.
     // col10 empty, col11="Market", col12-14 empty.
-    test('KVG market buy without execution price is skipped', () {
+    test('KVG market buy without execution price goes to unpricedOrders', () {
       final result = FlatexOrderParser.parse(csv([
         'ETF;ISHARES MSCI EUROPE SRI E;IE00B52VJ196/A1H7ZS;Kauf;Bruchstücke/KVG;333791367;'
             '04.05.2026 / 00:53:55;Ausgeführt;2.000,00;EUR;;Market;;;;',
       ]));
-      expect(result.importable, isEmpty,
-          reason: 'KVG market order with no price cannot be imported');
+      expect(result.importable, isEmpty);
+      expect(result.skippedNoPrice, 0);
+      expect(result.unpricedOrders.length, 1,
+          reason: 'EUR-unit order without price must surface for estimation');
+      if (result.unpricedOrders.isNotEmpty) {
+        final o = result.unpricedOrders.first;
+        expect(o.isin, 'IE00B52VJ196');
+        expect(o.investedAmount.toDouble(), closeTo(2000.0, 1e-6));
+        expect(o.executedAt, DateTime(2026, 5, 4, 0, 53, 55));
+        expect(o.isBuy, isTrue);
+        expect(o.orderNumber, '333791367');
+      }
+    });
+
+    // Stück-unit with no price still increments skippedNoPrice (cannot estimate).
+    test('Stück-unit with no price increments skippedNoPrice, not unpricedOrders', () {
+      final result = FlatexOrderParser.parse(csv([
+        'Aktie;Allianz SE;DE0008404005;Kauf;XETRA;OR099;'
+            '15.01.2024 / 10:00:00;Ausgeführt;10;Stück;;Market;;;',
+      ]));
+      expect(result.importable, isEmpty);
+      expect(result.unpricedOrders, isEmpty);
       expect(result.skippedNoPrice, 1);
     });
 

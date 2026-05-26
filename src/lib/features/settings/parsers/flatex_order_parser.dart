@@ -13,6 +13,7 @@ class FlatexParsedOrder {
     required this.pricePerShare,
     required this.currency,
     required this.orderNumber,
+    this.isEstimated = false,
   });
 
   final String isin;
@@ -24,11 +25,40 @@ class FlatexParsedOrder {
   final Decimal pricePerShare;
   final String currency;
   final String orderNumber;
+  /// True when pricePerShare was estimated from historic closing price rather
+  /// than read directly from the CSV.
+  final bool isEstimated;
+}
+
+/// An executed EUR-unit order (KVG market order, Bruchstücke) whose CSV row
+/// carries the invested EUR amount but no execution price per share.  The
+/// import screen can offer to resolve this by fetching the historic closing
+/// price and deriving shares = investedAmount ÷ price.
+class FlatexUnpricedOrder {
+  const FlatexUnpricedOrder({
+    required this.isin,
+    required this.name,
+    required this.isBuy,
+    required this.assetType,
+    required this.executedAt,
+    required this.investedAmount,
+    required this.orderNumber,
+  });
+
+  final String isin;
+  final String name;
+  final bool isBuy;
+  final AssetType assetType;
+  final DateTime executedAt;
+  /// The invested EUR amount from col 8 (Menge) when unit = EUR.
+  final Decimal investedAmount;
+  final String orderNumber;
 }
 
 class FlatexParseResult {
   const FlatexParseResult({
     required this.importable,
+    required this.unpricedOrders,
     required this.skippedNotExecuted,
     required this.skippedFractional,
     required this.skippedNoPrice,
@@ -36,6 +66,9 @@ class FlatexParseResult {
   });
 
   final List<FlatexParsedOrder> importable;
+  /// EUR-unit orders with no execution price in the CSV.  Share count can be
+  /// estimated from the historic closing price on the order date.
+  final List<FlatexUnpricedOrder> unpricedOrders;
   final int skippedNotExecuted;
   final int skippedFractional;
   final int skippedNoPrice;
@@ -45,6 +78,7 @@ class FlatexParseResult {
 
   int get total =>
       importable.length +
+      unpricedOrders.length +
       skippedNotExecuted +
       skippedFractional +
       skippedNoPrice +
@@ -59,16 +93,22 @@ class FlatexParseResult {
 /// Imported row types:
 ///   - Executed limit / stop-market orders (price from col 12)
 ///   - KVG savings-plan and Bruchstücke rows (price from col 10 Ausführungspreis,
-///     which equals total_execution_value ÷ shares; col 12 Limit is empty)
+///     which equals total_amount / shares; col 12 Limit is empty)
 ///   - EUR-unit rows: shares derived from invested amount ÷ execution price
 ///
-/// Skipped: non-executed orders, rows with no unit, and rows where no price
-/// can be determined from cols 12, 10, or 14.
+/// Unpriced (returned in [FlatexParseResult.unpricedOrders]):
+///   - EUR-unit (KVG market) orders where Flatex records the invested amount
+///     but no per-share price.  The caller may resolve these by fetching the
+///     historic closing price and recomputing shares.
+///
+/// Skipped: non-executed orders, rows with no unit, and non-EUR rows where no
+/// price can be determined from cols 12, 10, or 14.
 ///
 /// **Currency note:** the limit price currency is taken from the column after
-/// the limit price. Stop-market orders (no limit, only a stop column) have no
-/// accompanying currency column in the Flatex CSV; their price is stored with
-/// the default `'EUR'` currency. For non-EUR stop orders this will be wrong.
+/// the limit price (col 13).  Col 11 sometimes holds an order-type keyword
+/// ("Limit", "Market", "Stop") instead of a currency code and is validated
+/// before use.  Stop-market orders without a limit have their price stored with
+/// the default `'EUR'` currency.
 class FlatexOrderParser {
   // Column indices (0-based) in the Flatex orders CSV
   static const _colKategorie = 0;
@@ -82,7 +122,7 @@ class FlatexOrderParser {
   static const _colMenge = 8;
   static const _colUnit = 9;
   static const _colExecPrice = 10; // Ausführungspreis — filled for KVG/NAV rows
-  static const _colExecCcy = 11;   // Ausführungswährung
+  static const _colExecCcy = 11;   // Ausführungswährung (or order-type keyword)
   static const _colLimit = 12;
   static const _colLimitCcy = 13;
   static const _colStop = 14;
@@ -98,6 +138,7 @@ class FlatexOrderParser {
     if (lines.length < 2) {
       return const FlatexParseResult(
         importable: [],
+        unpricedOrders: [],
         skippedNotExecuted: 0,
         skippedFractional: 0,
         skippedNoPrice: 0,
@@ -105,6 +146,7 @@ class FlatexOrderParser {
     }
 
     final importable = <FlatexParsedOrder>[];
+    final unpricedOrders = <FlatexUnpricedOrder>[];
     var skippedNotExecuted = 0;
     var skippedFractional = 0;
     var skippedNoPrice = 0;
@@ -143,6 +185,10 @@ class FlatexOrderParser {
         continue;
       }
 
+      // Parse date early so it is available for both the priced and unpriced paths.
+      final executedAt = _parseDateTime(cols[_colDateTime].trim());
+      if (executedAt == null) { skippedOther++; continue; }
+
       // Price priority:
       //   1. Limit (col 12) + currency (col 13) — regular limit/stop orders
       //   2. Ausführungspreis (col 10) + currency (col 11) — KVG/NAV and
@@ -176,8 +222,24 @@ class FlatexOrderParser {
         final stopStr = cols[_colStop].trim();
         if (stopStr.isNotEmpty) price = _parseGermanDecimal(stopStr);
       }
+
       if (price == null || price <= Decimal.zero) {
-        skippedNoPrice++;
+        // EUR-unit rows (KVG market orders) carry the invested amount but no
+        // per-share price.  Surface them as unpricedOrders so the screen can
+        // offer estimation from historic closing price.
+        if (unit == 'EUR') {
+          unpricedOrders.add(FlatexUnpricedOrder(
+            isin: isin,
+            name: cols[_colName].trim(),
+            isBuy: cols[_colArt].trim() == 'Kauf',
+            assetType: _assetType(cols[_colKategorie].trim()),
+            executedAt: executedAt,
+            investedAmount: mengeDecimal,
+            orderNumber: cols[_colOrderNr].trim(),
+          ));
+        } else {
+          skippedNoPrice++;
+        }
         continue;
       }
 
@@ -198,9 +260,6 @@ class FlatexOrderParser {
       }
       if (shares <= Decimal.zero) { skippedOther++; continue; }
 
-      final executedAt = _parseDateTime(cols[_colDateTime].trim());
-      if (executedAt == null) { skippedOther++; continue; }
-
       importable.add(FlatexParsedOrder(
         isin: isin,
         name: cols[_colName].trim(),
@@ -216,6 +275,7 @@ class FlatexOrderParser {
 
     return FlatexParseResult(
       importable: importable,
+      unpricedOrders: unpricedOrders,
       skippedNotExecuted: skippedNotExecuted,
       skippedFractional: skippedFractional,
       skippedNoPrice: skippedNoPrice,

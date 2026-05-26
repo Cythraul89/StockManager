@@ -29,9 +29,16 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
   List<BrokerRow> _brokers = [];
   String? _selectedBrokerId;
   int _importedCount = 0;
+  int _estimatedImportedCount = 0;
   int _skippedCount = 0;
   int _duplicateCount = 0;
   String? _error;
+
+  // Estimation state for unpriced orders
+  bool _estimateEnabled = false;
+  bool _estimating = false;
+  List<FlatexParsedOrder> _estimatedOrders = [];
+  List<String> _estimationFailed = []; // display names of orders that failed
 
   static const _dateFormat = 'dd.MM.yy HH:mm';
 
@@ -72,7 +79,75 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
     setState(() {
       _result = parsed;
       _phase = _Phase.previewing;
+      _estimateEnabled = false;
+      _estimating = false;
+      _estimatedOrders = [];
+      _estimationFailed = [];
+      _error = null;
     });
+  }
+
+  Future<void> _fetchEstimatedPrices() async {
+    final result = _result;
+    if (result == null || result.unpricedOrders.isEmpty) return;
+
+    setState(() {
+      _estimating = true;
+      _estimatedOrders = [];
+      _estimationFailed = [];
+    });
+
+    final marketData = ref.read(marketDataServiceProvider);
+    final isinLookup = ref.read(isinLookupServiceProvider);
+    final estimated = <FlatexParsedOrder>[];
+    final failed = <String>[];
+
+    for (final o in result.unpricedOrders) {
+      try {
+        final lookupResults = await isinLookup.lookup(o.isin);
+        final symbol = lookupResults?.firstOrNull?.symbol;
+        if (symbol == null || symbol.isEmpty) {
+          failed.add(o.name);
+          continue;
+        }
+
+        final price = await marketData.fetchHistoricalPrice(symbol, o.executedAt);
+        if (price == null || price <= Decimal.zero) {
+          failed.add(o.name);
+          continue;
+        }
+
+        final shares = (o.investedAmount.toRational() / price.toRational())
+            .toDecimal(scaleOnInfinitePrecision: 8);
+        if (shares <= Decimal.zero) {
+          failed.add(o.name);
+          continue;
+        }
+
+        estimated.add(FlatexParsedOrder(
+          isin: o.isin,
+          name: o.name,
+          isBuy: o.isBuy,
+          assetType: o.assetType,
+          executedAt: o.executedAt,
+          shares: shares,
+          pricePerShare: price,
+          currency: 'EUR',
+          orderNumber: o.orderNumber,
+          isEstimated: true,
+        ));
+      } catch (_) {
+        failed.add(o.name);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _estimating = false;
+        _estimatedOrders = estimated;
+        _estimationFailed = failed;
+      });
+    }
   }
 
   Future<void> _import() async {
@@ -98,12 +173,16 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
       const uuid = Uuid();
 
       var imported = 0;
+      var estimatedImported = 0;
       var skipped = 0;
       var duplicates = 0;
 
+      // Merge confirmed importable rows with any estimated ones.
+      final allOrders = [...result.importable, ..._estimatedOrders];
+
       // Group orders by ISIN to minimise DB lookups.
       final byIsin = <String, List<FlatexParsedOrder>>{};
-      for (final o in result.importable) {
+      for (final o in allOrders) {
         byIsin.putIfAbsent(o.isin, () => []).add(o);
       }
 
@@ -169,8 +248,15 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             currency: o.currency,
             fees: Decimal.zero,
             externalRef: o.orderNumber.isNotEmpty ? o.orderNumber : null,
+            notes: o.isEstimated
+                ? 'Price estimated from historic closing price'
+                : null,
           ));
-          imported++;
+          if (o.isEstimated) {
+            estimatedImported++;
+          } else {
+            imported++;
+          }
         }
       }
 
@@ -178,6 +264,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
         setState(() {
           _phase = _Phase.done;
           _importedCount = imported;
+          _estimatedImportedCount = estimatedImported;
           _skippedCount = skipped;
           _duplicateCount = duplicates;
         });
@@ -230,7 +317,8 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
               'Supported: executed limit and stop-market orders, KVG '
               'savings-plan buys, and Bruchstücke — shares for EUR-amount '
               'rows are derived from invested amount ÷ execution price. '
-              'Only non-executed orders and rows with no price are skipped.\n\n'
+              'KVG market orders without a recorded execution price can be '
+              'estimated from the historic closing price.\n\n'
               'Note: stop-market orders are imported with EUR currency '
               'because the Flatex CSV does not include a currency column '
               'for stop prices.',
@@ -247,6 +335,10 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
 
   Widget _buildPreviewing(ThemeData theme) {
     final result = _result!;
+    final totalToImport = result.importable.length + _estimatedOrders.length;
+    final hasAnythingToShow =
+        result.importable.isNotEmpty || result.unpricedOrders.isNotEmpty;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -269,7 +361,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           ),
         ],
 
-        if (result.importable.isEmpty) ...[
+        if (!hasAnythingToShow) ...[
           const SizedBox(height: 24),
           Center(
             child: Text(
@@ -309,22 +401,124 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             onChanged: (v) => setState(() => _selectedBrokerId = v),
           ),
 
-          // ── Transaction list ──────────────────────────────────────
-          const SizedBox(height: 16),
-          Text(
-            'Transactions to import',
-            style: theme.textTheme.labelMedium
-                ?.copyWith(color: theme.colorScheme.primary),
-          ),
-          const SizedBox(height: 4),
-          for (final o in result.importable)
-            _OrderTile(order: o, theme: theme, dateFormat: _dateFormat),
+          // ── Confirmed transaction list ────────────────────────────
+          if (result.importable.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Transactions to import',
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.primary),
+            ),
+            const SizedBox(height: 4),
+            for (final o in result.importable)
+              _OrderTile(order: o, theme: theme, dateFormat: _dateFormat),
+          ],
+
+          // ── Unpriced orders (estimation) ──────────────────────────
+          if (result.unpricedOrders.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Orders without execution price',
+              style: theme.textTheme.labelMedium
+                  ?.copyWith(color: theme.colorScheme.primary),
+            ),
+            const SizedBox(height: 4),
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerLow,
+              child: SwitchListTile(
+                dense: true,
+                title: Text(
+                  'Estimate from historic closing price',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  '${result.unpricedOrders.length} KVG market '
+                  'order${result.unpricedOrders.length == 1 ? '' : 's'} — '
+                  'invested amount recorded, price per share missing. '
+                  'Imported as draft for your review.',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                value: _estimateEnabled,
+                onChanged: _estimating
+                    ? null
+                    : (v) {
+                        setState(() => _estimateEnabled = v);
+                        if (v) {
+                          _fetchEstimatedPrices();
+                        } else {
+                          setState(() {
+                            _estimatedOrders = [];
+                            _estimationFailed = [];
+                          });
+                        }
+                      },
+              ),
+            ),
+            if (_estimating) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(),
+              const SizedBox(height: 4),
+              Center(
+                child: Text(
+                  'Fetching historic prices…',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+            if (_estimateEnabled && !_estimating) ...[
+              if (_estimationFailed.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Card(
+                  elevation: 0,
+                  color: theme.colorScheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.warning_amber_outlined,
+                            size: 16,
+                            color: theme.colorScheme.onErrorContainer),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Could not fetch price for: '
+                            '${_estimationFailed.join(', ')}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              for (final o in _estimatedOrders)
+                _OrderTile(
+                  order: o,
+                  theme: theme,
+                  dateFormat: _dateFormat,
+                ),
+            ],
+          ],
 
           // ── Import button ──────────────────────────────────────
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: _selectedBrokerId != null ? _import : null,
-            child: Text('Import ${result.importable.length} transactions'),
+            onPressed:
+                (_selectedBrokerId != null && totalToImport > 0) ? _import : null,
+            child: Text(
+              totalToImport > 0
+                  ? 'Import $totalToImport transaction${totalToImport == 1 ? '' : 's'}'
+                  : 'Import',
+            ),
           ),
         ],
         const SizedBox(height: 8),
@@ -333,6 +527,9 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             _phase = _Phase.idle;
             _result = null;
             _error = null;
+            _estimateEnabled = false;
+            _estimatedOrders = [];
+            _estimationFailed = [];
           }),
           child: const Text('Pick a different file'),
         ),
@@ -341,6 +538,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
   }
 
   Widget _buildDone(ThemeData theme) {
+    final total = _importedCount + _estimatedImportedCount;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -356,7 +554,8 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '$_importedCount transaction${_importedCount == 1 ? '' : 's'} imported'
+              '${total} transaction${total == 1 ? '' : 's'} imported'
+              '${_estimatedImportedCount > 0 ? ' ($_estimatedImportedCount with estimated price)' : ''}'
               '${_duplicateCount > 0 ? ', $_duplicateCount already existed' : ''}'
               '${_skippedCount > 0 ? ', $_skippedCount failed' : ''}.',
               textAlign: TextAlign.center,
@@ -364,11 +563,26 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+            if (_estimatedImportedCount > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Estimated transactions are marked with '
+                '"Price estimated from historic closing price" in their notes. '
+                'Review and correct them in the transaction detail screen.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton(
               onPressed: () => setState(() {
                 _phase = _Phase.idle;
                 _result = null;
+                _estimateEnabled = false;
+                _estimatedOrders = [];
+                _estimationFailed = [];
               }),
               child: const Text('Import another file'),
             ),
@@ -437,6 +651,12 @@ class _SummaryCard extends StatelessWidget {
           children: [
             _buildRow('Will import', '${result.importable.length}',
                 theme.colorScheme.primary),
+            if (result.unpricedOrders.isNotEmpty)
+              _buildRow(
+                'Can estimate (no price in CSV)',
+                '${result.unpricedOrders.length}',
+                theme.colorScheme.tertiary,
+              ),
             if (result.skippedNotExecuted > 0)
               _buildRow('Skipped (not executed)', '${result.skippedNotExecuted}',
                   theme.colorScheme.onSurfaceVariant),
@@ -472,10 +692,11 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _OrderTile extends StatelessWidget {
-  const _OrderTile(
-      {required this.order,
-      required this.theme,
-      required this.dateFormat});
+  const _OrderTile({
+    required this.order,
+    required this.theme,
+    required this.dateFormat,
+  });
   final FlatexParsedOrder order;
   final ThemeData theme;
   final String dateFormat;
@@ -483,14 +704,15 @@ class _OrderTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isBuy = order.isBuy;
-    final color =
-        isBuy ? Colors.green.shade700 : theme.colorScheme.error;
+    final color = isBuy ? Colors.green.shade700 : theme.colorScheme.error;
     final fmt = DateFormat(dateFormat);
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 4),
-      color: theme.colorScheme.surfaceContainerLowest,
+      color: order.isEstimated
+          ? theme.colorScheme.tertiaryContainer.withAlpha(120)
+          : theme.colorScheme.surfaceContainerLowest,
       child: ListTile(
         dense: true,
         contentPadding:
@@ -500,12 +722,36 @@ class _OrderTile extends StatelessWidget {
           color: color,
           size: 18,
         ),
-        title: Text(
-          order.name,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(fontWeight: FontWeight.w600),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                order.name,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(fontWeight: FontWeight.w600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (order.isEstimated) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.tertiary,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'estimated',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onTertiary,
+                    fontSize: 9,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         subtitle: Text(
           '${order.isin}  ·  ${fmt.format(order.executedAt)}',
