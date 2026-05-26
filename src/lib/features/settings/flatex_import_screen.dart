@@ -446,6 +446,9 @@ class _SummaryCard extends StatelessWidget {
             if (result.skippedNoPrice > 0)
               _buildRow('Skipped (no price)', '${result.skippedNoPrice}',
                   theme.colorScheme.onSurfaceVariant),
+            if (result.skippedOther > 0)
+              _buildRow('Skipped (format issue)', '${result.skippedOther}',
+                  theme.colorScheme.error),
           ],
         ),
       ),

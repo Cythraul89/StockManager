@@ -127,6 +127,58 @@ void main() {
       ]));
       expect(result.skippedNoPrice, 1);
     });
+
+    test('bad ISIN (too short) increments skippedOther', () {
+      final result = FlatexOrderParser.parse(csv([
+        'Aktie;Allianz SE;DE0008404;Kauf;XETRA;OR009;'
+            '15.01.2024 / 10:00:00;Ausgeführt;10;Stück;;EUR;200,00;EUR;',
+      ]));
+      expect(result.skippedOther, 1);
+    });
+  });
+
+  group('Date/time format variants', () {
+    test('standard DD.MM.YYYY / HH:MM:SS', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;iShares World;IE00B4L5Y983;Kauf;KVG;OR010;'
+            '15.01.2024 / 09:00:00;Ausgeführt;50,00;EUR;100,00;EUR;;;',
+      ]));
+      expect(result.importable.length, 1);
+      if (result.importable.isNotEmpty) {
+        expect(result.importable.first.executedAt,
+            DateTime(2024, 1, 15, 9, 0, 0));
+      }
+    });
+
+    test('date only DD.MM.YYYY (KVG NAV orders)', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;iShares World;IE00B4L5Y983;Kauf;KVG;OR011;'
+            '15.01.2024;Ausgeführt;50,00;EUR;100,00;EUR;;;',
+      ]));
+      expect(result.importable.length, 1,
+          reason: 'Date-only format must be accepted');
+      if (result.importable.isNotEmpty) {
+        expect(result.importable.first.executedAt, DateTime(2024, 1, 15));
+      }
+    });
+
+    test('space separator DD.MM.YYYY HH:MM:SS', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;iShares World;IE00B4L5Y983;Kauf;KVG;OR012;'
+            '15.01.2024 09:00:00;Ausgeführt;50,00;EUR;100,00;EUR;;;',
+      ]));
+      expect(result.importable.length, 1,
+          reason: 'Space-separated datetime must be accepted');
+    });
+
+    test('time without seconds DD.MM.YYYY / HH:MM', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;iShares World;IE00B4L5Y983;Kauf;KVG;OR013;'
+            '15.01.2024 / 09:00;Ausgeführt;50,00;EUR;100,00;EUR;;;',
+      ]));
+      expect(result.importable.length, 1,
+          reason: 'HH:MM without seconds must be accepted');
+    });
   });
 
   group('ISIN/WKN combined field', () {

@@ -32,18 +32,23 @@ class FlatexParseResult {
     required this.skippedNotExecuted,
     required this.skippedFractional,
     required this.skippedNoPrice,
+    this.skippedOther = 0,
   });
 
   final List<FlatexParsedOrder> importable;
   final int skippedNotExecuted;
   final int skippedFractional;
   final int skippedNoPrice;
+  /// Rows dropped for other reasons: bad ISIN format, unparseable date,
+  /// zero/missing quantity, or fewer than 10 columns.
+  final int skippedOther;
 
   int get total =>
       importable.length +
       skippedNotExecuted +
       skippedFractional +
-      skippedNoPrice;
+      skippedNoPrice +
+      skippedOther;
 }
 
 /// Parses the Flatex "Orders" CSV export (semicolon-delimited, Latin-1 encoding).
@@ -103,11 +108,12 @@ class FlatexOrderParser {
     var skippedNotExecuted = 0;
     var skippedFractional = 0;
     var skippedNoPrice = 0;
+    var skippedOther = 0;
 
     // Skip header row (index 0)
     for (var i = 1; i < lines.length; i++) {
       final cols = lines[i].split(';');
-      if (cols.length < 10) continue;
+      if (cols.length < 10) { skippedOther++; continue; }
 
       final status = cols[_colStatus].trim();
       if (!_isExecuted(status)) {
@@ -127,12 +133,15 @@ class FlatexOrderParser {
       final isin = isinWkn.contains('/')
           ? isinWkn.split('/').first.trim()
           : isinWkn;
-      if (isin.isEmpty || isin.length != 12) continue;
+      if (isin.isEmpty || isin.length != 12) { skippedOther++; continue; }
 
       // menge is either a share count (unit=Stück) or an invested EUR amount
       // (unit=EUR); the shares calculation below handles both cases.
       final mengeDecimal = _parseGermanDecimal(cols[_colMenge].trim());
-      if (mengeDecimal == null || mengeDecimal <= Decimal.zero) continue;
+      if (mengeDecimal == null || mengeDecimal <= Decimal.zero) {
+        skippedOther++;
+        continue;
+      }
 
       // Price priority:
       //   1. Limit (col 12) + currency (col 13) — regular limit/stop orders
@@ -183,10 +192,10 @@ class FlatexOrderParser {
       } else {
         shares = mengeDecimal;
       }
-      if (shares <= Decimal.zero) continue;
+      if (shares <= Decimal.zero) { skippedOther++; continue; }
 
       final executedAt = _parseDateTime(cols[_colDateTime].trim());
-      if (executedAt == null) continue;
+      if (executedAt == null) { skippedOther++; continue; }
 
       importable.add(FlatexParsedOrder(
         isin: isin,
@@ -206,6 +215,7 @@ class FlatexOrderParser {
       skippedNotExecuted: skippedNotExecuted,
       skippedFractional: skippedFractional,
       skippedNoPrice: skippedNoPrice,
+      skippedOther: skippedOther,
     );
   }
 
@@ -230,21 +240,43 @@ class FlatexOrderParser {
   }
 
   static DateTime? _parseDateTime(String s) {
-    // Format: DD.MM.YYYY / HH:MM:SS
-    final parts = s.split(' / ');
-    if (parts.length != 2) return null;
-    final d = parts[0].split('.');
-    final t = parts[1].split(':');
-    if (d.length != 3 || t.length != 3) return null;
+    // Flatex uses "DD.MM.YYYY / HH:MM:SS" but some order types (e.g. KVG
+    // savings plans) may omit the time or use a plain space as separator.
+    // Try " / " first, fall back to first-space split, then date-only.
+    String datePart;
+    String? timePart;
+
+    final slashIdx = s.indexOf(' / ');
+    if (slashIdx > 0) {
+      datePart = s.substring(0, slashIdx);
+      timePart = s.substring(slashIdx + 3);
+    } else {
+      final spaceIdx = s.indexOf(' ');
+      if (spaceIdx > 0) {
+        datePart = s.substring(0, spaceIdx);
+        timePart = s.substring(spaceIdx + 1);
+      } else {
+        datePart = s; // date only
+      }
+    }
+
+    final d = datePart.split('.');
+    if (d.length != 3) return null;
     try {
-      return DateTime(
-        int.parse(d[2]),
-        int.parse(d[1]),
-        int.parse(d[0]),
-        int.parse(t[0]),
-        int.parse(t[1]),
-        int.parse(t[2]),
-      );
+      final year  = int.parse(d[2]);
+      final month = int.parse(d[1]);
+      final day   = int.parse(d[0]);
+
+      if (timePart != null && timePart.isNotEmpty) {
+        final t = timePart.split(':');
+        return DateTime(
+          year, month, day,
+          int.parse(t[0]),
+          t.length > 1 ? int.parse(t[1]) : 0,
+          t.length > 2 ? int.parse(t[2]) : 0,
+        );
+      }
+      return DateTime(year, month, day);
     } catch (_) {
       return null;
     }
