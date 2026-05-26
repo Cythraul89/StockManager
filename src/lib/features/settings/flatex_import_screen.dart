@@ -155,7 +155,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           final rate = ExchangeRate.find(
               exchangeRates.values.toList(), nativeCcy, 'EUR');
           if (rate == null) {
-            failed.add('${o.name} (no ${nativeCcy}→EUR rate)');
+            failed.add('${o.name} (no $nativeCcy→EUR rate)');
             continue;
           }
           priceInEur = rate.convert(price);
