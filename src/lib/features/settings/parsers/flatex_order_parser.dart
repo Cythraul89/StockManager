@@ -12,6 +12,7 @@ class FlatexParsedOrder {
     required this.shares,
     required this.pricePerShare,
     required this.currency,
+    required this.orderNumber,
   });
 
   final String isin;
@@ -22,6 +23,7 @@ class FlatexParsedOrder {
   final Decimal shares;
   final Decimal pricePerShare;
   final String currency;
+  final String orderNumber;
 }
 
 class FlatexParseResult {
@@ -59,6 +61,8 @@ class FlatexOrderParser {
   static const _colIsinWkn = 2;
   static const _colArt = 3;
   static const _colVenue = 4;
+  static const _colOrderNr = 5;
+  static const _colDateTime = 6;
   static const _colStatus = 7;
   static const _colMenge = 8;
   static const _colUnit = 9;
@@ -134,7 +138,7 @@ class FlatexOrderParser {
         continue;
       }
 
-      final executedAt = _parseDateTime(cols[6].trim());
+      final executedAt = _parseDateTime(cols[_colDateTime].trim());
       if (executedAt == null) continue;
 
       importable.add(FlatexParsedOrder(
@@ -146,6 +150,7 @@ class FlatexOrderParser {
         shares: shares,
         pricePerShare: price,
         currency: currency,
+        orderNumber: cols[_colOrderNr].trim(),
       ));
     }
 

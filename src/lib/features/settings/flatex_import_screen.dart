@@ -136,12 +136,14 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
         }
 
         for (final o in orders) {
-          final isDup = await db.transactionsDao.existsByKey(
-            stockId: stockRow.id,
-            executedAt: o.executedAt,
-            isBuy: o.isBuy,
-            shares: o.shares,
-          );
+          final isDup = o.orderNumber.isNotEmpty
+              ? await db.transactionsDao.existsByExternalRef(o.orderNumber)
+              : await db.transactionsDao.existsByKey(
+                  stockId: stockRow.id,
+                  executedAt: o.executedAt,
+                  isBuy: o.isBuy,
+                  shares: o.shares,
+                );
           if (isDup) {
             duplicates++;
             continue;
@@ -155,6 +157,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             pricePerShare: o.pricePerShare,
             currency: o.currency,
             fees: Decimal.zero,
+            externalRef: o.orderNumber.isNotEmpty ? o.orderNumber : null,
           ));
           imported++;
         }

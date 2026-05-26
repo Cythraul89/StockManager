@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.background(File file) : super(NativeDatabase(file));
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -100,6 +100,9 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(settings, settings.geminiApiKey);
             await m.addColumn(settings, settings.groqModel);
             await m.addColumn(settings, settings.geminiModel);
+          }
+          if (from < 14) {
+            await m.addColumn(transactions, transactions.externalRef);
           }
         },
         beforeOpen: (details) async {

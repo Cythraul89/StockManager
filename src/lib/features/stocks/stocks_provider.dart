@@ -273,6 +273,7 @@ class StockActions {
       currency: tx.currency,
       fees: Value(tx.fees),
       notes: Value(tx.notes),
+      externalRef: Value(tx.externalRef),
     ));
     _notifyChange();
     return id;
@@ -287,6 +288,7 @@ class StockActions {
       pricePerShare: Value(tx.pricePerShare),
       fees: Value(tx.fees),
       notes: Value(tx.notes),
+      externalRef: Value(tx.externalRef),
     ));
     _notifyChange();
   }
@@ -500,6 +502,7 @@ StockTransaction _txFromRow(TransactionRow r) => StockTransaction(
       currency: r.currency,
       fees: r.fees,
       notes: r.notes,
+      externalRef: r.externalRef,
     );
 
 StockSplit _splitFromRow(StockSplitRow r) => StockSplit(

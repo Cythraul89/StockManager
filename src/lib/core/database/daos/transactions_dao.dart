@@ -43,6 +43,13 @@ class TransactionsDao extends DatabaseAccessor<AppDatabase>
   Future<int> deleteById(String id) =>
       (delete(transactions)..where((t) => t.id.equals(id))).go();
 
+  Future<bool> existsByExternalRef(String externalRef) async {
+    final row = await (select(transactions)
+          ..where((t) => t.externalRef.equals(externalRef)))
+        .getSingleOrNull();
+    return row != null;
+  }
+
   Future<bool> existsByKey({
     required String stockId,
     required DateTime executedAt,

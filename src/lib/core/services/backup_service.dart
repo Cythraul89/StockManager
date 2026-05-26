@@ -79,6 +79,7 @@ class BackupService {
           'currency': t.currency,
           'fees': t.fees.toString(),
           'notes': t.notes,
+          'externalRef': t.externalRef,
         },
     ]);
 
@@ -156,14 +157,14 @@ class BackupService {
 
     content.write('<table:table table:name="transactions">');
     content.write(_odsRow([
-      'id', 'stockId', 'type', 'executedAt', 'shares', 'pricePerShare', 'currency', 'fees', 'notes',
+      'id', 'stockId', 'type', 'executedAt', 'shares', 'pricePerShare', 'currency', 'fees', 'notes', 'externalRef',
     ]));
     for (final t in transactions) {
       content.write(_odsRow([
         t.id, t.stockId, t.type,
         t.executedAt.toUtc().toIso8601String(),
         t.shares.toString(), t.pricePerShare.toString(),
-        t.currency, t.fees.toString(), t.notes,
+        t.currency, t.fees.toString(), t.notes, t.externalRef,
       ]));
     }
     content.write('</table:table>');
@@ -349,6 +350,7 @@ class BackupService {
           'currency': col(r, 6),
           'fees': col(r, 7).isEmpty ? '0' : col(r, 7),
           'notes': optCol(r, 8),
+          'externalRef': optCol(r, 9),
         },
     ];
     final divData = [
@@ -426,6 +428,7 @@ class BackupService {
           currency: t['currency'] as String,
           fees: Value(Decimal.parse(t['fees']?.toString() ?? '0')),
           notes: Value(t['notes'] as String?),
+          externalRef: Value(t['externalRef'] as String?),
         ));
       }
 
