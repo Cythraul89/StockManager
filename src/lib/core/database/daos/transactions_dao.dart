@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
 
 import '../app_database.dart';
@@ -41,4 +42,21 @@ class TransactionsDao extends DatabaseAccessor<AppDatabase>
 
   Future<int> deleteById(String id) =>
       (delete(transactions)..where((t) => t.id.equals(id))).go();
+
+  Future<bool> existsByKey({
+    required String stockId,
+    required DateTime executedAt,
+    required bool isBuy,
+    required Decimal shares,
+  }) async {
+    final typeStr = isBuy ? 'buy' : 'sell';
+    final row = await (select(transactions)
+          ..where((t) =>
+              t.stockId.equals(stockId) &
+              t.executedAt.equals(executedAt) &
+              t.type.equals(typeStr) &
+              t.shares.equals(shares.toString())))
+        .getSingleOrNull();
+    return row != null;
+  }
 }

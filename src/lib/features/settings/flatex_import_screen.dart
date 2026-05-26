@@ -31,6 +31,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
   String? _selectedBrokerId;
   int _importedCount = 0;
   int _skippedCount = 0;
+  int _duplicateCount = 0;
   String? _error;
 
   static const _dateFormat = 'dd.MM.yy HH:mm';
@@ -92,6 +93,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
 
       var imported = 0;
       var skipped = 0;
+      var duplicates = 0;
 
       // Group orders by ISIN to minimise DB lookups.
       final byIsin = <String, List<FlatexParsedOrder>>{};
@@ -134,6 +136,16 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
         }
 
         for (final o in orders) {
+          final isDup = await db.transactionsDao.existsByKey(
+            stockId: stockRow.id,
+            executedAt: o.executedAt,
+            isBuy: o.isBuy,
+            shares: o.shares,
+          );
+          if (isDup) {
+            duplicates++;
+            continue;
+          }
           await actions.addTransaction(StockTransaction(
             id: uuid.v4(),
             stockId: stockRow.id,
@@ -153,6 +165,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           _phase = _Phase.done;
           _importedCount = imported;
           _skippedCount = skipped;
+          _duplicateCount = duplicates;
         });
       }
     } catch (e) {
@@ -326,6 +339,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             const SizedBox(height: 8),
             Text(
               '$_importedCount transaction${_importedCount == 1 ? '' : 's'} imported'
+              '${_duplicateCount > 0 ? ', $_duplicateCount already existed' : ''}'
               '${_skippedCount > 0 ? ', $_skippedCount failed' : ''}.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
