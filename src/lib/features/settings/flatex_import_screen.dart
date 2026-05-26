@@ -86,7 +86,14 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
     });
 
     try {
+      final wasCreating = _selectedBrokerId == _kCreateFlatex;
       final brokerId = await _resolveBrokerId(_selectedBrokerId!);
+      if (wasCreating) {
+        // Normalize the sentinel to the real ID so subsequent "Import another
+        // file" calls don't create a second broker row.
+        final rows = await ref.read(databaseProvider).brokersDao.getAll();
+        if (mounted) setState(() { _selectedBrokerId = brokerId; _brokers = rows; });
+      }
       final db = ref.read(databaseProvider);
       final actions = ref.read(stockActionsProvider);
       const uuid = Uuid();
@@ -120,7 +127,12 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
             symbol: first?.symbol ?? isin,
             name: orders.first.name,
             exchange: first?.exchange ?? '',
-            currency: first?.currency ?? orders.first.currency,
+            // Use the order currency from the CSV, not the ISIN lookup's
+            // native currency. Flatex records the execution currency (e.g. EUR
+            // for Xetra/Tradegate trades). Using the lookup currency (e.g. USD
+            // for US stocks) would create a mismatch between the stock currency
+            // and all imported transaction currencies, breaking P&L calculations.
+            currency: orders.first.currency,
             dripEnabled: false,
             assetType: first != null
                 ? first.assetType
@@ -219,7 +231,10 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
               'Supported rows: executed limit and stop-market orders '
               'with whole-share quantities. '
               'Fractional (Bruchstücke/KVG) and market orders without '
-              'a price are skipped.',
+              'a price are skipped.\n\n'
+              'Note: stop-market orders are imported with EUR currency '
+              'because the Flatex CSV does not include a currency column '
+              'for stop prices.',
         ),
         const SizedBox(height: 24),
         FilledButton.icon(
@@ -364,6 +379,12 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
   }
 }
 
+/// Displays whole numbers without a decimal point (40 not 40.00).
+String _fmtShares(Decimal d) {
+  if ((d % Decimal.one).isZero) return d.truncate().toBigInt().toString();
+  return d.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+}
+
 // ── Sub-widgets ──────────────────────────────────────────────────────────────
 
 class _InfoCard extends StatelessWidget {
@@ -491,7 +512,7 @@ class _OrderTile extends StatelessWidget {
           ),
         ),
         trailing: Text(
-          '${order.shares.toStringAsFixed(2)} × '
+          '${_fmtShares(order.shares)} × '
           '${order.pricePerShare.toStringAsFixed(2)} ${order.currency}',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurface),

@@ -54,6 +54,11 @@ class FlatexParseResult {
 /// Only rows with status "Ausgeführt" and a whole-share quantity (Stück) are
 /// imported. Fractional/KVG rows (EUR-amount orders), non-executed orders, and
 /// orders with no determinable price are counted but excluded from [importable].
+///
+/// **Currency note:** the limit price currency is taken from the column after
+/// the limit price. Stop-market orders (no limit, only a stop column) have no
+/// accompanying currency column in the Flatex CSV; their price is stored with
+/// the default `'EUR'` currency. For non-EUR stop orders this will be wrong.
 class FlatexOrderParser {
   // Column indices (0-based) in the Flatex orders CSV
   static const _colKategorie = 0;
