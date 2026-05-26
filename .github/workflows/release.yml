@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+# Opt into Node.js 24 for all JavaScript actions before the June 2026 forced cutover.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 defaults:
   run:
     working-directory: src
@@ -34,20 +38,141 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # Decode the base64-encoded keystore stored as a secret
-      - name: Decode keystore
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+      - name: Generate code
+        run: dart run build_runner build
+
+      - name: Generate Android platform files
+        run: flutter create --platforms=android .
+
+      # Release signing setup — same secret names as ci.yml:
+      #   ANDROID_RELEASE_KEYSTORE_B64  — base64-encoded .jks / .keystore
+      #   ANDROID_KEYSTORE_PASSWORD     — storepass
+      #   ANDROID_KEY_ALIAS             — key alias (e.g. "upload")
+      #   ANDROID_KEY_PASSWORD          — keypass
+      - name: Write release keystore and key.properties
+        if: ${{ env.KEYSTORE_B64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > android/release.keystore
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=../release.keystore
+          EOF
+
+      - name: Patch build.gradle.kts (compileSdk, desugaring, signing)
+        shell: python3 {0}
+        run: |
+          path = 'android/app/build.gradle.kts'
+          with open(path) as f:
+              content = f.read()
+          # flutter_plugin_android_lifecycle requires compileSdk >= 36
+          content = content.replace(
+              'compileSdk = flutter.compileSdkVersion',
+              'compileSdk = 36',
+              1,
+          )
+          content = content.replace(
+              'compileOptions {',
+              'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+              1,
+          )
+          dep = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")'
+          if 'dependencies {}' in content:
+              content = content.replace('dependencies {}', 'dependencies {\n' + dep + '\n}', 1)
+          elif 'dependencies {' in content:
+              content = content.replace('dependencies {', 'dependencies {\n' + dep, 1)
+          else:
+              content = content.rstrip() + '\n\ndependencies {\n' + dep + '\n}\n'
+          with open(path, 'w') as f:
+              f.write(content)
+          # file_picker hardcodes compileSdkVersion=34 in its own build file.
+          # AGP 9+ dropped the compileSdkVersion method from the new DSL — it only
+          # reads compileSdk. Rename it and ensure the value is >= 36.
+          # Patch both Groovy (.gradle) and Kotlin DSL (.gradle.kts) variants.
+          import glob, os, re
+          pub_cache = os.environ.get('PUB_CACHE', os.path.expanduser('~/.pub-cache'))
+          pattern = os.path.join(
+              pub_cache, 'hosted', 'pub.dev',
+              'file_picker-*', 'android', 'build.gradle*',
+          )
+          matched = glob.glob(pattern)
+          print(f'file_picker build files found: {matched}')
+          for fp in matched:
+              with open(fp) as f:
+                  txt = f.read()
+              # compileSdkVersion N → compileSdk N (rename + bump)
+              updated = re.sub(
+                  r'compileSdkVersion\s+(\d+)',
+                  lambda m: 'compileSdk ' + str(max(int(m.group(1)), 36)),
+                  txt,
+              )
+              # compileSdk = N (Kotlin DSL) — bump if below 36
+              updated = re.sub(
+                  r'(compileSdk\s*=\s*)(\d+)',
+                  lambda m: m.group(1) + str(max(int(m.group(2)), 36)),
+                  updated,
+              )
+              # compileSdk N (Groovy DSL, no =) — bump if below 36
+              updated = re.sub(
+                  r'(compileSdk\s+)(\d+)',
+                  lambda m: m.group(1) + str(max(int(m.group(2)), 36)),
+                  updated,
+              )
+              if updated != txt:
+                  with open(fp, 'w') as f:
+                      f.write(updated)
+                  print(f'Patched: {fp}')
+              else:
+                  print(f'No upgrade needed in: {fp}')
+          if not matched:
+              print('WARNING: No file_picker build files found in pub cache')
+
+          # Inject release signing config when key.properties exists.
+          kp = 'android/key.properties'
+          if os.path.exists(kp):
+              app_gradle = 'android/app/build.gradle.kts'
+              with open(app_gradle) as f:
+                  gradle = f.read()
+              nl = '\n'
+              signing_block = (
+                  'import java.util.Properties' + nl +
+                  'import java.io.FileInputStream' + nl + nl +
+                  'val keystoreProps = Properties().apply {' + nl +
+                  '    val f = rootProject.file("key.properties")' + nl +
+                  '    if (f.exists()) load(FileInputStream(f))' + nl +
+                  '}' + nl + nl
+              )
+              signing_config = (
+                  nl +
+                  '    signingConfigs {' + nl +
+                  '        create("release") {' + nl +
+                  '            keyAlias      = keystoreProps["keyAlias"]      as String' + nl +
+                  '            keyPassword   = keystoreProps["keyPassword"]   as String' + nl +
+                  '            storeFile     = file(keystoreProps["storeFile"] as String)' + nl +
+                  '            storePassword = keystoreProps["storePassword"] as String' + nl +
+                  '        }' + nl +
+                  '    }' + nl
+              )
+              gradle = signing_block + gradle
+              gradle = gradle.replace('    buildTypes {', signing_config + '    buildTypes {', 1)
+              gradle = gradle.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  1,
+              )
+              with open(app_gradle, 'w') as f:
+                  f.write(gradle)
+              print('Injected release signing config into build.gradle.kts')
 
       - name: Build signed AAB
-        env:
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          flutter build appbundle --release \
-            --dart-define=KEY_ALIAS=$ANDROID_KEY_ALIAS \
-            --dart-define=KEY_PASSWORD=$ANDROID_KEY_PASSWORD \
-            --dart-define=STORE_PASSWORD=$ANDROID_STORE_PASSWORD
+          flutter build appbundle --release --build-number=${{ github.run_number }}
 
       - name: Upload AAB to release
         uses: softprops/action-gh-release@v2
@@ -64,7 +189,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libsecret-1-dev
 
       - uses: subosito/flutter-action@v2
         with:
@@ -73,6 +198,12 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build
+
+      - name: Generate Linux platform files
+        run: flutter create --platforms=linux .
 
       - name: Build Linux
         run: flutter build linux --release
@@ -102,6 +233,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate code
+        run: dart run build_runner build
+
+      - name: Generate Windows platform files
+        run: flutter create --platforms=windows .
+
       - name: Build Windows
         run: flutter build windows --release
 
@@ -116,7 +253,8 @@ jobs:
   # ── macOS ──────────────────────────────────────────────────
   # Note: distributing outside the Mac App Store requires a Developer ID
   # certificate added as secrets (MACOS_CERTIFICATE + MACOS_CERTIFICATE_PWD).
-  # Without it the .app runs on the build machine but is unsigned for end users.
+  # Without it the .app is ad-hoc signed (runs on the build machine, not
+  # Gatekeeper-verified for end users).
   release-macos:
     name: Release macOS
     runs-on: macos-latest
@@ -132,6 +270,12 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build
+
+      - name: Generate macOS platform files
+        run: flutter create --platforms=macos .
 
       # Optional: import Developer ID certificate for signed distribution
       - name: Import signing certificate
@@ -151,10 +295,29 @@ jobs:
       - name: Build macOS
         run: flutter build macos --release
 
+      - name: Re-sign macOS app (ad-hoc, no sandbox)
+        working-directory: src/build/macos/Build/Products/Release
+        run: |
+          cat > /tmp/nosandbox.entitlements << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.network.client</key>
+            <true/>
+            <key>com.apple.security.files.user-selected.read-write</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          codesign --deep --force --sign - \
+            --entitlements /tmp/nosandbox.entitlements \
+            stock_manager.app
+
       - name: Package macOS app
         run: |
           cd build/macos/Build/Products/Release
-          zip -r ../../../../../stockmanager-macos.zip StockManager.app
+          zip -r ../../../../../stockmanager-macos.zip stock_manager.app
 
       - name: Upload macOS archive to release
         uses: softprops/action-gh-release@v2
