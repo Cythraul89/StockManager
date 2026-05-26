@@ -190,14 +190,13 @@ jobs:
                   '        }' + nl +
                   '    }' + nl
               )
-              release_type = (
-                  '        release {' + nl +
-                  '            signingConfig = signingConfigs.getByName("release")' + nl +
-                  '        }' + nl
-              )
               gradle = signing_block + gradle
               gradle = gradle.replace('    buildTypes {', signing_config + '    buildTypes {', 1)
-              gradle = gradle.replace('        release {' + nl, release_type, 1)
+              gradle = gradle.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  1,
+              )
               with open(app_gradle, 'w') as f:
                   f.write(gradle)
               print('Injected release signing config into build.gradle.kts')
