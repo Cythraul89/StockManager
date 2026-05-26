@@ -760,6 +760,10 @@ class MarketDataService {
     }
   }
 
+  // Stooq does not return currency metadata, so [currency] is taken from the
+  // stock record (already normalized, e.g. 'GBP').  Stooq uses different
+  // symbol suffixes (.UK vs Yahoo's .L), so London-listed symbols typically
+  // return null here rather than a pence-denominated price — the safe outcome.
   Future<PriceQuote?> _fetchFromStooq(
       String symbol, String stockId, String currency) async {
     try {
@@ -848,6 +852,7 @@ class MarketDataService {
     }
   }
 
+  // Same caveat as _fetchFromStooq: no currency metadata returned.
   Future<Decimal?> _fetchHistoricalFromStooq(
       String symbol, DateTime date) async {
     try {

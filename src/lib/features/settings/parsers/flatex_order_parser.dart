@@ -168,8 +168,14 @@ class FlatexOrderParser {
         continue;
       }
 
-      // EUR-unit rows (Bruchstücke etc.): menge is the invested amount in EUR;
+      // EUR-unit rows (Bruchstücke etc.): menge is the invested EUR amount;
       // derive share count from amount ÷ execution price.
+      // Guard: if the exec currency is not EUR we can't divide EUR by a
+      // foreign-currency price — skip rather than import a wrong share count.
+      if (unit == 'EUR' && currency != 'EUR') {
+        skippedNoPrice++;
+        continue;
+      }
       final Decimal shares;
       if (unit == 'EUR') {
         shares = (mengeDecimal.toRational() / price.toRational())
