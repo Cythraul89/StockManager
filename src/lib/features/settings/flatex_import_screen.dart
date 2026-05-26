@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../core/database/tables/brokers_table.dart';
+import '../../core/database/app_database.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/transaction.dart';
 import '../stocks/stocks_provider.dart';
@@ -290,7 +290,8 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: _selectedBrokerId,
+            key: ValueKey(_selectedBrokerId),
+            initialValue: _selectedBrokerId,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               isDense: true,
@@ -381,7 +382,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
 
 /// Displays whole numbers without a decimal point (40 not 40.00).
 String _fmtShares(Decimal d) {
-  if ((d % Decimal.one).isZero) return d.truncate().toBigInt().toString();
+  if ((d % Decimal.one) == Decimal.zero) return d.truncate().toBigInt().toString();
   return d.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
 }
 
@@ -435,16 +436,16 @@ class _SummaryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Row('Will import', '${result.importable.length}',
+            _buildRow('Will import', '${result.importable.length}',
                 theme.colorScheme.primary),
             if (result.skippedNotExecuted > 0)
-              _Row('Skipped (not executed)', '${result.skippedNotExecuted}',
+              _buildRow('Skipped (not executed)', '${result.skippedNotExecuted}',
                   theme.colorScheme.onSurfaceVariant),
             if (result.skippedFractional > 0)
-              _Row('Skipped (fractional/KVG)', '${result.skippedFractional}',
+              _buildRow('Skipped (fractional/KVG)', '${result.skippedFractional}',
                   theme.colorScheme.onSurfaceVariant),
             if (result.skippedNoPrice > 0)
-              _Row('Skipped (no price)', '${result.skippedNoPrice}',
+              _buildRow('Skipped (no price)', '${result.skippedNoPrice}',
                   theme.colorScheme.onSurfaceVariant),
           ],
         ),
@@ -452,7 +453,7 @@ class _SummaryCard extends StatelessWidget {
     );
   }
 
-  Widget _Row(String label, String value, Color color) {
+  Widget _buildRow(String label, String value, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
