@@ -227,11 +227,10 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           theme: theme,
           text: 'Export your order history from flatex: '
               'Log in → Portfolio → Orders → Export as CSV.\n\n'
-              'Supported rows: executed limit and stop-market orders, '
-              'and KVG savings-plan orders (shares derived from '
-              'invested amount ÷ NAV price). '
-              'Fractional Bruchstücke rows and market orders without '
-              'a price are skipped.\n\n'
+              'Supported: executed limit and stop-market orders, KVG '
+              'savings-plan buys, and Bruchstücke — shares for EUR-amount '
+              'rows are derived from invested amount ÷ execution price. '
+              'Only non-executed orders and rows with no price are skipped.\n\n'
               'Note: stop-market orders are imported with EUR currency '
               'because the Flatex CSV does not include a currency column '
               'for stop prices.',
@@ -442,7 +441,7 @@ class _SummaryCard extends StatelessWidget {
               _buildRow('Skipped (not executed)', '${result.skippedNotExecuted}',
                   theme.colorScheme.onSurfaceVariant),
             if (result.skippedFractional > 0)
-              _buildRow('Skipped (Bruchstücke)', '${result.skippedFractional}',
+              _buildRow('Skipped (no unit)', '${result.skippedFractional}',
                   theme.colorScheme.onSurfaceVariant),
             if (result.skippedNoPrice > 0)
               _buildRow('Skipped (no price)', '${result.skippedNoPrice}',

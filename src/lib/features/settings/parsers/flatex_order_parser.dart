@@ -52,13 +52,12 @@ class FlatexParseResult {
 /// German umlauts (ü, ä, ö) are proper Unicode characters.
 ///
 /// Imported row types:
-///   - Executed limit orders with a Stück quantity
-///   - Executed stop-market orders with a Stück quantity
-///   - KVG savings-plan orders (venue == "KVG", unit == "EUR"):
-///     shares are derived from the invested EUR amount divided by the NAV price
+///   - Executed limit / stop-market orders with a Stück quantity
+///   - EUR-unit rows (KVG savings plans, Bruchstücke, etc.):
+///     shares are derived from invested EUR amount ÷ execution price
 ///
-/// Skipped: non-executed orders, Bruchstücke (fractional-fill) rows, and any
-/// row where a price cannot be determined.
+/// Skipped: non-executed orders, rows with no unit, and rows where a price
+/// cannot be determined.
 ///
 /// **Currency note:** the limit price currency is taken from the column after
 /// the limit price. Stop-market orders (no limit, only a stop column) have no
@@ -115,7 +114,6 @@ class FlatexOrderParser {
 
       final unit = cols[_colUnit].trim();
       final venue = cols[_colVenue].trim();
-      final isKvg = venue == 'KVG';
 
       if (_isFractional(unit, venue)) {
         skippedFractional++;
@@ -152,9 +150,10 @@ class FlatexOrderParser {
         continue;
       }
 
-      // For KVG rows derive share count from EUR amount ÷ NAV price.
+      // EUR-unit rows (KVG savings plans, Bruchstücke, etc.): menge is the
+      // invested amount in EUR; derive share count from amount ÷ execution price.
       final Decimal shares;
-      if (isKvg && unit == 'EUR') {
+      if (unit == 'EUR') {
         shares = (mengeDecimal.toRational() / price.toRational())
             .toDecimal(scaleOnInfinitePrecision: 8);
       } else {
@@ -190,13 +189,10 @@ class FlatexOrderParser {
   static bool _isExecuted(String status) =>
       status.startsWith('Ausgef') && status.endsWith('hrt');
 
-  // Bruchstücke (partial-fill fractional rows): unit is EUR on non-KVG rows,
-  // or venue explicitly says Bruchstücke.  KVG savings-plan rows (venue == 'KVG')
-  // also have unit == 'EUR' but ARE imported — shares are derived from amount ÷ price.
-  static bool _isFractional(String unit, String venue) {
-    if (venue == 'KVG') return false;
-    return unit == 'EUR' || unit.isEmpty || venue.toLowerCase().contains('bruchst');
-  }
+  // Only skip rows where we genuinely have no share count AND no way to derive one:
+  // empty unit with no EUR amount. All EUR-unit rows (KVG, Bruchstücke, etc.)
+  // are handled by the amount ÷ price calculation in the main loop.
+  static bool _isFractional(String unit, String venue) => unit.isEmpty;
 
   static Decimal? _parseGermanDecimal(String s) {
     if (s.isEmpty) return null;
