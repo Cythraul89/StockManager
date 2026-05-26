@@ -107,7 +107,7 @@ class FlatexOrderParser {
     // Skip header row (index 0)
     for (var i = 1; i < lines.length; i++) {
       final cols = lines[i].split(';');
-      if (cols.length < 13) continue;
+      if (cols.length < 10) continue;
 
       final status = cols[_colStatus].trim();
       if (!_isExecuted(status)) {
@@ -129,8 +129,8 @@ class FlatexOrderParser {
           : isinWkn;
       if (isin.isEmpty || isin.length != 12) continue;
 
-      // KVG: menge column holds the invested EUR amount, not a share count.
-      // Regular rows: menge column holds the share count directly.
+      // menge is either a share count (unit=Stück) or an invested EUR amount
+      // (unit=EUR); the shares calculation below handles both cases.
       final mengeDecimal = _parseGermanDecimal(cols[_colMenge].trim());
       if (mengeDecimal == null || mengeDecimal <= Decimal.zero) continue;
 
@@ -142,7 +142,8 @@ class FlatexOrderParser {
       //   3. Stop (col 14) — stop-market orders
       Decimal? price;
       var currency = 'EUR';
-      final limitStr = cols[_colLimit].trim();
+      final limitStr =
+          cols.length > _colLimit ? cols[_colLimit].trim() : '';
       if (limitStr.isNotEmpty) {
         price = _parseGermanDecimal(limitStr);
         if (cols.length > _colLimitCcy && cols[_colLimitCcy].trim().isNotEmpty) {
