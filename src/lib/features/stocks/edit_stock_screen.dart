@@ -298,7 +298,9 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                   },
                 ),
                 SwitchListTile(
-                  title: const Text('Dividend Reinvestment (DRIP)'),
+                  title: const Text('Accumulating / DRIP'),
+                  subtitle: const Text(
+                      'Dividends are reinvested — skip auto-synced dividend income'),
                   value: _dripEnabled,
                   onChanged: (v) => setState(() => _dripEnabled = v),
                   contentPadding: EdgeInsets.zero,

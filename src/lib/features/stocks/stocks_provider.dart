@@ -341,14 +341,25 @@ class StockActions {
   /// skipping dates already in the database.  Pre-fills totalAmount from the
   /// share count at the dividend date and withholdingTax from the treaty rate
   /// for the ISIN's source country (both are estimates; user can adjust).
+  ///
+  /// When [isAccumulating] is true the fund reinvests income internally so the
+  /// external "dividend" events from Yahoo Finance are already embedded in the
+  /// NAV/price.  Syncing them as separate income would double-count the return,
+  /// so they are skipped entirely.
   Future<void> syncDividends(
     String stockId,
     String currency,
     String isin,
     List<FetchedDividend> fetched,
     List<StockTransaction> transactions,
-    List<StockSplit> splits,
-  ) async {
+    List<StockSplit> splits, {
+    bool isAccumulating = false,
+  }) async {
+    if (isAccumulating) {
+      _notifyChange();
+      return;
+    }
+
     final taxRate = withholdingTaxRate(isin);
 
     for (final d in fetched) {

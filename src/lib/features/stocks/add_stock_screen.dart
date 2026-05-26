@@ -410,9 +410,9 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: const Text('Dividend Reinvestment (DRIP)'),
+              title: const Text('Accumulating / DRIP'),
               subtitle: const Text(
-                  'Auto-create a buy transaction when a dividend is recorded'),
+                  'Dividends are reinvested — skip auto-synced dividend income'),
               value: _dripEnabled,
               onChanged: (v) => setState(() => _dripEnabled = v),
               contentPadding: EdgeInsets.zero,

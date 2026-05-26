@@ -98,6 +98,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
             fetched,
             txs,
             splits,
+            isAccumulating: stock.dripEnabled,
           );
     } catch (e) {
       debugPrint('StockDetail: dividend sync failed: $e');
