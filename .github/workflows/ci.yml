@@ -170,32 +170,34 @@ jobs:
               app_gradle = 'android/app/build.gradle.kts'
               with open(app_gradle) as f:
                   gradle = f.read()
-              signing_block = '''
-import java.util.Properties
-import java.io.FileInputStream
-
-val keystoreProps = Properties().apply {
-    val f = rootProject.file("key.properties")
-    if (f.exists()) load(FileInputStream(f))
-}
-'''
-              signing_config = '''
-    signingConfigs {
-        create("release") {
-            keyAlias     = keystoreProps["keyAlias"]     as String
-            keyPassword  = keystoreProps["keyPassword"]  as String
-            storeFile    = file(keystoreProps["storeFile"] as String)
-            storePassword = keystoreProps["storePassword"] as String
-        }
-    }
-'''
-              release_type = '        release {\n            signingConfig = signingConfigs.getByName("release")\n        }\n'
-              # Prepend imports before the android { block
+              nl = '\n'
+              signing_block = (
+                  'import java.util.Properties' + nl +
+                  'import java.io.FileInputStream' + nl + nl +
+                  'val keystoreProps = Properties().apply {' + nl +
+                  '    val f = rootProject.file("key.properties")' + nl +
+                  '    if (f.exists()) load(FileInputStream(f))' + nl +
+                  '}' + nl + nl
+              )
+              signing_config = (
+                  nl +
+                  '    signingConfigs {' + nl +
+                  '        create("release") {' + nl +
+                  '            keyAlias      = keystoreProps["keyAlias"]      as String' + nl +
+                  '            keyPassword   = keystoreProps["keyPassword"]   as String' + nl +
+                  '            storeFile     = file(keystoreProps["storeFile"] as String)' + nl +
+                  '            storePassword = keystoreProps["storePassword"] as String' + nl +
+                  '        }' + nl +
+                  '    }' + nl
+              )
+              release_type = (
+                  '        release {' + nl +
+                  '            signingConfig = signingConfigs.getByName("release")' + nl +
+                  '        }' + nl
+              )
               gradle = signing_block + gradle
-              # Insert signingConfigs inside android { before buildTypes
               gradle = gradle.replace('    buildTypes {', signing_config + '    buildTypes {', 1)
-              # Wire release buildType
-              gradle = gradle.replace('        release {\n', release_type, 1)
+              gradle = gradle.replace('        release {' + nl, release_type, 1)
               with open(app_gradle, 'w') as f:
                   f.write(gradle)
               print('Injected release signing config into build.gradle.kts')
