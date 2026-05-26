@@ -561,8 +561,11 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           // ── Import button ──────────────────────────────────────
           const SizedBox(height: 16),
           FilledButton(
-            onPressed:
-                (_selectedBrokerId != null && totalToImport > 0) ? _import : null,
+            onPressed: (_selectedBrokerId != null &&
+                    totalToImport > 0 &&
+                    !_estimating)
+                ? _import
+                : null,
             child: Text(
               totalToImport > 0
                   ? 'Import $totalToImport transaction${totalToImport == 1 ? '' : 's'}'

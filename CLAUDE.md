@@ -96,11 +96,21 @@ src/
 │       │   └── ai_analysis_settings_screen.dart  # Provider/key/model picker
 │       └── settings/                   # settingsProvider, settingsActionsProvider
 │           ├── about_screen.dart           # Version, GPL-3 notice, privacy policy, app logs
-│           ├── broker_import_screen.dart   # Broker import entry-point (scaffold, parsers TBD)
+│           ├── broker_import_screen.dart   # Broker import entry-point (picker)
+│           ├── flatex_import_screen.dart   # Flatex CSV import (parse → preview → import)
 │           ├── privacy_policy_screen.dart  # In-app privacy policy viewer
-│           └── logs_screen.dart            # Log viewer with share/clear app-bar actions
+│           ├── logs_screen.dart            # Log viewer with share/clear app-bar actions
+│           └── parsers/
+│               └── flatex_order_parser.dart  # Parser, FlatexParsedOrder, FlatexUnpricedOrder
 └── test/
-    └── widget_test.dart
+    ├── widget_test.dart
+    ├── manual_price_dialog_test.dart
+    ├── calculators/
+    ├── utils/
+    ├── models/
+    ├── database/
+    └── parsers/
+        └── flatex_order_parser_test.dart
 ```
 
 ---
@@ -193,7 +203,7 @@ Providers that **must be overridden** in `ProviderScope` at startup:
 
 ## Testing
 
-The test suite lives in `test/` and has **80 tests** across 7 files:
+The test suite lives in `test/` and has **100 tests** across 8 files:
 
 | File | What it covers |
 |---|---|
@@ -205,6 +215,7 @@ The test suite lives in `test/` and has **80 tests** across 7 files:
 | `test/utils/decimal_math_test.dart` | `DecimalX` predicates, `percentChangeFrom`, `weightedAverage`, `clampMin` |
 | `test/models/exchange_rate_test.dart` | `ExchangeRate.find`, `convert`, `isStale`, Equatable equality |
 | `test/database/trailing_stop_test.dart` | `StocksDao.updateTrailingStop` / `updateTrailingStopHighWater` with in-memory Drift DB |
+| `test/parsers/flatex_order_parser_test.dart` | `FlatexOrderParser`: all row types, skip counters, date format variants, ISIN/WKN split, real-world export format |
 
 ### Widget test setup
 

@@ -166,7 +166,7 @@ class FlatexOrderParser {
       final unit = cols[_colUnit].trim();
       final venue = cols[_colVenue].trim();
 
-      if (_isFractional(unit, venue)) {
+      if (_isFractional(unit)) {
         skippedFractional++;
         continue;
       }
@@ -287,10 +287,9 @@ class FlatexOrderParser {
   static bool _isExecuted(String status) =>
       status.startsWith('Ausgef') && status.endsWith('hrt');
 
-  // Only skip rows where we genuinely have no share count AND no way to derive one:
-  // empty unit with no EUR amount. All EUR-unit rows (KVG, Bruchstücke, etc.)
-  // are handled by the amount ÷ price calculation in the main loop.
-  static bool _isFractional(String unit, String venue) => unit.isEmpty;
+  // Skip rows with an empty unit — no share count and no EUR amount to derive one from.
+  // EUR-unit rows (KVG, Bruchstücke) are handled separately in the main loop.
+  static bool _isFractional(String unit) => unit.isEmpty;
 
   // Returns true only for strings that look like ISO 4217 currency codes
   // (exactly 3 uppercase ASCII letters). This guards against Flatex rows where

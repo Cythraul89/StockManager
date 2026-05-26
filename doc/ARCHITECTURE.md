@@ -61,9 +61,12 @@ lib/
 │   │   └── ai_analysis_settings_screen.dart  # Provider / key / model picker
 │   └── settings/
 │       ├── about_screen.dart           # Version, GPL-3, privacy policy, app logs links
-│       ├── broker_import_screen.dart   # Broker import entry-point (scaffold; parsers TBD)
+│       ├── broker_import_screen.dart   # Broker import entry-point (scaffold)
+│       ├── flatex_import_screen.dart   # Flatex CSV import (parse → preview → import)
 │       ├── privacy_policy_screen.dart  # In-app privacy policy
-│       └── logs_screen.dart            # Log viewer with share/clear
+│       ├── logs_screen.dart            # Log viewer with share/clear
+│       └── parsers/
+│           └── flatex_order_parser.dart  # FlatexOrderParser, FlatexParsedOrder, FlatexUnpricedOrder
 │
 └── shell/
     ├── adaptive_shell.dart         # Picks mobile or desktop shell by screen width
@@ -126,7 +129,8 @@ Notable provider files:
 | price_per_share | DECIMAL | |
 | currency | TEXT | |
 | fees | DECIMAL | default 0 |
-| notes | TEXT? | |
+| notes | TEXT? | Free-form; `"Price estimated from historic closing price"` marks KVG draft imports |
+| external_ref | TEXT? | Broker order number; used for deduplication on re-import (schema v14) |
 
 **stock_splits**
 | Column | Type | Notes |
@@ -667,13 +671,65 @@ All three use `Dio` with `ResponseType.stream` and a shared line-buffer SSE pars
 
 **Settings screen (`AiAnalysisSettingsScreen`):** Provider radio buttons, a single `TextEditingController` for the API key (reloaded when the provider changes), and a model radio group that updates via `modelsFor(activeProvider)`. Settings are read via a `Future` cached in `_settingsFuture` (initialised in `initState`, refreshed after each write) to avoid showing a loading flash on every `setState`.
 
-### 5.21 Broker Import Scaffold
+### 5.21 Broker Import
 
-`BrokerImportScreen` (`/settings/broker-import`) provides the entry point for importing transaction history from broker CSV/export files.
+`BrokerImportScreen` (`/settings/broker-import`) lists supported brokers. Flatex is currently **available**; DEGIRO, Interactive Brokers, Trade Republic, Scalable Capital, and Comdirect remain `comingSoon`. Tapping a live broker tile navigates to its dedicated import screen.
 
-**Current state:** Six brokers are listed — Flatex, DEGIRO, Interactive Brokers, Trade Republic, Scalable Capital, and Comdirect — all with `status = BrokerImportStatus.comingSoon`. Tiles are greyed out with a "Coming soon" chip; the "Import" button and tap gesture are suppressed.
+**Extension point:** To enable a new broker, set its status to `BrokerImportStatus.available` in the `_brokers` const list in `broker_import_screen.dart` and add a navigation case in `_onImport()`.
 
-**Extension point:** When a parser is implemented for a broker, set its `status` to `BrokerImportStatus.available` in the `_brokers` const list in `broker_import_screen.dart`. The `_onImport()` method provides the navigation hook for the broker-specific import flow.
+### 5.22 Flatex CSV Import
+
+`FlatexImportScreen` (`/settings/broker-import/flatex`) drives a three-phase flow: **idle → previewing → importing → done**.
+
+#### Parser (`FlatexOrderParser`)
+
+Parses the semicolon-delimited, Latin-1-encoded "Orders" CSV exported from the Flatex web portal. Column indices are constants; all price strings use German decimal notation (`1.000,50`).
+
+**Row types handled:**
+
+| Row type | Source columns | Result |
+|---|---|---|
+| Regular limit / stop-market orders | col 12 (Limit) + col 13 (currency) | `FlatexParsedOrder` — direct import |
+| KVG savings-plan / Bruchstücke (Stück-unit) | col 10 (Ausführungspreis) + col 11 (currency) | `FlatexParsedOrder` — direct import |
+| EUR-unit rows with execution price | menge ÷ price | `FlatexParsedOrder` — shares derived |
+| EUR-unit rows **without** execution price (KVG market) | invested EUR amount only | `FlatexUnpricedOrder` — offered for estimation |
+| Stück-unit with no price anywhere | — | `skippedNoPrice` |
+| Non-executed orders | — | `skippedNotExecuted` |
+| Empty-unit rows | — | `skippedFractional` |
+| Bad ISIN, bad date, zero menge | — | `skippedOther` |
+
+**Col 11 guard:** Flatex sometimes puts the order-type keyword (`"Limit"`, `"Market"`, `"Stop"`) in col 11 (Ausführungswährung) instead of a currency code. `_isCurrencyCode()` accepts only exactly-3-uppercase-ASCII-letter strings, so keywords are silently rejected and the currency defaults to `'EUR'`.
+
+**`FlatexParseResult`** exposes `importable`, `unpricedOrders`, and four skip counters. Its `total` getter sums all categories, including unpriced orders, so a CSV containing only unpriced rows is not incorrectly treated as empty.
+
+#### Price estimation for unpriced orders
+
+When `FlatexParseResult.unpricedOrders` is non-empty, the previewing screen shows a `SwitchListTile`. Enabling it calls `_fetchEstimatedPrices()`:
+
+1. For each `FlatexUnpricedOrder`, look up the stock's ticker symbol:
+   - If the ISIN already exists in the database (`StocksDao.findByIsin()`), use the stored symbol — avoids an extra OpenFIGI round-trip.
+   - Otherwise call `IsinLookupService.lookup(isin)` (OpenFIGI API).
+2. Call `MarketDataService.fetchHistoricalPrice(symbol, executedAt)` for the closing price on the order date.
+3. If the security's native currency is not EUR, convert to EUR using ECB rates (`CurrencyService.fetchRates('EUR')` — fetched once for the batch via lazy `??=`). `ExchangeRate.find(rates, nativeCcy, 'EUR').convert(price)`.
+4. Derive share count: `shares = investedAmount ÷ priceInEur`.
+5. Add a `FlatexParsedOrder` with `isEstimated: true`.
+
+Orders that fail (symbol not found, no historical price, no exchange rate) are listed by name in a warning card. The Import button is disabled while estimation is in progress to prevent importing partial results.
+
+#### Import phase
+
+`_import()` merges `result.importable` and `_estimatedOrders`, groups by ISIN, then for each ISIN:
+- Finds or creates the stock (new stocks get their symbol/currency from OpenFIGI; currency falls back to the CSV execution currency to keep transaction and stock currency consistent).
+- Deduplicates by `externalRef` (order number) when non-empty; falls back to exact-match on `(stockId, executedAt, isBuy, shares)`.
+- Sets `notes = "Price estimated from historic closing price"` on estimated transactions so `TransactionTile` can display a visual review badge (orange warning icon + subtitle line).
+
+#### Visual review badge
+
+`TransactionTile` checks `transaction.notes?.contains('estimated')`. When true:
+- The leading avatar shows an amber warning icon instead of B/S.
+- The tile turns amber (`Colors.orange.shade700`) instead of green/red.
+- A second subtitle line reads "⚠ Price estimated — please verify".
+- `isThreeLine: true` is set on `ListTile` to accommodate the extra line.
 
 ---
 
@@ -696,7 +752,8 @@ All three use `Dio` with `ResponseType.stream` and a shared line-buffer SSE pars
 /settings                → Settings
 /settings/ai-analysis    → AI Portfolio Analysis (AnalysisScreen)
 /settings/ai-analysis/key → Provider / API key / model picker (AiAnalysisSettingsScreen)
-/settings/broker-import  → Import from Broker (scaffold; parsers TBD)
+/settings/broker-import         → Import from Broker (broker picker)
+/settings/broker-import/flatex  → FlatexImportScreen (CSV parse → preview → import)
 /settings/backup         → Local backup (export / import ZIP)
 /settings/market-data    → MarketDataSettingsScreen
 /settings/nextcloud      → Nextcloud configuration
@@ -727,8 +784,10 @@ test/
 │   └── decimal_math_test.dart          # DecimalX extensions + DecimalMath
 ├── models/
 │   └── exchange_rate_test.dart         # ExchangeRate.find / convert / isStale
-└── database/
-    └── trailing_stop_test.dart         # StocksDao trailing stop DAO methods
+├── database/
+│   └── trailing_stop_test.dart         # StocksDao trailing stop DAO methods
+└── parsers/
+    └── flatex_order_parser_test.dart   # FlatexOrderParser — all row types, skip counters, real-world format
 ```
 
 ### 7.2 Testing strategy
