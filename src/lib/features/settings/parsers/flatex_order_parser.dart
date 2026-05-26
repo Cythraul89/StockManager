@@ -52,12 +52,13 @@ class FlatexParseResult {
 /// German umlauts (ü, ä, ö) are proper Unicode characters.
 ///
 /// Imported row types:
-///   - Executed limit / stop-market orders with a Stück quantity
-///   - EUR-unit rows (KVG savings plans, Bruchstücke, etc.):
-///     shares are derived from invested EUR amount ÷ execution price
+///   - Executed limit / stop-market orders (price from col 12)
+///   - KVG savings-plan and Bruchstücke rows (price from col 10 Ausführungspreis,
+///     which equals total_execution_value ÷ shares; col 12 Limit is empty)
+///   - EUR-unit rows: shares derived from invested amount ÷ execution price
 ///
-/// Skipped: non-executed orders, rows with no unit, and rows where a price
-/// cannot be determined.
+/// Skipped: non-executed orders, rows with no unit, and rows where no price
+/// can be determined from cols 12, 10, or 14.
 ///
 /// **Currency note:** the limit price currency is taken from the column after
 /// the limit price. Stop-market orders (no limit, only a stop column) have no
@@ -75,6 +76,8 @@ class FlatexOrderParser {
   static const _colStatus = 7;
   static const _colMenge = 8;
   static const _colUnit = 9;
+  static const _colExecPrice = 10; // Ausführungspreis — filled for KVG/NAV rows
+  static const _colExecCcy = 11;   // Ausführungswährung
   static const _colLimit = 12;
   static const _colLimitCcy = 13;
   static const _colStop = 14;
@@ -131,7 +134,12 @@ class FlatexOrderParser {
       final mengeDecimal = _parseGermanDecimal(cols[_colMenge].trim());
       if (mengeDecimal == null || mengeDecimal <= Decimal.zero) continue;
 
-      // Determine price: prefer limit price, fall back to stop price.
+      // Price priority:
+      //   1. Limit (col 12) + currency (col 13) — regular limit/stop orders
+      //   2. Ausführungspreis (col 10) + currency (col 11) — KVG/NAV and
+      //      Bruchstücke rows where no limit was set; the execution price equals
+      //      total_amount / shares (the NAV price Flatex filled the order at)
+      //   3. Stop (col 14) — stop-market orders
       Decimal? price;
       var currency = 'EUR';
       final limitStr = cols[_colLimit].trim();
@@ -139,6 +147,15 @@ class FlatexOrderParser {
         price = _parseGermanDecimal(limitStr);
         if (cols.length > _colLimitCcy && cols[_colLimitCcy].trim().isNotEmpty) {
           currency = cols[_colLimitCcy].trim();
+        }
+      }
+      if (price == null && cols.length > _colExecPrice) {
+        final execStr = cols[_colExecPrice].trim();
+        if (execStr.isNotEmpty) {
+          price = _parseGermanDecimal(execStr);
+          if (cols.length > _colExecCcy && cols[_colExecCcy].trim().isNotEmpty) {
+            currency = cols[_colExecCcy].trim();
+          }
         }
       }
       if (price == null && cols.length > _colStop) {
@@ -150,8 +167,8 @@ class FlatexOrderParser {
         continue;
       }
 
-      // EUR-unit rows (KVG savings plans, Bruchstücke, etc.): menge is the
-      // invested amount in EUR; derive share count from amount ÷ execution price.
+      // EUR-unit rows (Bruchstücke etc.): menge is the invested amount in EUR;
+      // derive share count from amount ÷ execution price.
       final Decimal shares;
       if (unit == 'EUR') {
         shares = (mengeDecimal.toRational() / price.toRational())
