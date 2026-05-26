@@ -60,20 +60,30 @@ void main() async {
   // Register WorkManager background task for price/rating/dividend checks.
   // ExistingWorkPolicy.keep avoids re-registering on every app launch.
   if (Platform.isAndroid) {
-    await Workmanager().initialize(callbackDispatcher);
-    await Workmanager().registerPeriodicTask(
-      'stockBackgroundCheck',
-      'checkPricesAndAlerts',
-      frequency: const Duration(minutes: 15),
-      constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
-    );
+    try {
+      await Workmanager().initialize(callbackDispatcher);
+      await Workmanager().registerPeriodicTask(
+        'stockBackgroundCheck',
+        'checkPricesAndAlerts',
+        frequency: const Duration(minutes: 15),
+        constraints: Constraints(networkType: NetworkType.connected),
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+      );
+    } catch (e) {
+      // Non-fatal: background price/alert checks will be disabled.
+      debugPrint('WorkManager init failed (background checks disabled): $e');
+    }
   }
 
   final database = AppDatabase();
 
   final notificationService = NotificationService();
-  await notificationService.initialize();
+  try {
+    await notificationService.initialize();
+  } catch (e) {
+    // Non-fatal: notifications will be silently skipped.
+    debugPrint('NotificationService init failed (notifications disabled): $e');
+  }
 
   final dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),

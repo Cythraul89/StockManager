@@ -21,17 +21,23 @@ class TransactionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isBuy = transaction.type == TransactionType.buy;
-    final typeColor = isBuy ? Colors.green : theme.colorScheme.error;
+    final needsReview = transaction.notes?.contains('estimated') ?? false;
+    final typeColor = needsReview
+        ? Colors.orange.shade700
+        : (isBuy ? Colors.green : theme.colorScheme.error);
 
     return ListTile(
       onTap: onTap,
+      isThreeLine: needsReview,
       leading: CircleAvatar(
         backgroundColor: typeColor.withValues(alpha: 0.15),
-        child: Text(
-          isBuy ? 'B' : 'S',
-          style: TextStyle(
-              color: typeColor, fontWeight: FontWeight.bold),
-        ),
+        child: needsReview
+            ? Icon(Icons.warning_amber_rounded, color: typeColor, size: 20)
+            : Text(
+                isBuy ? 'B' : 'S',
+                style: TextStyle(
+                    color: typeColor, fontWeight: FontWeight.bold),
+              ),
       ),
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -47,12 +53,25 @@ class TransactionTile extends StatelessWidget {
           ),
         ],
       ),
-      subtitle: Text(
-        '${DateHelpers.formatDateTime(transaction.executedAt)}'
-        ' · ${CurrencyFormatter.format(transaction.pricePerShare, currency)}/share'
-        '${transaction.fees.isPositive ? " · fees ${CurrencyFormatter.format(transaction.fees, currency)}" : ""}',
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${DateHelpers.formatDateTime(transaction.executedAt)}'
+            ' · ${CurrencyFormatter.format(transaction.pricePerShare, currency)}/share'
+            '${transaction.fees.isPositive ? " · fees ${CurrencyFormatter.format(transaction.fees, currency)}" : ""}',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          if (needsReview)
+            Text(
+              '⚠ Price estimated — please verify',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.orange.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+        ],
       ),
     );
   }

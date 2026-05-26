@@ -8,10 +8,12 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/database/app_database.dart';
+import '../../core/models/exchange_rate.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/transaction.dart';
 import '../stocks/stocks_provider.dart';
 import 'parsers/flatex_order_parser.dart';
+import 'settings_provider.dart';
 
 enum _Phase { idle, previewing, importing, done }
 
@@ -99,17 +101,26 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
 
     final marketData = ref.read(marketDataServiceProvider);
     final isinLookup = ref.read(isinLookupServiceProvider);
+    final currencyService = ref.read(currencyServiceProvider);
     final estimated = <FlatexParsedOrder>[];
     final failed = <String>[];
+
+    // Exchange rates fetched at most once for the entire batch.
+    Map<String, ExchangeRate>? exchangeRates;
 
     for (final o in result.unpricedOrders) {
       try {
         final lookupResults = await isinLookup.lookup(o.isin);
-        final symbol = lookupResults?.firstOrNull?.symbol;
+        final first = lookupResults?.firstOrNull;
+        final symbol = first?.symbol;
         if (symbol == null || symbol.isEmpty) {
           failed.add(o.name);
           continue;
         }
+
+        // Normalise GBp/GBX → GBP so the currency lookup works correctly
+        // (Yahoo already returns the GBp price divided by 100).
+        final nativeCcy = (first.currency).toUpperCase();
 
         final price = await marketData.fetchHistoricalPrice(symbol, o.executedAt);
         if (price == null || price <= Decimal.zero) {
@@ -117,7 +128,30 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           continue;
         }
 
-        final shares = (o.investedAmount.toRational() / price.toRational())
+        // The invested amount is always in EUR (Flatex KVG market orders).
+        // Convert the fetched price to EUR when the security trades in another
+        // currency, using current ECB rates (historic rates would be more
+        // accurate, but this is an estimate the user must review regardless).
+        Decimal priceInEur;
+        if (nativeCcy.isEmpty || nativeCcy == 'EUR') {
+          priceInEur = price;
+        } else {
+          exchangeRates ??= await currencyService.fetchRates('EUR');
+          final rate = ExchangeRate.find(
+              exchangeRates.values.toList(), nativeCcy, 'EUR');
+          if (rate == null) {
+            failed.add('${o.name} (no ${nativeCcy}→EUR rate)');
+            continue;
+          }
+          priceInEur = rate.convert(price);
+        }
+
+        if (priceInEur <= Decimal.zero) {
+          failed.add(o.name);
+          continue;
+        }
+
+        final shares = (o.investedAmount.toRational() / priceInEur.toRational())
             .toDecimal(scaleOnInfinitePrecision: 8);
         if (shares <= Decimal.zero) {
           failed.add(o.name);
@@ -131,7 +165,7 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
           assetType: o.assetType,
           executedAt: o.executedAt,
           shares: shares,
-          pricePerShare: price,
+          pricePerShare: priceInEur,
           currency: 'EUR',
           orderNumber: o.orderNumber,
           isEstimated: true,
