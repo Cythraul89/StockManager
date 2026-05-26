@@ -12,7 +12,6 @@ import '../../core/models/stock.dart';
 import '../../core/models/transaction.dart';
 import '../stocks/stocks_provider.dart';
 import 'parsers/flatex_order_parser.dart';
-import 'settings_provider.dart';
 
 enum _Phase { idle, previewing, importing, done }
 
