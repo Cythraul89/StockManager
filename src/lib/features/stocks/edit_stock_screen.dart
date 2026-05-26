@@ -375,19 +375,19 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
     final router = GoRouter.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Delete stock?'),
         content: Text(
             'All transactions and dividends for $symbol will also be deleted. '
             'This cannot be undone.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           TextButton(
               style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error),
-              onPressed: () => Navigator.pop(context, true),
+                  foregroundColor: Theme.of(ctx).colorScheme.error),
+              onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Delete')),
         ],
       ),
