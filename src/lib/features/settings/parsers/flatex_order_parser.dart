@@ -51,9 +51,14 @@ class FlatexParseResult {
 /// The [csvContent] must already be decoded from Latin-1 bytes so that
 /// German umlauts (ü, ä, ö) are proper Unicode characters.
 ///
-/// Only rows with status "Ausgeführt" and a whole-share quantity (Stück) are
-/// imported. Fractional/KVG rows (EUR-amount orders), non-executed orders, and
-/// orders with no determinable price are counted but excluded from [importable].
+/// Imported row types:
+///   - Executed limit orders with a Stück quantity
+///   - Executed stop-market orders with a Stück quantity
+///   - KVG savings-plan orders (venue == "KVG", unit == "EUR"):
+///     shares are derived from the invested EUR amount divided by the NAV price
+///
+/// Skipped: non-executed orders, Bruchstücke (fractional-fill) rows, and any
+/// row where a price cannot be determined.
 ///
 /// **Currency note:** the limit price currency is taken from the column after
 /// the limit price. Stop-market orders (no limit, only a stop column) have no
@@ -110,6 +115,8 @@ class FlatexOrderParser {
 
       final unit = cols[_colUnit].trim();
       final venue = cols[_colVenue].trim();
+      final isKvg = venue == 'KVG';
+
       if (_isFractional(unit, venue)) {
         skippedFractional++;
         continue;
@@ -121,8 +128,10 @@ class FlatexOrderParser {
           : isinWkn;
       if (isin.isEmpty || isin.length != 12) continue;
 
-      final shares = _parseGermanDecimal(cols[_colMenge].trim());
-      if (shares == null || shares <= Decimal.zero) continue;
+      // KVG: menge column holds the invested EUR amount, not a share count.
+      // Regular rows: menge column holds the share count directly.
+      final mengeDecimal = _parseGermanDecimal(cols[_colMenge].trim());
+      if (mengeDecimal == null || mengeDecimal <= Decimal.zero) continue;
 
       // Determine price: prefer limit price, fall back to stop price.
       Decimal? price;
@@ -142,6 +151,16 @@ class FlatexOrderParser {
         skippedNoPrice++;
         continue;
       }
+
+      // For KVG rows derive share count from EUR amount ÷ NAV price.
+      final Decimal shares;
+      if (isKvg && unit == 'EUR') {
+        shares = (mengeDecimal.toRational() / price.toRational())
+            .toDecimal(scaleOnInfinitePrecision: 8);
+      } else {
+        shares = mengeDecimal;
+      }
+      if (shares <= Decimal.zero) continue;
 
       final executedAt = _parseDateTime(cols[_colDateTime].trim());
       if (executedAt == null) continue;
@@ -171,12 +190,13 @@ class FlatexOrderParser {
   static bool _isExecuted(String status) =>
       status.startsWith('Ausgef') && status.endsWith('hrt');
 
-  // Fractional/KVG orders: unit is EUR (not Stück) or venue says Bruchstücke.
-  static bool _isFractional(String unit, String venue) =>
-      unit == 'EUR' ||
-      unit.isEmpty ||
-      venue.toLowerCase().contains('bruchst') ||
-      venue == 'KVG';
+  // Bruchstücke (partial-fill fractional rows): unit is EUR on non-KVG rows,
+  // or venue explicitly says Bruchstücke.  KVG savings-plan rows (venue == 'KVG')
+  // also have unit == 'EUR' but ARE imported — shares are derived from amount ÷ price.
+  static bool _isFractional(String unit, String venue) {
+    if (venue == 'KVG') return false;
+    return unit == 'EUR' || unit.isEmpty || venue.toLowerCase().contains('bruchst');
+  }
 
   static Decimal? _parseGermanDecimal(String s) {
     if (s.isEmpty) return null;
