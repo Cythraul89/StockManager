@@ -163,8 +163,12 @@ class FlatexOrderParser {
         final execStr = cols[_colExecPrice].trim();
         if (execStr.isNotEmpty) {
           price = _parseGermanDecimal(execStr);
-          if (cols.length > _colExecCcy && cols[_colExecCcy].trim().isNotEmpty) {
-            currency = cols[_colExecCcy].trim();
+          if (cols.length > _colExecCcy) {
+            final ccyStr = cols[_colExecCcy].trim();
+            // Guard: col 11 sometimes holds the order type ("Limit", "Market",
+            // "Stop") rather than a currency code. Only accept it when it looks
+            // like an ISO 4217 code (exactly 3 uppercase ASCII letters).
+            if (_isCurrencyCode(ccyStr)) currency = ccyStr;
           }
         }
       }
@@ -227,6 +231,14 @@ class FlatexOrderParser {
   // empty unit with no EUR amount. All EUR-unit rows (KVG, Bruchstücke, etc.)
   // are handled by the amount ÷ price calculation in the main loop.
   static bool _isFractional(String unit, String venue) => unit.isEmpty;
+
+  // Returns true only for strings that look like ISO 4217 currency codes
+  // (exactly 3 uppercase ASCII letters). This guards against Flatex rows where
+  // col 11 contains an order-type keyword ("Limit", "Market", "Stop") instead
+  // of a currency.
+  static bool _isCurrencyCode(String s) =>
+      s.length == 3 &&
+      s.codeUnits.every((c) => c >= 0x41 && c <= 0x5A); // A–Z
 
   static Decimal? _parseGermanDecimal(String s) {
     if (s.isEmpty) return null;

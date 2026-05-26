@@ -193,4 +193,51 @@ void main() {
       }
     });
   });
+
+  // Real-world Flatex export rows supplied by a user. In actual exports col 11
+  // contains an order-type keyword ("Limit", "Market") rather than a currency.
+  group('Real-world Flatex export format', () {
+    // Tradegate limit buy — col10 empty, col11="Limit" (order type), col12=price, col13=currency.
+    test('Tradegate limit buy (col11=Limit, col12=price, col13=EUR)', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;ISHARES MSCI EUROPE SRI E;IE00B52VJ196/A1H7ZS;Kauf;Tradegate;332688792;'
+            '30.03.2026 / 09:32:58;Ausgeführt;40;Stück;;Limit;66,38;EUR;;',
+      ]));
+      expect(result.importable.length, 1,
+          reason: 'Real-world limit buy should import');
+      if (result.importable.isNotEmpty) {
+        expect(result.importable.first.shares.toDouble(), 40.0);
+        expect(result.importable.first.pricePerShare.toDouble(), 66.38);
+        expect(result.importable.first.currency, 'EUR');
+        expect(result.importable.first.isin, 'IE00B52VJ196');
+      }
+    });
+
+    // KVG market order — EUR-unit, no execution price in CSV → skipped.
+    // col10 empty, col11="Market", col12-14 empty.
+    test('KVG market buy without execution price is skipped', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;ISHARES MSCI EUROPE SRI E;IE00B52VJ196/A1H7ZS;Kauf;Bruchstücke/KVG;333791367;'
+            '04.05.2026 / 00:53:55;Ausgeführt;2.000,00;EUR;;Market;;;;',
+      ]));
+      expect(result.importable, isEmpty,
+          reason: 'KVG market order with no price cannot be imported');
+      expect(result.skippedNoPrice, 1);
+    });
+
+    // Guard: if col10 has a price but col11 is an order-type keyword rather
+    // than a currency code, we must NOT use that keyword as the currency.
+    test('col11 order-type keyword is not used as currency', () {
+      final result = FlatexOrderParser.parse(csv([
+        'ETF;iShares World;IE00B4L5Y983;Kauf;XETRA;OR020;'
+            '15.01.2024 / 10:00:00;Ausgeführt;10;Stück;66,38;Market;;;',
+      ]));
+      expect(result.importable.length, 1);
+      if (result.importable.isNotEmpty) {
+        // Currency should default to 'EUR', not 'Market'.
+        expect(result.importable.first.currency, 'EUR');
+        expect(result.importable.first.pricePerShare.toDouble(), 66.38);
+      }
+    });
+  });
 }
