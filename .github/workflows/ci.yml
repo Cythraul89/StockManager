@@ -72,6 +72,16 @@ jobs:
           manifest_path = 'android/app/src/main/AndroidManifest.xml'
           with open(manifest_path) as f:
               content = f.read()
+
+          # Add tools namespace (required for tools:node merge directives below).
+          if 'xmlns:tools' not in content:
+              content = content.replace(
+                  'xmlns:android="http://schemas.android.com/apk/res/android"',
+                  'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"',
+                  1,
+              )
+              print('Added xmlns:tools namespace')
+
           for perm in [
               'android.permission.POST_NOTIFICATIONS',
               'android.permission.VIBRATE',
@@ -84,6 +94,32 @@ jobs:
                       1,
                   )
                   print(f'Added permission: {perm}')
+
+          # Disable WorkManager's automatic ContentProvider initialization.
+          # WorkManagerInitializer runs before the Dart VM starts and can crash
+          # on some devices. We call Workmanager().initialize() manually from
+          # Dart (main.dart) instead — the documented alternative approach.
+          if 'WorkManagerInitializer' not in content:
+              wm_block = (
+                  '\n'
+                  '        <provider\n'
+                  '            android:name="androidx.startup.InitializationProvider"\n'
+                  '            android:authorities="${applicationId}.androidx-startup"\n'
+                  '            android:exported="false"\n'
+                  '            tools:node="merge">\n'
+                  '            <meta-data\n'
+                  '                android:name="androidx.work.WorkManagerInitializer"\n'
+                  '                android:value="androidx.startup"\n'
+                  '                tools:node="remove" />\n'
+                  '        </provider>'
+              )
+              content = content.replace(
+                  '    </application>',
+                  wm_block + '\n    </application>',
+                  1,
+              )
+              print('Disabled WorkManager auto-init ContentProvider')
+
           with open(manifest_path, 'w') as f:
               f.write(content)
 
