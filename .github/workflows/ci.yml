@@ -392,8 +392,17 @@ jobs:
             --entitlements /tmp/nosandbox.entitlements \
             stock_manager.app
 
+      - name: Package macOS app into zip
+        working-directory: src/build/macos/Build/Products/Release
+        run: |
+          # ditto preserves .app symlinks and resource forks; --keepParent
+          # ensures the zip root is stock_manager.app itself so double-clicking
+          # the zip in Finder extracts the .app directly without nested folders.
+          ditto -c -k --sequesterRsrc --keepParent \
+            stock_manager.app StockManager.zip
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: src/build/macos/Build/Products/Release/stock_manager.app
+          path: src/build/macos/Build/Products/Release/StockManager.zip
