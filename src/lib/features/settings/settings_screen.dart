@@ -60,8 +60,27 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
             SettingsSection(
+              title: 'AI',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  title: const Text('AI Portfolio Analysis'),
+                  subtitle: const Text('Claude-powered portfolio insights'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/ai-analysis'),
+                ),
+              ],
+            ),
+            SettingsSection(
               title: 'Synchronisation',
               children: [
+                ListTile(
+                  leading: const Icon(Icons.upload_file_outlined),
+                  title: const Text('Import from Broker'),
+                  subtitle: const Text('Import transactions from a broker export'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/broker-import'),
+                ),
                 ListTile(
                   title: const Text('Local Backup'),
                   subtitle: const Text('Export or import a local ZIP backup'),
@@ -102,7 +121,10 @@ class SettingsScreen extends ConsumerWidget {
               children: [
                 ListTile(
                   title: const Text('StockManager'),
-                  subtitle: const Text('v$appVersion'),
+                  subtitle: Text(ref
+                      .watch(packageInfoProvider)
+                      .whenOrNull(data: (i) => 'v${i.version}') ??
+                      ''),
                   leading: const Icon(Icons.info_outline),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/settings/about'),

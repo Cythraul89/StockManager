@@ -15,6 +15,7 @@ class Transactions extends Table {
   TextColumn get fees =>
       text().map(const DecimalConverter()).withDefault(const Constant('0'))();
   TextColumn get notes => text().nullable()();
+  TextColumn get externalRef => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

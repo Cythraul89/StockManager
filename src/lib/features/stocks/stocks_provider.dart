@@ -273,6 +273,7 @@ class StockActions {
       currency: tx.currency,
       fees: Value(tx.fees),
       notes: Value(tx.notes),
+      externalRef: Value(tx.externalRef),
     ));
     _notifyChange();
     return id;
@@ -287,6 +288,7 @@ class StockActions {
       pricePerShare: Value(tx.pricePerShare),
       fees: Value(tx.fees),
       notes: Value(tx.notes),
+      externalRef: Value(tx.externalRef),
     ));
     _notifyChange();
   }
@@ -339,14 +341,25 @@ class StockActions {
   /// skipping dates already in the database.  Pre-fills totalAmount from the
   /// share count at the dividend date and withholdingTax from the treaty rate
   /// for the ISIN's source country (both are estimates; user can adjust).
+  ///
+  /// When [isAccumulating] is true the fund reinvests income internally so the
+  /// external "dividend" events from Yahoo Finance are already embedded in the
+  /// NAV/price.  Syncing them as separate income would double-count the return,
+  /// so they are skipped entirely.
   Future<void> syncDividends(
     String stockId,
     String currency,
     String isin,
     List<FetchedDividend> fetched,
     List<StockTransaction> transactions,
-    List<StockSplit> splits,
-  ) async {
+    List<StockSplit> splits, {
+    bool isAccumulating = false,
+  }) async {
+    if (isAccumulating) {
+      _notifyChange();
+      return;
+    }
+
     final taxRate = withholdingTaxRate(isin);
 
     for (final d in fetched) {
@@ -500,6 +513,7 @@ StockTransaction _txFromRow(TransactionRow r) => StockTransaction(
       currency: r.currency,
       fees: r.fees,
       notes: r.notes,
+      externalRef: r.externalRef,
     );
 
 StockSplit _splitFromRow(StockSplitRow r) => StockSplit(

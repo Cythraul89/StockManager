@@ -546,8 +546,8 @@ class MarketDataService {
       if (result == null) return [];
 
       final meta = result['meta'] as Map<String, dynamic>?;
-      final currency = (meta?['currency'] as String?) ?? '';
-      if (currency.isEmpty) return [];
+      final rawCurrency = (meta?['currency'] as String?) ?? '';
+      if (rawCurrency.isEmpty) return [];
 
       final timestamps = (result['timestamp'] as List?)?.cast<int>();
       final quotes = result['indicators']?['quote'] as List?;
@@ -559,8 +559,9 @@ class MarketDataService {
       for (var i = 0; i < timestamps.length && i < closes.length; i++) {
         final close = closes[i];
         if (close == null) continue;
-        final price = Decimal.tryParse(close.toString());
-        if (price == null || price <= Decimal.zero) continue;
+        final rawPrice = Decimal.tryParse(close.toString());
+        if (rawPrice == null || rawPrice <= Decimal.zero) continue;
+        final (price, currency) = _normalizeCurrency(rawPrice, rawCurrency);
         points.add(PricePoint(
           date: DateTime.fromMillisecondsSinceEpoch(timestamps[i] * 1000),
           price: price,
@@ -707,6 +708,18 @@ class MarketDataService {
     }
   }
 
+  /// Yahoo Finance quotes London-listed securities in pence ("GBp" / "GBX"),
+  /// which is 1/100th of a pound.  Normalise to GBP so all downstream math
+  /// (P&L, currency conversion) operates in the major currency unit.
+  static (Decimal, String) _normalizeCurrency(Decimal price, String currency) {
+    if (currency == 'GBp' || currency == 'GBX') {
+      final gbp = (price.toRational() / Decimal.fromInt(100).toRational())
+          .toDecimal(scaleOnInfinitePrecision: 6);
+      return (gbp, 'GBP');
+    }
+    return (price, currency);
+  }
+
   Future<PriceQuote?> _fetchFromYahoo(String symbol, String stockId) async {
     try {
       final response = await _withYahooRetry(() => _dio.get<Map<String, dynamic>>(
@@ -729,11 +742,14 @@ class MarketDataService {
 
       if (price == null || currency == null) { return null; }
 
+      final (normPrice, normCurrency) = _normalizeCurrency(
+          Decimal.parse(price.toString()), currency);
+
       final changePct = meta?['regularMarketChangePercent'];
       return PriceQuote(
         stockId: stockId,
-        price: Decimal.parse(price.toString()),
-        currency: currency,
+        price: normPrice,
+        currency: normCurrency,
         fetchedAt: DateTime.now(),
         dayChangePct: changePct != null
             ? Decimal.tryParse(changePct.toString())
@@ -744,6 +760,10 @@ class MarketDataService {
     }
   }
 
+  // Stooq does not return currency metadata, so [currency] is taken from the
+  // stock record (already normalized, e.g. 'GBP').  Stooq uses different
+  // symbol suffixes (.UK vs Yahoo's .L), so London-listed symbols typically
+  // return null here rather than a pence-denominated price — the safe outcome.
   Future<PriceQuote?> _fetchFromStooq(
       String symbol, String stockId, String currency) async {
     try {
@@ -813,13 +833,18 @@ class MarketDataService {
           (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
       if (result == null) { return null; }
 
+      final rawCurrency = (result['meta']?['currency'] as String?) ?? '';
       final quotes = result['indicators']?['quote'] as List?;
       final closes =
           (quotes?.firstOrNull as Map<String, dynamic>?)?['close'] as List?;
       // Use the last non-null close in the window (handles partial trading days).
       final close =
           closes?.reversed.firstWhere((c) => c != null, orElse: () => null);
-      if (close != null) { return Decimal.parse(close.toString()); }
+      if (close != null) {
+        final (price, _) = _normalizeCurrency(
+            Decimal.parse(close.toString()), rawCurrency);
+        return price;
+      }
 
       return null;
     } on DioException {
@@ -827,6 +852,7 @@ class MarketDataService {
     }
   }
 
+  // Same caveat as _fetchFromStooq: no currency metadata returned.
   Future<Decimal?> _fetchHistoricalFromStooq(
       String symbol, DateTime date) async {
     try {
@@ -888,6 +914,7 @@ class MarketDataService {
           (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
       if (result == null) { return []; }
 
+      final rawCurrency = (result['meta']?['currency'] as String?) ?? '';
       final events = result['events'] as Map<String, dynamic>?;
       final dividendsMap = events?['dividends'] as Map<String, dynamic>?;
       if (dividendsMap == null || dividendsMap.isEmpty) { return []; }
@@ -902,12 +929,13 @@ class MarketDataService {
         final utc = DateTime.fromMillisecondsSinceEpoch(
             (timestamp as int) * 1000,
             isUtc: true);
-        final amountDecimal = Decimal.tryParse(amount.toString());
+        var amountDecimal = Decimal.tryParse(amount.toString());
         if (amountDecimal == null || amountDecimal <= Decimal.zero) { continue; }
 
+        final (normAmount, _) = _normalizeCurrency(amountDecimal, rawCurrency);
         fetched.add(FetchedDividend(
           date: DateTime(utc.year, utc.month, utc.day),
-          amountPerShare: amountDecimal,
+          amountPerShare: normAmount,
           isPaid: true,
         ));
       }

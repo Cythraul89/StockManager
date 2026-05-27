@@ -46,11 +46,16 @@ class StockListTile extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(item.stock.name,
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 Row(
                   children: [
                     Text(item.stock.symbol,
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold)),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant)),
                     if (item.stock.assetType != AssetType.stock) ...[
                       const SizedBox(width: 6),
                       _assetTypeBadge(context, item.stock.assetType),
@@ -61,11 +66,6 @@ class StockListTile extends ConsumerWidget {
                     ],
                   ],
                 ),
-                Text(item.stock.name,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
               ],
             ),
           ),

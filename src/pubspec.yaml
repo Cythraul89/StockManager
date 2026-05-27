@@ -47,6 +47,12 @@ dependencies:
   # Open URLs in the device browser
   url_launcher: ^6.3.0
 
+  # Markdown rendering (AI analysis response)
+  flutter_markdown: ^0.7.3
+
+  # App version (reads flutter build --build-name / --build-number at runtime)
+  package_info_plus: ^8.0.0
+
   # Utilities
   uuid: ^4.4.0
   xml: ^6.5.0

@@ -77,6 +77,7 @@ class _EditTransactionScreenState
       currency: txRow.currency,
       fees: txRow.fees,
       notes: txRow.notes,
+      externalRef: txRow.externalRef,
     );
     _type = tx.type;
     _executedAt = tx.executedAt;

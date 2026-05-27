@@ -25,6 +25,28 @@ final finnhubApiKeyProvider = FutureProvider<String?>((ref) async {
   return row?.finnhubApiKey;
 });
 
+/// Reads the Claude API key from the settings table.
+final claudeApiKeyProvider = FutureProvider<String?>((ref) async {
+  final row = await ref.watch(databaseProvider).settingsDao.getSettings();
+  return row?.claudeApiKey;
+});
+
+/// Reads the selected Claude model from the settings table.
+final claudeModelProvider = FutureProvider<String>((ref) async {
+  final row = await ref.watch(databaseProvider).settingsDao.getSettings();
+  return row?.claudeModel ?? 'claude-opus-4-7';
+});
+
+/// Returns the API key for whichever LLM provider is currently active.
+final activeApiKeyProvider = FutureProvider<String?>((ref) async {
+  final row = await ref.watch(databaseProvider).settingsDao.getSettings();
+  return switch (row?.llmProvider ?? 'claude') {
+    'groq' => row?.groqApiKey,
+    'gemini' => row?.geminiApiKey,
+    _ => row?.claudeApiKey,
+  };
+});
+
 /// Increment to bust all cached analyst data (provider switch or key change).
 final analystCacheVersionProvider = StateProvider<int>((ref) => 0);
 
@@ -117,6 +139,45 @@ class SettingsActions {
     _ref.invalidate(finnhubApiKeyProvider);
   }
 
+  Future<void> saveClaudeApiKey(String? key) async {
+    final trimmed = key?.trim();
+    await _db.settingsDao
+        .updateClaudeApiKey(trimmed == null || trimmed.isEmpty ? null : trimmed);
+    _ref.invalidate(claudeApiKeyProvider);
+  }
+
+  Future<void> saveClaudeModel(String model) async {
+    await _db.settingsDao.updateClaudeModel(model);
+    _ref.invalidate(claudeModelProvider);
+  }
+
+  Future<void> saveLlmProvider(String provider) async {
+    await _db.settingsDao.updateLlmProvider(provider);
+    _ref.invalidate(activeApiKeyProvider);
+  }
+
+  Future<void> saveGroqApiKey(String? key) async {
+    final trimmed = key?.trim();
+    await _db.settingsDao
+        .updateGroqApiKey(trimmed == null || trimmed.isEmpty ? null : trimmed);
+    _ref.invalidate(activeApiKeyProvider);
+  }
+
+  Future<void> saveGeminiApiKey(String? key) async {
+    final trimmed = key?.trim();
+    await _db.settingsDao
+        .updateGeminiApiKey(trimmed == null || trimmed.isEmpty ? null : trimmed);
+    _ref.invalidate(activeApiKeyProvider);
+  }
+
+  Future<void> saveGroqModel(String model) async {
+    await _db.settingsDao.updateGroqModel(model);
+  }
+
+  Future<void> saveGeminiModel(String model) async {
+    await _db.settingsDao.updateGeminiModel(model);
+  }
+
   Future<void> setManualRate(String base, String target, Decimal rate) =>
       _db.settingsDao.upsertRate(
         ExchangeRateCacheCompanion.insert(
@@ -168,6 +229,13 @@ AppSettings _settingsFromRow(SettingsRow r) => AppSettings(
       sparklineRange: _chartRangeFromLabel(r.sparklineRange),
       marketDataProvider: _marketDataProviderFromString(r.marketDataProvider),
       finnhubApiKey: r.finnhubApiKey,
+      claudeApiKey: r.claudeApiKey,
+      claudeModel: r.claudeModel,
+      llmProvider: r.llmProvider,
+      groqApiKey: r.groqApiKey,
+      geminiApiKey: r.geminiApiKey,
+      groqModel: r.groqModel,
+      geminiModel: r.geminiModel,
     );
 
 ExchangeRate _rateFromRow(ExchangeRateCacheRow r) => ExchangeRate(

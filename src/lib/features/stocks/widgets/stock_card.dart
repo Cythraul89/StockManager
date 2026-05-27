@@ -19,14 +19,19 @@ class StockCard extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: () => context.push('/stocks/${stock.id}'),
-        title: Text(stock.symbol,
+        title: Text(stock.name,
             style: theme.textTheme.titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
+                ?.copyWith(fontWeight: FontWeight.bold),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(stock.name,
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(
+              stock.symbol,
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant),
+            ),
             Text(
               '${stock.exchange} · ${stock.currency} · ${stock.isin}',
               style: theme.textTheme.bodySmall?.copyWith(

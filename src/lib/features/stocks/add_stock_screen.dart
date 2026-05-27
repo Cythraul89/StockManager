@@ -12,7 +12,9 @@ import '../settings/settings_provider.dart';
 import 'stocks_provider.dart';
 
 class AddStockScreen extends ConsumerStatefulWidget {
-  const AddStockScreen({super.key});
+  const AddStockScreen({super.key, this.initialIsin});
+
+  final String? initialIsin;
 
   @override
   ConsumerState<AddStockScreen> createState() => _AddStockScreenState();
@@ -42,6 +44,18 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
   static const _lastBrokerKey = 'last_used_broker_id';
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.initialIsin != null) {
+      _isinCtrl.text = widget.initialIsin!.toUpperCase();
+      // Trigger lookup after the first frame so the widget tree is ready.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _lookupIsin();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _isinCtrl.dispose();
     _symbolCtrl.dispose();
@@ -69,11 +83,19 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
 
     if (!mounted) return;
 
-    if (results == null || results.isEmpty) {
+    if (results == null) {
       setState(() {
         _isLookingUp = false;
         _lookupError =
-            'Could not resolve ISIN. Please fill in details manually.';
+            'Connection failed. Check your internet connection and try again.';
+      });
+      return;
+    }
+    if (results.isEmpty) {
+      setState(() {
+        _isLookingUp = false;
+        _lookupError =
+            'No listings found for this ISIN. Please fill in details manually.';
       });
       return;
     }
@@ -396,9 +418,9 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: const Text('Dividend Reinvestment (DRIP)'),
+              title: const Text('Accumulating / DRIP'),
               subtitle: const Text(
-                  'Auto-create a buy transaction when a dividend is recorded'),
+                  'Dividends are reinvested — skip auto-synced dividend income'),
               value: _dripEnabled,
               onChanged: (v) => setState(() => _dripEnabled = v),
               contentPadding: EdgeInsets.zero,

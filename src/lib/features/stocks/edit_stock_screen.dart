@@ -47,11 +47,18 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
 
     if (!mounted) return;
 
-    if (results == null || results.isEmpty) {
+    if (results == null) {
       setState(() => _isLookingUp = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No listings found for this ISIN.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Connection failed. Check your internet connection.'),
+      ));
+      return;
+    }
+    if (results.isEmpty) {
+      setState(() => _isLookingUp = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No listings found for this ISIN.'),
+      ));
       return;
     }
 
@@ -298,7 +305,9 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                   },
                 ),
                 SwitchListTile(
-                  title: const Text('Dividend Reinvestment (DRIP)'),
+                  title: const Text('Accumulating / DRIP'),
+                  subtitle: const Text(
+                      'Dividends are reinvested — skip auto-synced dividend income'),
                   value: _dripEnabled,
                   onChanged: (v) => setState(() => _dripEnabled = v),
                   contentPadding: EdgeInsets.zero,
@@ -375,19 +384,19 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
     final router = GoRouter.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Delete stock?'),
         content: Text(
             'All transactions and dividends for $symbol will also be deleted. '
             'This cannot be undone.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           TextButton(
               style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.error),
-              onPressed: () => Navigator.pop(context, true),
+                  foregroundColor: Theme.of(ctx).colorScheme.error),
+              onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Delete')),
         ],
       ),

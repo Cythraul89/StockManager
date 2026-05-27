@@ -144,7 +144,7 @@ class _AllocationChartState extends State<AllocationChart> {
     final slices = <_Slice>[];
     for (var i = 0; i < priced.length && i < maxSlices; i++) {
       slices.add(_Slice(
-        label: priced[i].stock.symbol,
+        label: priced[i].stock.name,
         value: priced[i].currentValue,
         color: _holdingPalette[i % _holdingPalette.length],
       ));

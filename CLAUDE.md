@@ -90,12 +90,27 @@ src/
 │       ├── transactions/               # AddTransactionScreen
 │       ├── dividends/                  # DividendsScreen, AddDividendScreen
 │       ├── brokers/                    # BrokersScreen, CRUD screens
+│       ├── analysis/                   # AI portfolio analysis feature
+│       │   ├── analysis_screen.dart        # Prompt chips, streaming response, ISIN suggestions
+│       │   ├── analysis_provider.dart      # AnalysisNotifier, StockSuggestion, _parseSuggestions
+│       │   └── ai_analysis_settings_screen.dart  # Provider/key/model picker
 │       └── settings/                   # settingsProvider, settingsActionsProvider
-│           ├── about_screen.dart       # Version, GPL-3 notice, privacy policy, app logs
+│           ├── about_screen.dart           # Version, GPL-3 notice, privacy policy, app logs
+│           ├── broker_import_screen.dart   # Broker import entry-point (picker)
+│           ├── flatex_import_screen.dart   # Flatex CSV import (parse → preview → import)
 │           ├── privacy_policy_screen.dart  # In-app privacy policy viewer
-│           └── logs_screen.dart        # Log viewer with share/clear app-bar actions
+│           ├── logs_screen.dart            # Log viewer with share/clear app-bar actions
+│           └── parsers/
+│               └── flatex_order_parser.dart  # Parser, FlatexParsedOrder, FlatexUnpricedOrder
 └── test/
-    └── widget_test.dart
+    ├── widget_test.dart
+    ├── manual_price_dialog_test.dart
+    ├── calculators/
+    ├── utils/
+    ├── models/
+    ├── database/
+    └── parsers/
+        └── flatex_order_parser_test.dart
 ```
 
 ---
@@ -184,11 +199,37 @@ Providers that **must be overridden** in `ProviderScope` at startup:
   analysis clean. Notable lint rules already enforced: `use_build_context_synchronously`,
   `deprecated_member_use`, `prefer_const_constructors`, `prefer_const_declarations`.
 
+- **NativeDatabase on main isolate** — `_openConnection()` uses `NativeDatabase(file)`,
+  NOT `NativeDatabase.createInBackground()`. The background variant spawns an isolate
+  that doesn't inherit Flutter plugin registrations, so `sqlite3_flutter_libs` can't load
+  `libsqlite3.so` there, causing a native crash in release builds.
+
+- **Backup consistency** — `exportToZip()` and `exportToOds()` wrap all five DAO reads
+  in a single `_db.transaction()` to guarantee an atomic snapshot. Do not add plain
+  `await dao.getAll()` calls outside that transaction block. `importFromBytes()` returns
+  an `int` skip count (orphaned rows that couldn't be restored); callers must surface
+  this to the user if > 0.
+
+- **IsinLookupService contract** — `lookup()` returns:
+  - `null` — connection-layer failure (DNS, timeout, no internet)
+  - `[]` — server responded but no listings found for the ISIN, or HTTP 4xx/5xx
+  - `List<IsinLookupResult>` — at least one listing found
+  
+  Always check null and empty separately. Do **not** use `results?.firstOrNull` —
+  that collapses both failure modes into a single null, masking network errors.
+
+- **Startup crash diagnostics** — `main.dart` maintains a crash log at
+  `<documents>/stockmanager_crash.txt`. All writes are synchronous (`writeAsStringSync`
+  with `flush: true`) so entries survive a hard process kill. The log is cleared 15 s
+  after the first frame to let async provider/DB work settle. A previous crash log is
+  shown to the user before the next startup. Note: crashes before `_initCrashLogPath()`
+  completes (very early startup) are logged to logcat only, not to the file.
+
 ---
 
 ## Testing
 
-The test suite lives in `test/` and has **80 tests** across 7 files:
+The test suite lives in `test/` and has **100 tests** across 8 files:
 
 | File | What it covers |
 |---|---|
@@ -200,6 +241,7 @@ The test suite lives in `test/` and has **80 tests** across 7 files:
 | `test/utils/decimal_math_test.dart` | `DecimalX` predicates, `percentChangeFrom`, `weightedAverage`, `clampMin` |
 | `test/models/exchange_rate_test.dart` | `ExchangeRate.find`, `convert`, `isStale`, Equatable equality |
 | `test/database/trailing_stop_test.dart` | `StocksDao.updateTrailingStop` / `updateTrailingStopHighWater` with in-memory Drift DB |
+| `test/parsers/flatex_order_parser_test.dart` | `FlatexOrderParser`: all row types, skip counters, date format variants, ISIN/WKN split, real-world export format |
 
 ### Widget test setup
 
@@ -248,6 +290,21 @@ committed**; they are scaffolded on the fly with `flutter create --platforms=<pl
 Build artifacts are uploaded via `actions/upload-artifact@v4` and downloadable
 from the Actions run summary for 90 days.
 
+## SBOM (`.github/workflows/sbom.yml`)
+
+Generates a **CycloneDX JSON** Software Bill of Materials on every push/PR
+using `anchore/sbom-action` (Syft). Runs independently of the build pipeline.
+
+| Step | Detail |
+|---|---|
+| `flutter pub get` | Resolves transitive dependencies and writes `pubspec.lock`, which Syft reads to enumerate all packages |
+| `anchore/sbom-action@v0` | Scans `src/` directory; emits `sbom.cdx.json` in CycloneDX JSON format |
+| Artifact | Uploaded as `sbom-cyclonedx.json` on every run; downloadable from the Actions summary |
+
+The SBOM covers all direct and transitive pub packages with their exact resolved
+versions. It is not committed to the repository — it is regenerated from
+`pubspec.lock` on every CI run.
+
 ---
 
 ## Adding a new Drift table
@@ -269,3 +326,6 @@ from the Actions run summary for 90 days.
 | Open Exchange Rates | `openexchangerates.org/api/latest.json` | App ID (free tier) | USD base only on free tier |
 | OpenFIGI | `api.openfigi.com/v3/mapping` | None (basic) | ISIN → ticker/name/exchange/currency |
 | Nextcloud | WebDAV (`/remote.php/dav/files/…`) | Basic auth | Self-signed cert support via fingerprint pinning |
+| Anthropic Claude | `api.anthropic.com/v1/messages` | `x-api-key` header | SSE streaming; prompt caching on system block; stored in `settings.claude_api_key` |
+| Groq | `api.groq.com/openai/v1/chat/completions` | Bearer token | OpenAI-compatible SSE; free tier; stored in `settings.groq_api_key` |
+| Google Gemini | `generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent` | API key query param | SSE with `?alt=sse`; free tier (1M tokens/day); stored in `settings.gemini_api_key` |

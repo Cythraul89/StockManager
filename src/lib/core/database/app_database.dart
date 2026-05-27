@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.background(File file) : super(NativeDatabase(file));
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -88,6 +88,47 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(stocks, stocks.trailingStopPct);
             await m.addColumn(stocks, stocks.trailingStopHighWater);
           }
+          if (from < 11) {
+            await m.addColumn(settings, settings.claudeApiKey);
+          }
+          if (from < 12) {
+            await m.addColumn(settings, settings.claudeModel);
+          }
+          if (from < 13) {
+            await m.addColumn(settings, settings.llmProvider);
+            await m.addColumn(settings, settings.groqApiKey);
+            await m.addColumn(settings, settings.geminiApiKey);
+            await m.addColumn(settings, settings.groqModel);
+            await m.addColumn(settings, settings.geminiModel);
+          }
+          if (from < 14) {
+            await m.addColumn(transactions, transactions.externalRef);
+          }
+          if (from < 15) {
+            // Remove duplicate broker names (keep the earliest row for each
+            // name), then recreate the table with a UNIQUE(name) constraint.
+            await customStatement(
+              'DELETE FROM brokers WHERE rowid NOT IN '
+              '(SELECT MIN(rowid) FROM brokers GROUP BY LOWER(name))',
+            );
+            await customStatement(
+              'CREATE TABLE "brokers_new" ('
+              '"id" TEXT NOT NULL, '
+              '"name" TEXT NOT NULL, '
+              '"notes" TEXT, '
+              'PRIMARY KEY ("id"), '
+              'UNIQUE ("name")'
+              ')',
+            );
+            await customStatement(
+              'INSERT INTO "brokers_new" '
+              'SELECT "id", "name", "notes" FROM "brokers"',
+            );
+            await customStatement('DROP TABLE "brokers"');
+            await customStatement(
+              'ALTER TABLE "brokers_new" RENAME TO "brokers"',
+            );
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -99,6 +140,9 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'stock_manager.sqlite'));
-    return NativeDatabase.createInBackground(file);
+    // createInBackground spawns an isolate that doesn't inherit Flutter plugin
+    // registrations, so sqlite3_flutter_libs can't load libsqlite3.so there.
+    // Opening on the main isolate avoids that native crash in release builds.
+    return NativeDatabase(file);
   });
 }

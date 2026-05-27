@@ -14,6 +14,7 @@ class StockTransaction extends Equatable {
     required this.currency,
     required this.fees,
     this.notes,
+    this.externalRef,
   });
 
   final String id;
@@ -25,6 +26,8 @@ class StockTransaction extends Equatable {
   final String currency;
   final Decimal fees;
   final String? notes;
+  /// Broker-assigned order/transaction number (e.g. Flatex Order-Nr.).
+  final String? externalRef;
 
   Decimal get totalCost => shares * pricePerShare + fees;
 
@@ -38,6 +41,7 @@ class StockTransaction extends Equatable {
     String? currency,
     Decimal? fees,
     String? notes,
+    String? externalRef,
   }) =>
       StockTransaction(
         id: id ?? this.id,
@@ -49,9 +53,10 @@ class StockTransaction extends Equatable {
         currency: currency ?? this.currency,
         fees: fees ?? this.fees,
         notes: notes ?? this.notes,
+        externalRef: externalRef ?? this.externalRef,
       );
 
   @override
   List<Object?> get props =>
-      [id, stockId, type, executedAt, shares, pricePerShare, currency, fees, notes];
+      [id, stockId, type, executedAt, shares, pricePerShare, currency, fees, notes, externalRef];
 }

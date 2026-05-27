@@ -31,6 +31,18 @@ class Settings extends Table {
   TextColumn get nextcloudPassword => text().nullable()();
   TextColumn get finnhubApiKey => text().nullable()();
   TextColumn get nextcloudCertFingerprint => text().nullable()();
+  TextColumn get claudeApiKey => text().nullable()();
+  TextColumn get claudeModel =>
+      text().withDefault(const Constant('claude-opus-4-7'))();
+  // 'claude' | 'groq' | 'gemini'
+  TextColumn get llmProvider =>
+      text().withDefault(const Constant('claude'))();
+  TextColumn get groqApiKey => text().nullable()();
+  TextColumn get geminiApiKey => text().nullable()();
+  TextColumn get groqModel =>
+      text().withDefault(const Constant('llama-3.3-70b-versatile'))();
+  TextColumn get geminiModel =>
+      text().withDefault(const Constant('gemini-2.0-flash'))();
 
   @override
   Set<Column> get primaryKey => {id};

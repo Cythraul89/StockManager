@@ -10,6 +10,10 @@ import 'features/dashboard/dashboard_screen.dart';
 import 'features/dividends/add_dividend_screen.dart';
 import 'features/dividends/dividends_screen.dart';
 import 'features/dividends/edit_dividend_screen.dart';
+import 'features/analysis/ai_analysis_settings_screen.dart';
+import 'features/analysis/analysis_screen.dart';
+import 'features/settings/broker_import_screen.dart';
+import 'features/settings/flatex_import_screen.dart';
 import 'features/settings/about_screen.dart';
 import 'features/settings/logs_screen.dart';
 import 'features/settings/privacy_policy_screen.dart';
@@ -82,7 +86,9 @@ final _router = GoRouter(
           routes: [
             GoRoute(
               path: 'add',
-              builder: (context, state) => const AddStockScreen(),
+              builder: (context, state) => AddStockScreen(
+                initialIsin: state.extra as String?,
+              ),
             ),
             GoRoute(
               path: ':id',
@@ -145,6 +151,26 @@ final _router = GoRouter(
           path: '/settings',
           builder: (context, state) => const SettingsScreen(),
           routes: [
+            GoRoute(
+              path: 'ai-analysis',
+              builder: (_, __) => const AnalysisScreen(),
+              routes: [
+                GoRoute(
+                  path: 'key',
+                  builder: (_, __) => const AiAnalysisSettingsScreen(),
+                ),
+              ],
+            ),
+            GoRoute(
+              path: 'broker-import',
+              builder: (_, __) => const BrokerImportScreen(),
+              routes: [
+                GoRoute(
+                  path: 'flatex',
+                  builder: (_, __) => const FlatexImportScreen(),
+                ),
+              ],
+            ),
             GoRoute(
               path: 'backup',
               builder: (context, state) => const LocalBackupScreen(),

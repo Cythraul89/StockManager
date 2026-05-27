@@ -16,6 +16,8 @@
 | Background tasks | WorkManager (via workmanager plugin) | Android only; price, rating, dividend, and trailing stop-loss checks when app is closed |
 | Local notifications | flutter_local_notifications | All platforms; WorkManager fires them on Android, running app fires them on desktop |
 | Secure storage | flutter_secure_storage | `last_used_broker_id` only; credentials moved to SQLite settings table |
+| Markdown rendering | flutter_markdown | Renders AI analysis responses in the portfolio analysis screen |
+| AI analysis | Anthropic Claude / Groq / Gemini (user-selectable) | SSE streaming via Dio; provider and model stored in settings; abstract `LlmService` interface |
 
 ---
 
@@ -38,7 +40,11 @@ lib/
 │   │   ├── backup_service.dart
 │   │   ├── notification_service.dart
 │   │   ├── background_check_service.dart
-│   │   └── log_service.dart
+│   │   ├── log_service.dart
+│   │   ├── llm_service.dart            # Abstract LlmService interface + LlmProvider enum + model lists
+│   │   ├── claude_service.dart         # Anthropic SSE streaming implementation
+│   │   ├── groq_service.dart           # Groq (OpenAI-compatible) SSE streaming
+│   │   └── gemini_service.dart         # Google Gemini SSE streaming
 │   ├── models/                     # Immutable domain models (pure Dart, no Flutter)
 │   ├── calculators/                # P&L, avg price, dividend yield — pure functions
 │   └── utils/                      # Formatting, date helpers, decimal math
@@ -49,10 +55,18 @@ lib/
 │   ├── transactions/
 │   ├── dividends/
 │   ├── brokers/
+│   ├── analysis/                       # AI portfolio analysis
+│   │   ├── analysis_screen.dart        # Prompt chips, streaming response, ISIN suggestions
+│   │   ├── analysis_provider.dart      # AnalysisNotifier, StockSuggestion, portfolio serialisation
+│   │   └── ai_analysis_settings_screen.dart  # Provider / key / model picker
 │   └── settings/
 │       ├── about_screen.dart           # Version, GPL-3, privacy policy, app logs links
+│       ├── broker_import_screen.dart   # Broker import entry-point (scaffold)
+│       ├── flatex_import_screen.dart   # Flatex CSV import (parse → preview → import)
 │       ├── privacy_policy_screen.dart  # In-app privacy policy
-│       └── logs_screen.dart            # Log viewer with share/clear
+│       ├── logs_screen.dart            # Log viewer with share/clear
+│       └── parsers/
+│           └── flatex_order_parser.dart  # FlatexOrderParser, FlatexParsedOrder, FlatexUnpricedOrder
 │
 └── shell/
     ├── adaptive_shell.dart         # Picks mobile or desktop shell by screen width
@@ -115,7 +129,8 @@ Notable provider files:
 | price_per_share | DECIMAL | |
 | currency | TEXT | |
 | fees | DECIMAL | default 0 |
-| notes | TEXT? | |
+| notes | TEXT? | Free-form; `"Price estimated from historic closing price"` marks KVG draft imports |
+| external_ref | TEXT? | Broker order number; used for deduplication on re-import (schema v14) |
 
 **stock_splits**
 | Column | Type | Notes |
@@ -177,6 +192,13 @@ Notable provider files:
 | nextcloud_password | TEXT? | Nextcloud password / app token (moved from flutter_secure_storage) |
 | finnhub_api_key | TEXT? | Finnhub API key (moved from flutter_secure_storage) |
 | nextcloud_cert_fingerprint | TEXT? | Pinned SHA-256 cert fingerprint (moved from flutter_secure_storage) |
+| claude_api_key | TEXT? | Anthropic Claude API key (schema v11) |
+| claude_model | TEXT | Selected Claude model; default `claude-opus-4-7` (schema v11) |
+| llm_provider | TEXT | Active AI provider: `claude` \| `groq` \| `gemini`; default `claude` (schema v12) |
+| groq_api_key | TEXT? | Groq API key (schema v12) |
+| gemini_api_key | TEXT? | Google Gemini API key (schema v12) |
+| groq_model | TEXT | Selected Groq model; default `llama-3.3-70b-versatile` (schema v13) |
+| gemini_model | TEXT | Selected Gemini model; default `gemini-2.0-flash` (schema v13) |
 
 ---
 
@@ -233,13 +255,28 @@ The static method `ExchangeRate.find(rates, from, to)` is the canonical lookup: 
 If either rate is missing, a `missingRate` badge is shown on the dashboard tile.
 
 ### 5.4 ISIN Lookup
-When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.
+When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually.
+
+**`IsinLookupService.lookup()` return contract:**
+- `null` — connection-layer failure (DNS, timeout, no internet). The caller surfaces "Connection failed. Check your internet connection."
+- `[]` (empty list) — the server responded but found no listings for the ISIN (valid ISIN, unknown on OpenFIGI), or an HTTP 4xx/5xx response was received. The caller surfaces "No listings found for this ISIN."
+- `List<IsinLookupResult>` (non-empty) — at least one listing was found.
+
+Always check `null` and `isEmpty` separately. Using `results?.firstOrNull` collapses both failure modes and masks network errors.
+
+ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.
 
 ### 5.5 Financial Arithmetic
 All monetary values are stored and calculated as `Decimal` (via the `decimal` package), never `double`, to avoid floating-point rounding errors.
 
 ### 5.6 Background Checks on Android
 True FCM push requires a backend server to send messages. To avoid a server dependency, background checks on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval, network required). The task is registered in `main.dart` via a top-level `callbackDispatcher` and dispatched to `BackgroundCheckService.run()`.
+
+**WorkManager initialisation:** WorkManager's built-in `WorkManagerInitializer` ContentProvider is disabled in the Android manifest via `tools:node="remove"` on the `InitializationProvider` meta-data entry. This prevents a pre-Flutter ContentProvider crash on some devices. `Workmanager().initialize()` is called manually from Dart during `_main()`. The call is wrapped in a try-catch; a failure (e.g. pigeon channel not yet ready) is non-fatal — the app continues with background checks disabled and logs `WorkManager init failed` to the debug log.
+
+`AppDatabase.background(file)` — used inside the WorkManager isolate — opens the SQLite file directly with `NativeDatabase(file)` on the calling isolate (not via `LazyDatabase`), bypassing the plugin registration issue that affects `NativeDatabase.createInBackground`.
+
+The production `_openConnection()` (used by `AppDatabase()`) also uses `NativeDatabase(file)` directly, not `NativeDatabase.createInBackground()`. The background variant spawns a Dart isolate that does not inherit Flutter plugin registrations, so `sqlite3_flutter_libs` cannot load `libsqlite3.so` there, causing a SIGABRT in release builds.
 
 `BackgroundCheckService` is a static-only class that runs inside a WorkManager isolate (no Riverpod). It opens its own `AppDatabase.background(file)` connection and `MarketDataService` + `FlutterLocalNotificationsPlugin` instances, then performs the following checks:
 
@@ -510,7 +547,7 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 ### 5.13 Nextcloud Sync Strategy
 
 #### Backup format
-Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature.
+Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. Both `exportToZip()` and `exportToOds()` wrap all five DAO reads in a single `_db.transaction()` call to guarantee an atomic consistent snapshot. Without this, a stock added concurrently between the stocks-read and transactions-read would appear in the transactions file but not the stocks file, causing FK constraint errors (or silent row drops) on the next restore.
 
 The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DDTHH-MM-SSZ.zip` (full UTC timestamp; colons replaced with hyphens for filesystem compatibility). `findLatestBackup` and `_pruneOldBackups` also accept the legacy `YYYY-MM-DD` date-only format for backward compatibility with older backups already on the server.
 
@@ -539,7 +576,7 @@ On startup and after a credential save, `findLatestBackup()` (WebDAV PROPFIND) c
 
 Auto-upload is **suppressed** while a restore is pending user decision.
 
-On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. If the restore fails the screen stays open to display the error.
+On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. `importFromBytes()` returns an `int` skip count — the number of child rows (transactions, dividends, splits) that could not be restored because their parent stock was absent from the backup (a race condition in backups created before the atomic-export fix). Both the local backup screen and the Nextcloud sync state surface a visible warning to the user when `skipped > 0` so no data is silently lost.
 
 #### Backup retention
 After every successful upload, `_pruneOldBackups` lists the remote directory, filters files matching the backup pattern, sorts newest-first, and deletes all beyond `AppSettings.nextcloudKeepExports` (default: 5). This is best-effort — individual delete failures are ignored.
@@ -628,6 +665,102 @@ This approach avoids globally disabling TLS verification — only the explicitly
 - Colour-codes lines: `[ERROR]` → `colorScheme.error`, `[WARN ]` → `colorScheme.tertiary`, others → `onSurface`.
 - Provides two app-bar actions: **Export** (shares the log file via `SharePlus.instance.share`) and **Clear** (confirmation dialog → `LogService.clear()` → reload).
 
+### 5.20 AI Portfolio Analysis
+
+`AnalysisScreen` (`/settings/ai-analysis`) provides a conversational portfolio analysis feature backed by a user-selectable LLM provider.
+
+**Provider abstraction:** `LlmService` (in `core/services/llm_service.dart`) is an abstract interface with a single method `Stream<String> streamAnalysis(...)`. Three concrete implementations handle SSE streaming:
+- `ClaudeService` — `POST api.anthropic.com/v1/messages` with `x-api-key` and `anthropic-version: 2023-06-01` headers; uses `cache_control: {type: ephemeral}` on the system prompt block for prompt caching.
+- `GroqService` — OpenAI-compatible endpoint at `api.groq.com/openai/v1/chat/completions`; Bearer token auth; parses `choices[0].delta.content`.
+- `GeminiService` — `generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={apiKey}`; parses `candidates[0].content.parts[0].text`.
+
+All three use `Dio` with `ResponseType.stream` and a shared line-buffer SSE parser pattern.
+
+**Active provider selection:** `AnalysisNotifier.analyse()` reads the active provider, model, and API key directly from the Drift DAO on each invocation — not from cached Riverpod providers — to always use the latest settings without stale-cache issues.
+
+**Portfolio serialisation:** `_serialisePortfolio()` converts `PortfolioSummary` to JSON via `jsonEncode`. Includes per-position fields (ticker, shares, avg buy price, current value, P&L) and portfolio-level totals. Sent as the user message payload alongside the query.
+
+**ISIN suggestions:** The system prompt instructs the LLM to optionally append a `---STOCK_SUGGESTIONS---` delimiter followed by a JSON array of `{isin, name, reason}` objects. `_parseSuggestions()` splits on this delimiter after streaming completes, decodes the JSON, and exposes suggestions as `List<StockSuggestion>`. Each suggestion is displayed with an "Add" button that routes to `/stocks/add` with the ISIN pre-filled via `state.extra`.
+
+**State machine:** `AnalysisState` cycles through `idle → loading → streaming → done | error`. The UI shows predefined prompt chips in the idle state, a spinner during loading, a streaming `MarkdownBody` during streaming (auto-scrolls via `ScrollController`), and the completed response plus optional suggestion chips when done.
+
+**Settings screen (`AiAnalysisSettingsScreen`):** Provider radio buttons, a single `TextEditingController` for the API key (reloaded when the provider changes), and a model radio group that updates via `modelsFor(activeProvider)`. Settings are read via a `Future` cached in `_settingsFuture` (initialised in `initState`, refreshed after each write) to avoid showing a loading flash on every `setState`.
+
+### 5.21 Broker Import
+
+`BrokerImportScreen` (`/settings/broker-import`) lists supported brokers. Flatex is currently **available**; DEGIRO, Interactive Brokers, Trade Republic, Scalable Capital, and Comdirect remain `comingSoon`. Tapping a live broker tile navigates to its dedicated import screen.
+
+**Extension point:** To enable a new broker, set its status to `BrokerImportStatus.available` in the `_brokers` const list in `broker_import_screen.dart` and add a navigation case in `_onImport()`.
+
+### 5.22 Flatex CSV Import
+
+`FlatexImportScreen` (`/settings/broker-import/flatex`) drives a three-phase flow: **idle → previewing → importing → done**.
+
+#### Parser (`FlatexOrderParser`)
+
+Parses the semicolon-delimited, Latin-1-encoded "Orders" CSV exported from the Flatex web portal. Column indices are constants; all price strings use German decimal notation (`1.000,50`).
+
+**Row types handled:**
+
+| Row type | Source columns | Result |
+|---|---|---|
+| Regular limit / stop-market orders | col 12 (Limit) + col 13 (currency) | `FlatexParsedOrder` — direct import |
+| KVG savings-plan / Bruchstücke (Stück-unit) | col 10 (Ausführungspreis) + col 11 (currency) | `FlatexParsedOrder` — direct import |
+| EUR-unit rows with execution price | menge ÷ price | `FlatexParsedOrder` — shares derived |
+| EUR-unit rows **without** execution price (KVG market) | invested EUR amount only | `FlatexUnpricedOrder` — offered for estimation |
+| Stück-unit with no price anywhere | — | `skippedNoPrice` |
+| Non-executed orders | — | `skippedNotExecuted` |
+| Empty-unit rows | — | `skippedFractional` |
+| Bad ISIN, bad date, zero menge | — | `skippedOther` |
+
+**Col 11 guard:** Flatex sometimes puts the order-type keyword (`"Limit"`, `"Market"`, `"Stop"`) in col 11 (Ausführungswährung) instead of a currency code. `_isCurrencyCode()` accepts only exactly-3-uppercase-ASCII-letter strings, so keywords are silently rejected and the currency defaults to `'EUR'`.
+
+**`FlatexParseResult`** exposes `importable`, `unpricedOrders`, and four skip counters. Its `total` getter sums all categories, including unpriced orders, so a CSV containing only unpriced rows is not incorrectly treated as empty.
+
+#### Price estimation for unpriced orders
+
+When `FlatexParseResult.unpricedOrders` is non-empty, the previewing screen shows a `SwitchListTile`. Enabling it calls `_fetchEstimatedPrices()`:
+
+1. For each `FlatexUnpricedOrder`, look up the stock's ticker symbol:
+   - If the ISIN already exists in the database (`StocksDao.findByIsin()`), use the stored symbol — avoids an extra OpenFIGI round-trip.
+   - Otherwise call `IsinLookupService.lookup(isin)` (OpenFIGI API).
+2. Call `MarketDataService.fetchHistoricalPrice(symbol, executedAt)` for the closing price on the order date.
+3. If the security's native currency is not EUR, convert to EUR using ECB rates (`CurrencyService.fetchRates('EUR')` — fetched once for the batch via lazy `??=`). `ExchangeRate.find(rates, nativeCcy, 'EUR').convert(price)`.
+4. Derive share count: `shares = investedAmount ÷ priceInEur`.
+5. Add a `FlatexParsedOrder` with `isEstimated: true`.
+
+Orders that fail (symbol not found, no historical price, no exchange rate) are listed by name in a warning card. The Import button is disabled while estimation is in progress to prevent importing partial results.
+
+#### Import phase
+
+`_import()` merges `result.importable` and `_estimatedOrders`, groups by ISIN, then for each ISIN:
+- Finds or creates the stock (new stocks get their symbol/currency from OpenFIGI; currency falls back to the CSV execution currency to keep transaction and stock currency consistent).
+- Deduplicates by `externalRef` (order number) when non-empty; falls back to exact-match on `(stockId, executedAt, isBuy, shares)`.
+- Sets `notes = "Price estimated from historic closing price"` on estimated transactions so `TransactionTile` can display a visual review badge (orange warning icon + subtitle line).
+
+#### Visual review badge
+
+`TransactionTile` checks `transaction.notes?.contains('estimated')`. When true:
+- The leading avatar shows an amber warning icon instead of B/S.
+- The tile turns amber (`Colors.orange.shade700`) instead of green/red.
+- A second subtitle line reads "⚠ Price estimated — please verify".
+- `isThreeLine: true` is set on `ListTile` to accommodate the extra line.
+
+### 5.23 Startup Crash Diagnostics
+
+`main.dart` maintains a lightweight crash-log file at `<documents>/stockmanager_crash.txt`. All writes are **synchronous** (`File.writeAsStringSync(flush: true)`) so they survive a hard process kill (SIGKILL, OOM kill) that would leave async writes incomplete.
+
+**Lifecycle:**
+1. `_initCrashLogPath()` is awaited first in `_mainWithDiag()` before any other startup step.
+2. If a log file from the previous session exists at startup, `_CrashReportApp` is shown full-screen before the main app launches. The user can screenshot the log and tap "Clear and launch app" to continue.
+3. `_main()` appends numbered step markers (`[1]`–`[14]`) as startup proceeds through each major phase (WidgetsFlutterBinding, LogService, WorkManager, AppDatabase, NotificationService, services, runApp, postFrameCallback, permission request).
+4. The `runZonedGuarded` error handler calls the synchronous `_appendCrashLog('CRASH: $error\n$stack')` before `debugPrint`, so the last exception is flushed to disk even if the next write in the same zone kills the process.
+5. The log is cleared 15 seconds after the first frame (3 s + 7 s + 5 s in three checkpoints) to allow async provider/DB work to settle. Clearing too early would remove the diagnostic before a post-frame provider crash is recorded.
+
+**Known gap:** Crashes that occur before `_initCrashLogPath()` completes (i.e. during `WidgetsFlutterBinding.ensureInitialized()` or within the `getApplicationDocumentsDirectory()` call itself) hit the zone error handler when `_crashLogPath` is still null. `_appendCrashLog` silently no-ops in that case; the crash is printed to logcat via `debugPrint` but does not appear in the diagnostic screen on the next launch. Very-early startup failures must still be diagnosed via ADB.
+
+**Crash-report screen (`_CrashReportApp`):** A minimal `MaterialApp` (deep-orange theme) that renders the crash log in a `SelectableText` on a black background. It does not use `ProviderScope` or any production infrastructure — it must be renderable even when the database or plugins are broken.
+
 ---
 
 ## 6. Navigation Map
@@ -647,6 +780,10 @@ This approach avoids globally disabling TLS verification — only the explicitly
 /brokers/add             → Add broker
 /brokers/:id/edit        → Edit broker
 /settings                → Settings
+/settings/ai-analysis    → AI Portfolio Analysis (AnalysisScreen)
+/settings/ai-analysis/key → Provider / API key / model picker (AiAnalysisSettingsScreen)
+/settings/broker-import         → Import from Broker (broker picker)
+/settings/broker-import/flatex  → FlatexImportScreen (CSV parse → preview → import)
 /settings/backup         → Local backup (export / import ZIP)
 /settings/market-data    → MarketDataSettingsScreen
 /settings/nextcloud      → Nextcloud configuration
@@ -677,8 +814,10 @@ test/
 │   └── decimal_math_test.dart          # DecimalX extensions + DecimalMath
 ├── models/
 │   └── exchange_rate_test.dart         # ExchangeRate.find / convert / isStale
-└── database/
-    └── trailing_stop_test.dart         # StocksDao trailing stop DAO methods
+├── database/
+│   └── trailing_stop_test.dart         # StocksDao trailing stop DAO methods
+└── parsers/
+    └── flatex_order_parser_test.dart   # FlatexOrderParser — all row types, skip counters, real-world format
 ```
 
 ### 7.2 Testing strategy

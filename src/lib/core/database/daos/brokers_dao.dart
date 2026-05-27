@@ -25,6 +25,15 @@ class BrokersDao extends DatabaseAccessor<AppDatabase>
   Future<int> deleteById(String id) =>
       (delete(brokers)..where((t) => t.id.equals(id))).go();
 
+  Future<bool> existsWithName(String name, {String? excludeId}) async {
+    final q = select(brokers)
+      ..where((t) => t.name.lower().equals(name.toLowerCase()));
+    if (excludeId != null) {
+      q.where((t) => t.id.equals(excludeId).not());
+    }
+    return (await q.getSingleOrNull()) != null;
+  }
+
   Future<int> count() async {
     final result = await customSelect(
       'SELECT COUNT(*) AS c FROM brokers',

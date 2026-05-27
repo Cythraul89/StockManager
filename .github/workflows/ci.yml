@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [develop, main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -15,7 +16,33 @@ defaults:
     working-directory: src
 
 jobs:
-  # ── Analyse & test (runs first, gates all build jobs) ──────────────────────────
+  # ── Version computation (runs in parallel with analyze) ──────────────────────
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      build_name: ${{ steps.ver.outputs.build_name }}
+      build_number: ${{ steps.ver.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required for git describe to find tags
+
+      - name: Compute version strings
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Release tag: strip leading 'v'  (v1.2.3 → 1.2.3)
+            BUILD_NAME="${GITHUB_REF_NAME#v}"
+          else
+            # Branch / PR: <last-tag>-dev+<run-number>  (e.g. 1.2.0-dev+42)
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            BUILD_NAME="${LAST_TAG#v}-dev+${{ github.run_number }}"
+          fi
+          echo "build_name=${BUILD_NAME}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  # ── Analyse & test (runs in parallel with version) ───────────────────────────
   analyze:
     name: Analyze & Test
     runs-on: ubuntu-latest
@@ -43,7 +70,7 @@ jobs:
   build-android:
     name: Build Android
     runs-on: ubuntu-latest
-    needs: analyze
+    needs: [analyze, version]
     steps:
       - uses: actions/checkout@v4
 
@@ -66,27 +93,99 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android .
 
-      # Restore a persistent debug keystore so every build is signed with
-      # the same key — required for sideloaded APK updates to be accepted
-      # by Android without uninstalling first.
+      - name: Patch AndroidManifest permissions
+        shell: python3 {0}
+        run: |
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          with open(manifest_path) as f:
+              content = f.read()
+
+          # Add tools namespace (required for tools:node merge directives below).
+          if 'xmlns:tools' not in content:
+              content = content.replace(
+                  'xmlns:android="http://schemas.android.com/apk/res/android"',
+                  'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"',
+                  1,
+              )
+              print('Added xmlns:tools namespace')
+
+          for perm in [
+              'android.permission.INTERNET',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.VIBRATE',
+              'android.permission.RECEIVE_BOOT_COMPLETED',
+          ]:
+              if perm not in content:
+                  content = content.replace(
+                      '    <application',
+                      f'    <uses-permission android:name="{perm}"/>\n    <application',
+                      1,
+                  )
+                  print(f'Added permission: {perm}')
+
+          # Disable WorkManager's automatic ContentProvider initialization.
+          # WorkManagerInitializer runs before the Dart VM starts and can crash
+          # on some devices. We call Workmanager().initialize() manually from
+          # Dart (main.dart) instead — the documented alternative approach.
+          if 'WorkManagerInitializer' not in content:
+              wm_block = (
+                  '\n'
+                  '        <provider\n'
+                  '            android:name="androidx.startup.InitializationProvider"\n'
+                  '            android:authorities="${applicationId}.androidx-startup"\n'
+                  '            android:exported="false"\n'
+                  '            tools:node="merge">\n'
+                  '            <meta-data\n'
+                  '                android:name="androidx.work.WorkManagerInitializer"\n'
+                  '                android:value="androidx.startup"\n'
+                  '                tools:node="remove" />\n'
+                  '        </provider>'
+              )
+              content = content.replace(
+                  '    </application>',
+                  wm_block + '\n    </application>',
+                  1,
+              )
+              print('Disabled WorkManager auto-init ContentProvider')
+
+          with open(manifest_path, 'w') as f:
+              f.write(content)
+
+          # Sanity-check: print the final manifest so CI logs show exactly
+          # what permissions and providers are present in the APK.
+          print('\n=== Final AndroidManifest.xml ===')
+          print(content)
+          print('=== End AndroidManifest.xml ===\n')
+
+      # Release signing setup.
       #
-      # One-time setup (run locally, then add secret to the repo):
+      # One-time setup (run locally, then add secrets to the repo):
       #   keytool -genkey -v \
-      #     -keystore debug.keystore \
-      #     -storepass android -alias androiddebugkey -keypass android \
-      #     -keyalg RSA -keysize 2048 -validity 10000 \
-      #     -dname "CN=Android Debug,O=Android,C=US"
-      #   base64 -w 0 debug.keystore   # Linux
-      #   base64 -i debug.keystore     # macOS
-      # Copy the output and add it as repository secret
-      # ANDROID_DEBUG_KEYSTORE_B64 (Settings → Secrets → Actions).
-      - name: Restore debug keystore
+      #     -keystore release.keystore \
+      #     -alias upload -keyalg RSA -keysize 2048 -validity 10000
+      #   base64 -w 0 release.keystore   # Linux
+      #   base64 -i release.keystore     # macOS
+      #
+      # Add these four repository secrets (Settings → Secrets → Actions):
+      #   ANDROID_RELEASE_KEYSTORE_B64  — base64 output from above
+      #   ANDROID_KEYSTORE_PASSWORD     — storepass you chose
+      #   ANDROID_KEY_ALIAS             — alias you chose (e.g. "upload")
+      #   ANDROID_KEY_PASSWORD          — keypass you chose
+      - name: Write release keystore and key.properties
         if: ${{ env.KEYSTORE_B64 != '' }}
         env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          mkdir -p ~/.android
-          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          echo "$KEYSTORE_B64" | base64 -d > android/release.keystore
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=../release.keystore
+          EOF
 
       - name: Enable core library desugaring (flutter_local_notifications)
         shell: python3 {0}
@@ -156,20 +255,68 @@ jobs:
           if not matched:
               print('WARNING: No file_picker build files found in pub cache')
 
-      - name: Build APK (debug — unsigned)
-        run: flutter build apk --debug --build-number=${{ github.run_number }}
+          # Inject release signing config when key.properties exists.
+          kp = 'android/key.properties'
+          if os.path.exists(kp):
+              app_gradle = 'android/app/build.gradle.kts'
+              with open(app_gradle) as f:
+                  gradle = f.read()
+              nl = '\n'
+              signing_block = (
+                  'import java.util.Properties' + nl +
+                  'import java.io.FileInputStream' + nl + nl +
+                  'val keystoreProps = Properties().apply {' + nl +
+                  '    val f = rootProject.file("key.properties")' + nl +
+                  '    if (f.exists()) load(FileInputStream(f))' + nl +
+                  '}' + nl + nl
+              )
+              signing_config = (
+                  nl +
+                  '    signingConfigs {' + nl +
+                  '        create("release") {' + nl +
+                  '            keyAlias      = keystoreProps["keyAlias"]      as String' + nl +
+                  '            keyPassword   = keystoreProps["keyPassword"]   as String' + nl +
+                  '            storeFile     = file(keystoreProps["storeFile"] as String)' + nl +
+                  '            storePassword = keystoreProps["storePassword"] as String' + nl +
+                  '        }' + nl +
+                  '    }' + nl
+              )
+              gradle = signing_block + gradle
+              gradle = gradle.replace('    buildTypes {', signing_config + '    buildTypes {', 1)
+              gradle = gradle.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  1,
+              )
+              with open(app_gradle, 'w') as f:
+                  f.write(gradle)
+              print('Injected release signing config into build.gradle.kts')
+
+      - name: Build APK
+        run: |
+          BUILD_NAME="${{ needs.version.outputs.build_name }}"
+          BUILD_NUMBER="${{ needs.version.outputs.build_number }}"
+          if [ -f android/key.properties ]; then
+            flutter build apk --release \
+              --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
+          else
+            flutter build apk --debug \
+              --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
+          fi
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: src/build/app/outputs/flutter-apk/app-debug.apk
+          path: |
+            src/build/app/outputs/flutter-apk/app-release.apk
+            src/build/app/outputs/flutter-apk/app-debug.apk
 
   # ── Linux ─────────────────────────────────────────────
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
-    needs: analyze
+    needs: [analyze, version]
     steps:
       - uses: actions/checkout@v4
 
@@ -193,19 +340,63 @@ jobs:
         run: flutter create --platforms=linux .
 
       - name: Build Linux
-        run: flutter build linux --release
+        run: |
+          flutter build linux --release \
+            --build-name="${{ needs.version.outputs.build_name }}" \
+            --build-number="${{ needs.version.outputs.build_number }}"
+
+      - name: Package as Debian (.deb)
+        run: |
+          # All paths are relative to the default working-directory (src/).
+          BUNDLE=build/linux/x64/release/bundle
+          PKG=/tmp/stock-manager-pkg
+          VERSION="${{ needs.version.outputs.build_name }}"
+          ARCH=amd64
+
+          install -dm755 "$PKG/DEBIAN"
+          install -dm755 "$PKG/usr/lib/stock-manager"
+          install -dm755 "$PKG/usr/bin"
+          install -dm755 "$PKG/usr/share/applications"
+
+          # Copy the Flutter bundle (binary + lib/*.so + data/)
+          cp -r "$BUNDLE/." "$PKG/usr/lib/stock-manager/"
+
+          # Launcher: the binary uses RPATH $ORIGIN/lib so it resolves
+          # libflutter_linux_gtk.so relative to its own path — exec-ing
+          # the full path works without a cd wrapper.
+          printf '#!/bin/sh\nexec /usr/lib/stock-manager/stock_manager "$@"\n' \
+            > "$PKG/usr/bin/stock-manager"
+          chmod 755 "$PKG/usr/bin/stock-manager"
+
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=StockManager' \
+            'Comment=Personal stock portfolio tracker' \
+            'Exec=/usr/bin/stock-manager' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=Finance;' \
+            > "$PKG/usr/share/applications/stock-manager.desktop"
+
+          INSTALLED_SIZE=$(du -sk "$PKG/usr" | cut -f1)
+          printf 'Package: stock-manager\nVersion: %s\nArchitecture: %s\nMaintainer: StockManager contributors\nInstalled-Size: %s\nDepends: libgtk-3-0, libsecret-1-0\nSection: utils\nPriority: optional\nDescription: Personal stock portfolio tracker\n Cross-platform portfolio app for managing stocks across multiple brokers with real-time valuations and Nextcloud sync.\n' \
+            "$VERSION" "$ARCH" "$INSTALLED_SIZE" \
+            > "$PKG/DEBIAN/control"
+
+          dpkg-deb --root-owner-group --build "$PKG" \
+            "stock-manager_${VERSION}_${ARCH}.deb"
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linux-bundle
-          path: src/build/linux/x64/release/bundle/
+          name: linux-deb
+          path: src/stock-manager_${{ needs.version.outputs.build_name }}_amd64.deb
 
   # ── Windows ────────────────────────────────────────────
   build-windows:
     name: Build Windows
     runs-on: windows-latest
-    needs: analyze
+    needs: [analyze, version]
     steps:
       - uses: actions/checkout@v4
 
@@ -224,7 +415,7 @@ jobs:
         run: flutter create --platforms=windows .
 
       - name: Build Windows
-        run: flutter build windows --release
+        run: flutter build windows --release --build-name="${{ needs.version.outputs.build_name }}" --build-number="${{ needs.version.outputs.build_number }}"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -236,7 +427,7 @@ jobs:
   build-macos:
     name: Build macOS
     runs-on: macos-latest
-    needs: analyze
+    needs: [analyze, version]
     steps:
       - uses: actions/checkout@v4
 
@@ -255,7 +446,10 @@ jobs:
         run: flutter create --platforms=macos .
 
       - name: Build macOS
-        run: flutter build macos --release
+        run: |
+          flutter build macos --release \
+            --build-name="${{ needs.version.outputs.build_name }}" \
+            --build-number="${{ needs.version.outputs.build_number }}"
 
       - name: Re-sign macOS app (ad-hoc, no sandbox)
         working-directory: src/build/macos/Build/Products/Release
@@ -276,8 +470,18 @@ jobs:
             --entitlements /tmp/nosandbox.entitlements \
             stock_manager.app
 
+      - name: Package macOS app into zip
+        working-directory: src/build/macos/Build/Products/Release
+        run: |
+          # ditto preserves .app symlinks and resource forks; --keepParent
+          # ensures the zip root is stock_manager.app itself so double-clicking
+          # the zip in Finder extracts the .app directly without nested folders.
+          ditto -c -k --sequesterRsrc --keepParent \
+            stock_manager.app \
+            "StockManager-${{ needs.version.outputs.build_name }}.zip"
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: src/build/macos/Build/Products/Release/stock_manager.app
+          path: src/build/macos/Build/Products/Release/StockManager-${{ needs.version.outputs.build_name }}.zip

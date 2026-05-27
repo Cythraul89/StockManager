@@ -78,8 +78,20 @@ class _EditBrokerScreenState extends ConsumerState<EditBrokerScreen> {
                       ? null
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
-                          setState(() => _isSaving = true);
+                          final messenger = ScaffoldMessenger.of(context);
                           final router = GoRouter.of(context);
+                          final duplicate = await db.brokersDao.existsWithName(
+                            _nameCtrl.text.trim(),
+                            excludeId: broker.id,
+                          );
+                          if (duplicate && mounted) {
+                            messenger.showSnackBar(const SnackBar(
+                              content:
+                                  Text('A broker with this name already exists'),
+                            ));
+                            return;
+                          }
+                          setState(() => _isSaving = true);
                           try {
                             await db.brokersDao.upsert(
                               BrokersCompanion(
