@@ -348,7 +348,6 @@ class StockActions {
   /// so they are skipped entirely.
   Future<void> syncDividends(
     String stockId,
-    String currency,
     String isin,
     List<FetchedDividend> fetched,
     List<StockTransaction> transactions,
@@ -394,7 +393,7 @@ class StockActions {
         date: d.date,
         amountPerShare: d.amountPerShare,
         totalAmount: Value(totalAmount),
-        currency: currency,
+        currency: d.currency,
         withholdingTax: Value(withholdingTax),
         source: const Value('auto'),
         confirmed: Value(!needsConfirmation),

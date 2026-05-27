@@ -93,7 +93,6 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       if (!mounted) return;
       await ref.read(stockActionsProvider).syncDividends(
             stock.id,
-            stock.currency,
             stock.isin,
             fetched,
             txs,

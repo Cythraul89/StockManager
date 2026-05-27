@@ -932,10 +932,12 @@ class MarketDataService {
         var amountDecimal = Decimal.tryParse(amount.toString());
         if (amountDecimal == null || amountDecimal <= Decimal.zero) { continue; }
 
-        final (normAmount, _) = _normalizeCurrency(amountDecimal, rawCurrency);
+        final (normAmount, normCurrency) =
+            _normalizeCurrency(amountDecimal, rawCurrency);
         fetched.add(FetchedDividend(
           date: DateTime(utc.year, utc.month, utc.day),
           amountPerShare: normAmount,
+          currency: normCurrency,
           isPaid: true,
         ));
       }
@@ -990,6 +992,7 @@ class MarketDataService {
       return FetchedDividend(
         date: divDate,
         amountPerShare: lastPaid.amountPerShare,
+        currency: lastPaid.currency,
         isPaid: false,
       );
     } on DioException {
