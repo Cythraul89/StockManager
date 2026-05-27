@@ -73,7 +73,7 @@ Future<void> _clearCrashLog() async {
 // ─── Crash-report screen ─────────────────────────────────────────────────
 
 class _CrashReportApp extends StatelessWidget {
-  const _CrashReportApp({super.key, required this.log, required this.onProceed});
+  const _CrashReportApp({required this.log, required this.onProceed});
   final String log;
   final VoidCallback onProceed;
 
