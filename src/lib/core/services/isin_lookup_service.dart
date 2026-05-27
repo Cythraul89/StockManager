@@ -30,7 +30,9 @@ class IsinLookupService {
   static const _openFigiUrl = 'https://api.openfigi.com/v3/mapping';
 
   // Returns all distinct exchange listings for the given ISIN, filtered to
-  // equity types where possible. Returns null on network error.
+  // equity types where possible.
+  // Returns null on network/connection error.
+  // Returns an empty list when the ISIN is valid but has no known listings.
   Future<List<IsinLookupResult>?> lookup(String isin) async {
     try {
       final response = await _dio.post<List>(
@@ -46,11 +48,11 @@ class IsinLookupService {
       );
 
       final results = response.data;
-      if (results == null || results.isEmpty) return null;
+      if (results == null || results.isEmpty) return [];
 
       final first = results.first as Map<String, dynamic>;
       final dataList = first['data'] as List?;
-      if (dataList == null || dataList.isEmpty) return null;
+      if (dataList == null || dataList.isEmpty) return [];
 
       final raw = dataList.whereType<Map<String, dynamic>>().toList();
 

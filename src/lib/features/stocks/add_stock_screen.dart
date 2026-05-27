@@ -83,11 +83,19 @@ class _AddStockScreenState extends ConsumerState<AddStockScreen> {
 
     if (!mounted) return;
 
-    if (results == null || results.isEmpty) {
+    if (results == null) {
       setState(() {
         _isLookingUp = false;
         _lookupError =
-            'Could not resolve ISIN. Please fill in details manually.';
+            'Connection failed. Check your internet connection and try again.';
+      });
+      return;
+    }
+    if (results.isEmpty) {
+      setState(() {
+        _isLookingUp = false;
+        _lookupError =
+            'No listings found for this ISIN. Please fill in details manually.';
       });
       return;
     }
