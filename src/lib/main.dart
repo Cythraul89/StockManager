@@ -293,7 +293,11 @@ Future<void> _main() async {
     // session clean. Crashes in Riverpod providers (SQLite open, network init)
     // happen asynchronously after the first frame; clearing too early means
     // the diagnostic log is gone before it records the failure.
-    await Future.delayed(const Duration(seconds: 15));
+    await Future.delayed(const Duration(seconds: 3));
+    _appendCrashLog('[13] 3s grace checkpoint — DB/providers should be open');
+    await Future.delayed(const Duration(seconds: 7));
+    _appendCrashLog('[14] 10s grace checkpoint — still alive');
+    await Future.delayed(const Duration(seconds: 5));
     _clearCrashLog();
   });
 }

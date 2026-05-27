@@ -115,6 +115,9 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = await getApplicationDocumentsDirectory();
     final file = File(p.join(dbFolder.path, 'stock_manager.sqlite'));
-    return NativeDatabase.createInBackground(file);
+    // createInBackground spawns an isolate that doesn't inherit Flutter plugin
+    // registrations, so sqlite3_flutter_libs can't load libsqlite3.so there.
+    // Opening on the main isolate avoids that native crash in release builds.
+    return NativeDatabase(file);
   });
 }
