@@ -106,12 +106,28 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 15) {
             // Remove duplicate broker names (keep the earliest row for each
-            // name), then recreate the table with the new UNIQUE(name) index.
+            // name), then recreate the table with a UNIQUE(name) constraint.
             await customStatement(
               'DELETE FROM brokers WHERE rowid NOT IN '
               '(SELECT MIN(rowid) FROM brokers GROUP BY LOWER(name))',
             );
-            await m.recreateTable(brokers);
+            await customStatement(
+              'CREATE TABLE "brokers_new" ('
+              '"id" TEXT NOT NULL, '
+              '"name" TEXT NOT NULL, '
+              '"notes" TEXT, '
+              'PRIMARY KEY ("id"), '
+              'UNIQUE ("name")'
+              ')',
+            );
+            await customStatement(
+              'INSERT INTO "brokers_new" '
+              'SELECT "id", "name", "notes" FROM "brokers"',
+            );
+            await customStatement('DROP TABLE "brokers"');
+            await customStatement(
+              'ALTER TABLE "brokers_new" RENAME TO "brokers"',
+            );
           }
         },
         beforeOpen: (details) async {
