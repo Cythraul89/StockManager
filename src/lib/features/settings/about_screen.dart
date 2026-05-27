@@ -1,15 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/utils/app_version.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends ConsumerWidget {
   const AboutScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final packageInfo = ref.watch(packageInfoProvider);
     final theme = Theme.of(context);
+
+    final versionText = packageInfo.when(
+      data: (info) => 'Version ${info.version} (build ${info.buildNumber})',
+      loading: () => 'Version …',
+      error: (_, __) => 'Version unknown',
+    );
+    final versionLabel = packageInfo.whenOrNull(data: (i) => 'v${i.version}') ?? '';
+
     return Scaffold(
       appBar: AppBar(title: const Text('About')),
       body: ListView(
@@ -24,7 +34,7 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Version $appVersion (build $appBuildNumber)',
+            versionText,
             style: theme.textTheme.bodyMedium
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
@@ -55,7 +65,7 @@ class AboutScreen extends StatelessWidget {
             onTap: () => showLicensePage(
               context: context,
               applicationName: 'StockManager',
-              applicationVersion: 'v$appVersion',
+              applicationVersion: versionLabel,
               applicationLegalese: _legalese,
             ),
           ),

@@ -121,7 +121,10 @@ class SettingsScreen extends ConsumerWidget {
               children: [
                 ListTile(
                   title: const Text('StockManager'),
-                  subtitle: const Text('v$appVersion'),
+                  subtitle: Text(ref
+                      .watch(packageInfoProvider)
+                      .whenOrNull(data: (i) => 'v${i.version}') ??
+                      ''),
                   leading: const Icon(Icons.info_outline),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push('/settings/about'),
