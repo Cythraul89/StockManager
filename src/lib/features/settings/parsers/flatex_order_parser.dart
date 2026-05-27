@@ -164,7 +164,6 @@ class FlatexOrderParser {
       }
 
       final unit = cols[_colUnit].trim();
-      final venue = cols[_colVenue].trim();
 
       if (_isFractional(unit)) {
         skippedFractional++;
