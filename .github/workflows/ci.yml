@@ -368,30 +368,20 @@ jobs:
             > "$PKG/usr/bin/stock-manager"
           chmod 755 "$PKG/usr/bin/stock-manager"
 
-          cat > "$PKG/usr/share/applications/stock-manager.desktop" << 'DESKTOP'
-[Desktop Entry]
-Name=StockManager
-Comment=Personal stock portfolio tracker
-Exec=/usr/bin/stock-manager
-Terminal=false
-Type=Application
-Categories=Finance;
-DESKTOP
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=StockManager' \
+            'Comment=Personal stock portfolio tracker' \
+            'Exec=/usr/bin/stock-manager' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=Finance;' \
+            > "$PKG/usr/share/applications/stock-manager.desktop"
 
           INSTALLED_SIZE=$(du -sk "$PKG/usr" | cut -f1)
-          cat > "$PKG/DEBIAN/control" << CONTROL
-Package: stock-manager
-Version: $VERSION
-Architecture: $ARCH
-Maintainer: StockManager contributors
-Installed-Size: $INSTALLED_SIZE
-Depends: libgtk-3-0, libsecret-1-0
-Section: utils
-Priority: optional
-Description: Personal stock portfolio tracker
- Cross-platform portfolio app for managing stocks across multiple
- brokers with real-time valuations and Nextcloud sync.
-CONTROL
+          printf 'Package: stock-manager\nVersion: %s\nArchitecture: %s\nMaintainer: StockManager contributors\nInstalled-Size: %s\nDepends: libgtk-3-0, libsecret-1-0\nSection: utils\nPriority: optional\nDescription: Personal stock portfolio tracker\n Cross-platform portfolio app for managing stocks across multiple brokers with real-time valuations and Nextcloud sync.\n' \
+            "$VERSION" "$ARCH" "$INSTALLED_SIZE" \
+            > "$PKG/DEBIAN/control"
 
           dpkg-deb --root-owner-group --build "$PKG" \
             "stock-manager_${VERSION}_${ARCH}.deb"
