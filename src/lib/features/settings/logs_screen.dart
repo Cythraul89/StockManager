@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -36,9 +37,35 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
       }
       return;
     }
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(path)], subject: 'StockManager debug log'),
-    );
+    try {
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(path)], subject: 'StockManager debug log'),
+      );
+    } catch (_) {
+      // File sharing is not available on this platform (e.g., Linux desktop
+      // without an XDG portal). Show the path so the user can open it manually.
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Log file location'),
+          content: SelectableText(path),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: path));
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Copy path'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
     if (!mounted) return;
   }
 

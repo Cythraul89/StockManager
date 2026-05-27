@@ -46,8 +46,14 @@ Future<void> _main() async {
     logService.log(message);
   };
 
+  // Save the original handler (Flutter's default, which logs to console in
+  // debug mode and is silent in release). Call it first so release-mode
+  // error reporting is not suppressed, then also write to our log file.
+  // Do NOT call FlutterError.presentError() here — it internally calls
+  // onError?.call(details), which would recurse back into this handler.
+  final origOnError = FlutterError.onError;
   FlutterError.onError = (details) {
-    FlutterError.presentError(details);
+    origOnError?.call(details);
     debugPrint('FlutterError: ${details.exceptionAsString()}\n${details.stack}');
   };
 
