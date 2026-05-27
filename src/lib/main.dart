@@ -73,7 +73,7 @@ Future<void> _clearCrashLog() async {
 // ─── Crash-report screen ─────────────────────────────────────────────────
 
 class _CrashReportApp extends StatelessWidget {
-  const _CrashReportApp({required this.log, required this.onProceed});
+  const _CrashReportApp({super.key, required this.log, required this.onProceed});
   final String log;
   final VoidCallback onProceed;
 
@@ -278,8 +278,11 @@ Future<void> _main() async {
       debugPrint('Notification permission request failed: $e');
       await _appendCrashLog('[12!] requestAndroidPermission FAILED: $e');
     }
-    // All startup steps completed successfully — remove the crash-log so the
-    // next launch does not show a spurious crash report.
+    // Wait for async provider/database work to settle before declaring the
+    // session clean. Crashes in Riverpod providers (SQLite open, network init)
+    // happen asynchronously after the first frame; clearing too early means
+    // the diagnostic log is gone before it records the failure.
+    await Future.delayed(const Duration(seconds: 15));
     await _clearCrashLog();
   });
 }
