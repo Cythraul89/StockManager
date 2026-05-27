@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -27,7 +28,13 @@ void callbackDispatcher() {
   });
 }
 
-void main() async {
+void main() {
+  runZonedGuarded(_main, (error, stack) {
+    debugPrint('Uncaught error: $error\n$stack');
+  });
+}
+
+Future<void> _main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final logService = await LogService.create();
@@ -37,6 +44,11 @@ void main() async {
   debugPrint = (String? message, {int? wrapWidth}) {
     originalDebugPrint(message, wrapWidth: wrapWidth);
     logService.log(message);
+  };
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}\n${details.stack}');
   };
 
   LicenseRegistry.addLicense(() async* {
@@ -106,4 +118,14 @@ void main() async {
       child: const StockManagerApp(),
     ),
   );
+
+  // Request POST_NOTIFICATIONS permission after the first frame — the Activity
+  // must be in RESUMED state before we call requestPermissions on Android 13+.
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    try {
+      await notificationService.requestAndroidPermission();
+    } catch (e) {
+      debugPrint('Notification permission request failed: $e');
+    }
+  });
 }

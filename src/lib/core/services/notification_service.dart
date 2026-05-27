@@ -25,13 +25,21 @@ class NotificationService {
     );
 
     await _plugin.initialize(settings);
+    // POST_NOTIFICATIONS runtime permission is requested separately via
+    // requestAndroidPermission(), called after the first frame in main.dart.
+    // Requesting it here (before runApp) can cause a JVM SecurityException on
+    // Android 13+ if the permission is not yet declared in the merged manifest.
+  }
 
-    if (Platform.isAndroid) {
-      final androidPlugin =
-          _plugin.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      await androidPlugin?.requestNotificationsPermission();
-    }
+  /// Requests the POST_NOTIFICATIONS runtime permission on Android 13+.
+  ///
+  /// Call this after the app's first frame is rendered (Activity in RESUMED
+  /// state). Safe to call on older Android versions — returns null silently.
+  Future<bool?> requestAndroidPermission() async {
+    if (!Platform.isAndroid) return null;
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    return androidPlugin?.requestNotificationsPermission();
   }
 
   Future<void> showPriceAlert({

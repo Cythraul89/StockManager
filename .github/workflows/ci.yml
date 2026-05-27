@@ -66,6 +66,27 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android .
 
+      - name: Patch AndroidManifest permissions
+        shell: python3 {0}
+        run: |
+          manifest_path = 'android/app/src/main/AndroidManifest.xml'
+          with open(manifest_path) as f:
+              content = f.read()
+          for perm in [
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.VIBRATE',
+              'android.permission.RECEIVE_BOOT_COMPLETED',
+          ]:
+              if perm not in content:
+                  content = content.replace(
+                      '    <application',
+                      f'    <uses-permission android:name="{perm}"/>\n    <application',
+                      1,
+                  )
+                  print(f'Added permission: {perm}')
+          with open(manifest_path, 'w') as f:
+              f.write(content)
+
       # Release signing setup.
       #
       # One-time setup (run locally, then add secrets to the repo):
