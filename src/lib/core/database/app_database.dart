@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.background(File file) : super(NativeDatabase(file));
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -103,6 +103,15 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 14) {
             await m.addColumn(transactions, transactions.externalRef);
+          }
+          if (from < 15) {
+            // Remove duplicate broker names (keep the earliest row for each
+            // name), then recreate the table with the new UNIQUE(name) index.
+            await customStatement(
+              'DELETE FROM brokers WHERE rowid NOT IN '
+              '(SELECT MIN(rowid) FROM brokers GROUP BY LOWER(name))',
+            );
+            await m.recreateTable(brokers);
           }
         },
         beforeOpen: (details) async {

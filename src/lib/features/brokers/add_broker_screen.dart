@@ -43,6 +43,14 @@ class _AddBrokerScreenState extends ConsumerState<AddBrokerScreen> {
       return;
     }
 
+    final duplicate = await db.brokersDao.existsWithName(_nameCtrl.text.trim());
+    if (duplicate && mounted) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('A broker with this name already exists')),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
       const uuid = Uuid();
