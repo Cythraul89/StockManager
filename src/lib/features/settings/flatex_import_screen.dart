@@ -243,6 +243,8 @@ class _FlatexImportScreenState extends ConsumerState<FlatexImportScreen> {
         var stockRow = await db.stocksDao.findByIsin(isin);
         if (stockRow == null) {
           // Try ISIN lookup for symbol/currency; fall back to CSV data.
+          // null = network error (still use CSV fallback — don't abort import)
+          // []   = valid ISIN with no known listings (same fallback)
           final lookupResults = await ref
               .read(isinLookupServiceProvider)
               .lookup(isin);

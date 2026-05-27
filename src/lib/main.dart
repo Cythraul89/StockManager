@@ -51,8 +51,10 @@ Future<String?> _readPreviousCrashLog() async {
   if (_crashLogPath == null) return null;
   try {
     final f = File(_crashLogPath!);
-    if (!f.existsSync()) return null;
-    final s = f.readAsStringSync();
+    // Use async I/O here — this runs at startup before the first frame and
+    // blocking the main isolate risks ANR jank on slow/encrypted storage.
+    if (!await f.exists()) return null;
+    final s = await f.readAsString();
     return s.trim().isEmpty ? null : s;
   } catch (_) {
     return null;
@@ -144,6 +146,11 @@ class _CrashReportApp extends StatelessWidget {
 // ─── Entry points ─────────────────────────────────────────────────────────
 
 void main() {
+  // Note: _crashLogPath is null until _initCrashLogPath() completes inside
+  // _mainWithDiag. Errors thrown before that point (e.g. during
+  // WidgetsFlutterBinding.ensureInitialized) are caught here but
+  // _appendCrashLog silently no-ops. Those very-early crashes are still
+  // printed to logcat via debugPrint.
   runZonedGuarded(_mainWithDiag, (error, stack) {
     // Synchronous — survives a hard kill triggered by the same error.
     _appendCrashLog('CRASH: $error\n$stack');

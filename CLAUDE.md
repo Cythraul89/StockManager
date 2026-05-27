@@ -199,6 +199,32 @@ Providers that **must be overridden** in `ProviderScope` at startup:
   analysis clean. Notable lint rules already enforced: `use_build_context_synchronously`,
   `deprecated_member_use`, `prefer_const_constructors`, `prefer_const_declarations`.
 
+- **NativeDatabase on main isolate** — `_openConnection()` uses `NativeDatabase(file)`,
+  NOT `NativeDatabase.createInBackground()`. The background variant spawns an isolate
+  that doesn't inherit Flutter plugin registrations, so `sqlite3_flutter_libs` can't load
+  `libsqlite3.so` there, causing a native crash in release builds.
+
+- **Backup consistency** — `exportToZip()` and `exportToOds()` wrap all five DAO reads
+  in a single `_db.transaction()` to guarantee an atomic snapshot. Do not add plain
+  `await dao.getAll()` calls outside that transaction block. `importFromBytes()` returns
+  an `int` skip count (orphaned rows that couldn't be restored); callers must surface
+  this to the user if > 0.
+
+- **IsinLookupService contract** — `lookup()` returns:
+  - `null` — connection-layer failure (DNS, timeout, no internet)
+  - `[]` — server responded but no listings found for the ISIN, or HTTP 4xx/5xx
+  - `List<IsinLookupResult>` — at least one listing found
+  
+  Always check null and empty separately. Do **not** use `results?.firstOrNull` —
+  that collapses both failure modes into a single null, masking network errors.
+
+- **Startup crash diagnostics** — `main.dart` maintains a crash log at
+  `<documents>/stockmanager_crash.txt`. All writes are synchronous (`writeAsStringSync`
+  with `flush: true`) so entries survive a hard process kill. The log is cleared 15 s
+  after the first frame to let async provider/DB work settle. A previous crash log is
+  shown to the user before the next startup. Note: crashes before `_initCrashLogPath()`
+  completes (very early startup) are logged to logcat only, not to the file.
+
 ---
 
 ## Testing

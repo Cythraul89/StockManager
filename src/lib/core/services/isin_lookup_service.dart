@@ -91,7 +91,12 @@ class IsinLookupService {
           assetType: AssetType.fromSecurityType(securityType),
         );
       }).toList();
-    } on DioException {
+    } on DioException catch (e) {
+      // Return null only for connection-layer failures (no internet, DNS error,
+      // timeout). HTTP 4xx/5xx from the server mean the request reached OpenFIGI
+      // — treat as "no results" so the UI shows the ISIN-not-found message
+      // rather than falsely blaming the user's connection.
+      if (e.response != null) return [];
       return null;
     }
   }

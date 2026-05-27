@@ -47,11 +47,18 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
 
     if (!mounted) return;
 
-    if (results == null || results.isEmpty) {
+    if (results == null) {
       setState(() => _isLookingUp = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No listings found for this ISIN.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Connection failed. Check your internet connection.'),
+      ));
+      return;
+    }
+    if (results.isEmpty) {
+      setState(() => _isLookingUp = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No listings found for this ISIN.'),
+      ));
       return;
     }
 

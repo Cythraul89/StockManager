@@ -130,11 +130,14 @@ class BackupService {
 
   // Serialises the entire portfolio to an ODS spreadsheet in the temp directory.
   Future<File> exportToOds() async {
-    final brokers = await _db.brokersDao.getAll();
-    final stocks = await _db.stocksDao.getAll();
-    final transactions = await _db.transactionsDao.getAll();
-    final dividends = await _db.dividendsDao.getAll();
-    final splits = await _db.stocksDao.getAllSplits();
+    late List<dynamic> brokers, stocks, transactions, dividends, splits;
+    await _db.transaction(() async {
+      brokers = await _db.brokersDao.getAll();
+      stocks = await _db.stocksDao.getAll();
+      transactions = await _db.transactionsDao.getAll();
+      dividends = await _db.dividendsDao.getAll();
+      splits = await _db.stocksDao.getAllSplits();
+    });
 
     final content = StringBuffer();
     content.write('<?xml version="1.0" encoding="UTF-8"?>');
@@ -244,18 +247,19 @@ class BackupService {
 
   // Replaces all portfolio data with the contents of [bytes].
   // Auto-detects ZIP backup (contains meta.json) or ODS (contains content.xml).
-  Future<void> importFromBytes(Uint8List bytes) async {
+  // Returns the number of child rows skipped due to missing parent stock refs.
+  Future<int> importFromBytes(Uint8List bytes) async {
     final archive = ZipDecoder().decodeBytes(bytes);
     if (archive.findFile('meta.json') != null) {
-      await _importZip(archive);
+      return _importZip(archive);
     } else if (archive.findFile('content.xml') != null) {
-      await _importOds(archive);
+      return _importOds(archive);
     } else {
       throw const BackupException('Unrecognised file format');
     }
   }
 
-  Future<void> _importZip(Archive archive) async {
+  Future<int> _importZip(Archive archive) async {
     List<int> fileBytes(String name) {
       final f = archive.findFile(name);
       if (f == null) throw BackupException('Invalid backup: missing $name');
@@ -283,10 +287,10 @@ class BackupService {
         (jsonDecode(utf8.decode(fileBytes('stock_splits.json'))) as List)
             .cast<Map<String, dynamic>>();
 
-    await _restore(brokersData, stocksData, txData, divData, splitsData);
+    return _restore(brokersData, stocksData, txData, divData, splitsData);
   }
 
-  Future<void> _importOds(Archive archive) async {
+  Future<int> _importOds(Archive archive) async {
     final f = archive.findFile('content.xml');
     if (f == null) throw const BackupException('Invalid ODS: missing content.xml');
     final doc = XmlDocument.parse(utf8.decode(f.content as List<int>));
@@ -386,16 +390,19 @@ class BackupService {
         },
     ];
 
-    await _restore(brokersData, stocksData, txData, divData, splitsData);
+    return _restore(brokersData, stocksData, txData, divData, splitsData);
   }
 
-  Future<void> _restore(
+  // Returns the number of child rows (transactions/dividends/splits) that were
+  // skipped because their parent stock was absent from the backup.
+  Future<int> _restore(
     List<Map<String, dynamic>> brokersData,
     List<Map<String, dynamic>> stocksData,
     List<Map<String, dynamic>> txData,
     List<Map<String, dynamic>> divData,
     List<Map<String, dynamic>> splitsData,
   ) async {
+    var skipped = 0;
     await _db.transaction(() async {
       // Clear in reverse FK order so constraints are satisfied.
       await _db.customStatement('DELETE FROM dividends');
@@ -425,18 +432,17 @@ class BackupService {
         ));
       }
 
-      // Build the set of stock IDs that were actually written. Backups created
-      // before the atomic-export fix may contain transactions whose stock was
-      // added between the stocks-read and transactions-read during export.
-      // Skipping those orphaned rows is safer than aborting the whole restore.
-      final validStockIds =
-          (await _db.stocksDao.getAll()).map((s) => s.id).toSet();
+      // Build from in-memory data — avoids a second DB round-trip and works
+      // correctly even for backups created before the atomic-export fix, where
+      // a transaction's stock might be absent from the backup.
+      final validStockIds = stocksData.map((s) => s['id'] as String).toSet();
 
       for (final t in txData) {
         final stockId = t['stockId'] as String;
         if (!validStockIds.contains(stockId)) {
           debugPrint('Restore: skipping transaction ${t['id']} — '
               'stock $stockId not in backup');
+          skipped++;
           continue;
         }
         await _db.transactionsDao.insert(TransactionsCompanion.insert(
@@ -458,6 +464,7 @@ class BackupService {
         if (!validStockIds.contains(stockId)) {
           debugPrint('Restore: skipping dividend ${d['id']} — '
               'stock $stockId not in backup');
+          skipped++;
           continue;
         }
         await _db.dividendsDao.insert(DividendsCompanion.insert(
@@ -482,6 +489,7 @@ class BackupService {
         if (!validStockIds.contains(stockId)) {
           debugPrint('Restore: skipping split ${s['id']} — '
               'stock $stockId not in backup');
+          skipped++;
           continue;
         }
         await _db.stocksDao.upsertSplit(StockSplitsCompanion.insert(
@@ -493,6 +501,7 @@ class BackupService {
         ));
       }
     });
+    return skipped;
   }
 
   static String _odsRow(List<String?> cells) {

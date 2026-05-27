@@ -196,12 +196,20 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
             pinnedFingerprint: creds.fingerprint,
           );
 
-      await ref.read(backupServiceProvider).importFromBytes(bytes);
+      final skipped =
+          await ref.read(backupServiceProvider).importFromBytes(bytes);
 
       final now = DateTime.now();
       await ref.read(settingsActionsProvider).saveLastSyncAt(now);
 
-      state = NextcloudSyncState(status: SyncStatus.idle, lastSyncAt: now);
+      state = NextcloudSyncState(
+        status: SyncStatus.idle,
+        lastSyncAt: now,
+        error: skipped > 0
+            ? '$skipped row(s) were skipped during restore due to missing '
+                'stock references in the backup.'
+            : null,
+      );
     } catch (e) {
       state =
           state.copyWith(status: SyncStatus.error, error: 'Restore failed: $e');

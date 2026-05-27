@@ -152,11 +152,15 @@ class _LocalBackupScreenState extends ConsumerState<LocalBackupScreen> {
       _status = null;
     });
     try {
-      await ref.read(backupServiceProvider).importFromBytes(bytes);
+      final skipped =
+          await ref.read(backupServiceProvider).importFromBytes(bytes);
       if (mounted) {
         setState(() {
-          _status = 'Backup imported successfully.';
-          _statusIsError = false;
+          _status = skipped > 0
+              ? 'Imported successfully, but $skipped row(s) were skipped '
+                  'due to missing stock references in the backup.'
+              : 'Backup imported successfully.';
+          _statusIsError = skipped > 0;
         });
       }
     } catch (e) {
