@@ -83,6 +83,7 @@ jobs:
               print('Added xmlns:tools namespace')
 
           for perm in [
+              'android.permission.INTERNET',
               'android.permission.POST_NOTIFICATIONS',
               'android.permission.VIBRATE',
               'android.permission.RECEIVE_BOOT_COMPLETED',
@@ -122,6 +123,12 @@ jobs:
 
           with open(manifest_path, 'w') as f:
               f.write(content)
+
+          # Sanity-check: print the final manifest so CI logs show exactly
+          # what permissions and providers are present in the APK.
+          print('\n=== Final AndroidManifest.xml ===')
+          print(content)
+          print('=== End AndroidManifest.xml ===\n')
 
       # Release signing setup.
       #
