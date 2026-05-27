@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'app.dart';
@@ -28,16 +29,143 @@ void callbackDispatcher() {
   });
 }
 
+// ─── Crash-log helpers ────────────────────────────────────────────────────
+//
+// A lightweight diagnostic file written step-by-step through startup.
+// On a successful first frame it is deleted. If the process dies before
+// that, the next launch finds the file and shows it on-screen so the user
+// can screenshot the last recorded step without needing ADB/logcat.
+
+Future<File?> _crashLogFile() async {
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/stockmanager_crash.txt');
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<String?> _readPreviousCrashLog() async {
+  try {
+    final f = await _crashLogFile();
+    if (f == null || !await f.exists()) return null;
+    final s = await f.readAsString();
+    return s.trim().isEmpty ? null : s;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> _appendCrashLog(String msg) async {
+  try {
+    final f = await _crashLogFile();
+    await f?.writeAsString('$msg\n', mode: FileMode.append);
+  } catch (_) {}
+}
+
+Future<void> _clearCrashLog() async {
+  try {
+    final f = await _crashLogFile();
+    await f?.delete();
+  } catch (_) {}
+}
+
+// ─── Crash-report screen ─────────────────────────────────────────────────
+
+class _CrashReportApp extends StatelessWidget {
+  const _CrashReportApp({required this.log, required this.onProceed});
+  final String log;
+  final VoidCallback onProceed;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        backgroundColor: const Color(0xFFFFF3E0),
+        appBar: AppBar(
+          title: const Text('Startup diagnostic'),
+          backgroundColor: Colors.deepOrange,
+          foregroundColor: Colors.white,
+        ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'The previous session ended unexpectedly.\n'
+                'Screenshot this and report it, then tap the button below.',
+                style: TextStyle(
+                  color: Colors.deepOrange[900],
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.all(8),
+                color: Colors.black,
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    log,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.greenAccent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: FilledButton(
+                onPressed: onProceed,
+                style: FilledButton.styleFrom(
+                    backgroundColor: Colors.deepOrange),
+                child: const Text('Clear and launch app'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Entry points ─────────────────────────────────────────────────────────
+
 void main() {
-  runZonedGuarded(_main, (error, stack) {
+  runZonedGuarded(_mainWithDiag, (error, stack) {
+    _appendCrashLog('CRASH: $error\n$stack');
     debugPrint('Uncaught error: $error\n$stack');
   });
 }
 
-Future<void> _main() async {
+Future<void> _mainWithDiag() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Show crash report from a previous failed session (if any) before
+  // attempting a new startup — so the user can screenshot the log without
+  // needing ADB or a file manager.
+  final prevLog = await _readPreviousCrashLog();
+  if (prevLog != null) {
+    final proceed = Completer<void>();
+    runApp(_CrashReportApp(log: prevLog, onProceed: () => proceed.complete()));
+    await proceed.future;
+    await _clearCrashLog();
+  }
+
+  await _main();
+}
+
+Future<void> _main() async {
+  await _appendCrashLog(
+      '=== ${DateTime.now().toIso8601String()} ===');
+  await _appendCrashLog('[1] WidgetsFlutterBinding initialized');
+
   final logService = await LogService.create();
+  await _appendCrashLog('[2] LogService created');
 
   // Route all debugPrint calls to both the console and the log file.
   final originalDebugPrint = debugPrint;
@@ -45,6 +173,7 @@ Future<void> _main() async {
     originalDebugPrint(message, wrapWidth: wrapWidth);
     logService.log(message);
   };
+  await _appendCrashLog('[3] debugPrint override set');
 
   // Save the original handler (Flutter's default, which logs to console in
   // debug mode and is silent in release). Call it first so release-mode
@@ -56,6 +185,7 @@ Future<void> _main() async {
     origOnError?.call(details);
     debugPrint('FlutterError: ${details.exceptionAsString()}\n${details.stack}');
   };
+  await _appendCrashLog('[4] FlutterError.onError set');
 
   LicenseRegistry.addLicense(() async* {
     yield const LicenseEntryWithLineBreaks(
@@ -74,12 +204,15 @@ Future<void> _main() async {
       'along with this program. If not, see https://www.gnu.org/licenses/.',
     );
   });
+  await _appendCrashLog('[5] LicenseRegistry configured');
 
   // Register WorkManager background task for price/rating/dividend checks.
   // ExistingWorkPolicy.keep avoids re-registering on every app launch.
   if (Platform.isAndroid) {
     try {
+      await _appendCrashLog('[6a] WorkManager.initialize starting');
       await Workmanager().initialize(callbackDispatcher);
+      await _appendCrashLog('[6b] WorkManager.initialize OK');
       await Workmanager().registerPeriodicTask(
         'stockBackgroundCheck',
         'checkPricesAndAlerts',
@@ -87,20 +220,26 @@ Future<void> _main() async {
         constraints: Constraints(networkType: NetworkType.connected),
         existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       );
+      await _appendCrashLog('[6c] WorkManager.registerPeriodicTask OK');
     } catch (e) {
       // Non-fatal: background price/alert checks will be disabled.
       debugPrint('WorkManager init failed (background checks disabled): $e');
+      await _appendCrashLog('[6!] WorkManager FAILED: $e');
     }
   }
 
   final database = AppDatabase();
+  await _appendCrashLog('[7] AppDatabase() created');
 
   final notificationService = NotificationService();
   try {
+    await _appendCrashLog('[8a] NotificationService.initialize starting');
     await notificationService.initialize();
+    await _appendCrashLog('[8b] NotificationService.initialize OK');
   } catch (e) {
     // Non-fatal: notifications will be silently skipped.
     debugPrint('NotificationService init failed (notifications disabled): $e');
+    await _appendCrashLog('[8!] NotificationService FAILED: $e');
   }
 
   final dio = Dio(BaseOptions(
@@ -110,7 +249,9 @@ Future<void> _main() async {
   final marketDataService = MarketDataService(dio);
   final currencyService = CurrencyService(dio);
   final isinLookupService = IsinLookupService(dio);
+  await _appendCrashLog('[9] Services (Dio/MarketData/Currency/ISIN) created');
 
+  await _appendCrashLog('[10] runApp starting');
   runApp(
     ProviderScope(
       overrides: [
@@ -124,14 +265,21 @@ Future<void> _main() async {
       child: const StockManagerApp(),
     ),
   );
+  await _appendCrashLog('[11] runApp returned');
 
   // Request POST_NOTIFICATIONS permission after the first frame — the Activity
   // must be in RESUMED state before we call requestPermissions on Android 13+.
   WidgetsBinding.instance.addPostFrameCallback((_) async {
+    await _appendCrashLog('[12a] postFrameCallback fired');
     try {
       await notificationService.requestAndroidPermission();
+      await _appendCrashLog('[12b] requestAndroidPermission OK');
     } catch (e) {
       debugPrint('Notification permission request failed: $e');
+      await _appendCrashLog('[12!] requestAndroidPermission FAILED: $e');
     }
+    // All startup steps completed successfully — remove the crash-log so the
+    // next launch does not show a spurious crash report.
+    await _clearCrashLog();
   });
 }
