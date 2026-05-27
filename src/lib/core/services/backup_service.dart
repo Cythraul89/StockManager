@@ -29,11 +29,18 @@ class BackupService {
   // Serialises the entire portfolio to a ZIP file in the temp directory.
   // Returns the file so the caller can share/save it.
   Future<File> exportToZip() async {
-    final brokers = await _db.brokersDao.getAll();
-    final stocks = await _db.stocksDao.getAll();
-    final transactions = await _db.transactionsDao.getAll();
-    final dividends = await _db.dividendsDao.getAll();
-    final splits = await _db.stocksDao.getAllSplits();
+    // Wrap all reads in a single DB transaction so the snapshot is consistent.
+    // Without this, a stock added between the stocks-read and transactions-read
+    // would appear in transactions.json but not in stocks.json, causing a FK
+    // constraint failure on the next restore.
+    late List<dynamic> brokers, stocks, transactions, dividends, splits;
+    await _db.transaction(() async {
+      brokers = await _db.brokersDao.getAll();
+      stocks = await _db.stocksDao.getAll();
+      transactions = await _db.transactionsDao.getAll();
+      dividends = await _db.dividendsDao.getAll();
+      splits = await _db.stocksDao.getAllSplits();
+    });
 
     final archive = Archive();
 
@@ -417,10 +424,23 @@ class BackupService {
         ));
       }
 
+      // Build the set of stock IDs that were actually written. Backups created
+      // before the atomic-export fix may contain transactions whose stock was
+      // added between the stocks-read and transactions-read during export.
+      // Skipping those orphaned rows is safer than aborting the whole restore.
+      final validStockIds =
+          (await _db.stocksDao.getAll()).map((s) => s.id).toSet();
+
       for (final t in txData) {
+        final stockId = t['stockId'] as String;
+        if (!validStockIds.contains(stockId)) {
+          debugPrint('Restore: skipping transaction ${t['id']} — '
+              'stock $stockId not in backup');
+          continue;
+        }
         await _db.transactionsDao.insert(TransactionsCompanion.insert(
           id: t['id'] as String,
-          stockId: t['stockId'] as String,
+          stockId: stockId,
           type: t['type'] as String,
           executedAt: DateTime.parse(t['executedAt'] as String),
           shares: Decimal.parse(t['shares'] as String),
@@ -433,9 +453,15 @@ class BackupService {
       }
 
       for (final d in divData) {
+        final stockId = d['stockId'] as String;
+        if (!validStockIds.contains(stockId)) {
+          debugPrint('Restore: skipping dividend ${d['id']} — '
+              'stock $stockId not in backup');
+          continue;
+        }
         await _db.dividendsDao.insert(DividendsCompanion.insert(
           id: d['id'] as String,
-          stockId: d['stockId'] as String,
+          stockId: stockId,
           type: d['type'] as String,
           date: DateTime.parse(d['date'] as String),
           amountPerShare: Decimal.parse(d['amountPerShare'] as String),
@@ -451,9 +477,15 @@ class BackupService {
       }
 
       for (final s in splitsData) {
+        final stockId = s['stockId'] as String;
+        if (!validStockIds.contains(stockId)) {
+          debugPrint('Restore: skipping split ${s['id']} — '
+              'stock $stockId not in backup');
+          continue;
+        }
         await _db.stocksDao.upsertSplit(StockSplitsCompanion.insert(
           id: s['id'] as String,
-          stockId: s['stockId'] as String,
+          stockId: stockId,
           date: DateTime.parse(s['date'] as String),
           fromShares: (s['fromShares'] as num).toInt(),
           toShares: (s['toShares'] as num).toInt(),
