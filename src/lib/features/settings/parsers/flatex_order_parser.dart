@@ -115,8 +115,7 @@ class FlatexOrderParser {
   static const _colName = 1;
   static const _colIsinWkn = 2;
   static const _colArt = 3;
-  static const _colVenue = 4;
-  static const _colOrderNr = 5;
+static const _colOrderNr = 5;
   static const _colDateTime = 6;
   static const _colStatus = 7;
   static const _colMenge = 8;
