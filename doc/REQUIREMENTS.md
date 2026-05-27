@@ -110,12 +110,15 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 ## 5. Data Synchronisation — Nextcloud
 
 - All portfolio data is **synchronised with a user-configured Nextcloud instance**.
-- Synchronisation is triggered manually and/or automatically when a network connection is available.
+- Synchronisation is triggered automatically (on startup and after data changes, debounced 5 s) and manually ("Backup now").
 - The app supports Nextcloud instances that use **self-signed TLS certificates**; the user can explicitly accept and pin a server certificate during initial setup.
-- The data file stored on Nextcloud is an **ODS (OpenDocument Spreadsheet)** file that is human-readable and can be opened in any ODS-compatible office suite (e.g. LibreOffice Calc, OnlyOffice Spreadsheets).
-- The ODS file contains structured sheets for: brokers, stocks, full transaction history, dividends (paid and expected), and a summary of current valuations.
-- Each export is **timestamped** (filename or internal metadata) so the user can see when the last sync occurred.
-- Conflict handling: the app's local data is treated as the source of truth; the cloud copy is the export target.
+- The sync backup format is a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). The ZIP is the sync source-of-truth; it is readable but not intended for direct editing.
+- A separate **ODS (OpenDocument Spreadsheet)** export is available from the local backup screen for human-readable archival; it can be opened in LibreOffice Calc, OnlyOffice, or any ODS-compatible suite and contains all brokers, stocks, transactions, dividends, and current valuations.
+- Both export formats snapshot all five tables atomically inside a single database transaction to guarantee consistency.
+- Each backup filename includes a full UTC timestamp (`stockmanager_backup_YYYY-MM-DDTHH-MM-SSZ.zip`) so the most recent file is unambiguous. Up to N previous backups are retained on the server (N configurable in Settings, default 5); older files are deleted automatically.
+- **Conflict resolution:** at startup (and after a credential save), the app compares the remote backup timestamp against `lastSyncAt`. If the remote backup is newer, the user is offered a proactive "Restore from server?" dialog. Auto-upload is suppressed while a restore decision is pending.
+- When a restore is performed, `importFromBytes()` returns the count of child rows (transactions, dividends, splits) skipped because their parent stock was absent from the backup file. If any rows were skipped the UI surfaces a visible warning (e.g. "3 row(s) were skipped due to missing stock references") so no data is silently lost.
+- **Nextcloud is optional** — the app is fully functional without it; sync can be enabled or disabled at any time.
 
 ---
 
@@ -147,6 +150,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - The app sends **local notifications** (no external server required) on all platforms for:
   - An approaching expected dividend payment date (configurable lead time, e.g. 3 days before)
   - A stock price rising or falling by a user-defined percentage threshold
+  - A **trailing stop-loss** alert per stock: a configurable drop-from-peak threshold (e.g. −10%). The peak price is tracked automatically; a notification fires when the price falls to or below peak × (1 − threshold). The high-water mark resets after the alert fires so it does not re-trigger until a new peak is reached.
   - An analyst consensus rating changing for a held stock
 - On Android, notifications are delivered via **WorkManager** background tasks (periodic checks every 15 minutes when a network connection is available); no Firebase / FCM dependency.
 - On desktop (macOS, Windows, Ubuntu), local notifications are sent directly by the running app.
@@ -163,6 +167,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - **Dark mode**: the app supports light and dark themes on all platforms, following the system preference by default.
 - **Performance**: the app must load the portfolio overview within 2 seconds on a modern device (offline data only).
 - **Data integrity**: transactions and portfolio data must not be lost during sync or app updates.
+- **Crash diagnostics**: the Android release build maintains a startup crash log that survives a hard process kill. If the previous session ended unexpectedly, the crash log is shown on-screen before the next launch so the user can screenshot it without needing ADB or a file manager.
 - **Automated testing**: all domain logic (portfolio calculations, P&L, dividends, currency conversion, decimal math) is covered by unit tests that run in CI on every push. The test suite must pass with zero failures before any build job runs.
 
 ---
@@ -224,15 +229,13 @@ Features confirmed for a future version. Not in scope for the initial release.
 - Articles open in the device's default browser.
 - News requires an Internet connection; a “no connection” placeholder is shown offline.
 
-### 10.7 Broker Import / Export
-- The app can **import transaction history** from spreadsheet files exported by supported brokers, automatically creating stocks and transactions from the imported data.
-- The app can **export the full transaction history** in a format compatible with supported brokers (e.g. for re-importing into a broker's portfolio tool).
-- Supported file formats: CSV and XLSX (the most common broker export formats).
-- Each supported broker has a named **import profile** that maps the broker's column layout to the app's data model (date, shares, price, fees, type, ISIN/ticker).
-- Unrecognised rows or mapping conflicts are flagged for manual review before import is confirmed; no data is written until the user approves.
-- Import profiles are bundled for common brokers (e.g. Scalable Capital, Trade Republic, comdirect, Degiro) and can be extended in future updates.
+### 10.7 Broker Import / Export ✓ *(Flatex delivered; others planned)*
 
-### 10.8 AI Portfolio Analysis (Claude)
+**Flatex (delivered):** The app imports transaction history from the semicolon-delimited "Orders" CSV exported by the Flatex web portal. Supported row types: regular limit/stop orders, KVG savings-plan (Ausführungspreis column), Bruchstücke (fractional units), and EUR-unit KVG market orders (share count estimated from a historic closing price via Yahoo Finance). Unpriced rows are shown in a preview step with an optional "estimate prices" toggle; import is disabled until estimation completes. All rows are deduplicated by broker order number (`external_ref`) on re-import. New stocks are auto-resolved via OpenFIGI (ISIN → symbol/currency) and created automatically.
+
+**Planned for other brokers:** DEGIRO, Trade Republic, Scalable Capital, Comdirect, Interactive Brokers. Each broker needs a named import profile mapping its CSV/XLSX columns to the app's data model. Unrecognised rows are flagged for manual review before import is confirmed.
+
+### 10.8 AI Portfolio Analysis ✓ *(delivered — Claude, Groq, Gemini)*
 - The user can request an **AI-powered analysis of their portfolio** via the Claude API (Anthropic).
 - The feature requires the user to supply their own **Anthropic API key**, stored in the settings table (same pattern as the Finnhub key).
 - On request, the app serialises all portfolio data (stocks, transactions, dividends, current valuations) to a structured JSON payload and sends it to the Claude API.
@@ -247,4 +250,11 @@ Features confirmed for a future version. Not in scope for the initial release.
 - A **privacy notice** is shown before the first request, clearly stating that portfolio data is transmitted to Anthropic's servers.
 - The user can opt out at any time by removing the API key; no data is ever sent automatically.
 - API calls are always user-triggered (no background analysis).
+
+**Delivered implementation:**
+- Three providers are supported: **Anthropic Claude** (`claude-opus-4-7` default), **Groq** (`llama-3.3-70b-versatile` default, free tier), and **Google Gemini** (`gemini-2.0-flash` default, free tier).
+- The active provider, model, and API key are selected in Settings → AI Analysis.
+- All providers stream their responses via SSE; the response is rendered as Markdown in real-time.
+- The LLM is instructed to append `---STOCK_SUGGESTIONS---` followed by a JSON array of `{isin, name, reason}` objects. Suggestions are displayed as "Add stock" chips below the response; tapping one opens the Add Stock screen pre-filled with the ISIN.
+- Prompt caching (`cache_control: ephemeral`) is applied to the system prompt block when using Claude, reducing cost on repeated queries.
 

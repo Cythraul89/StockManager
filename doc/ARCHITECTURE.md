@@ -255,13 +255,28 @@ The static method `ExchangeRate.find(rates, from, to)` is the canonical lookup: 
 If either rate is missing, a `missingRate` badge is shown on the dashboard tile.
 
 ### 5.4 ISIN Lookup
-When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually. ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.
+When a user enters an ISIN, the app queries the **OpenFIGI API** (free, no auth required for basic use) to resolve the ticker symbol, company name, exchange, and currency. If multiple listings are found (e.g. a stock traded on several exchanges), a bottom-sheet picker lets the user choose — each listing shows a live price fetched in parallel. The resolved currency is pre-filled in the currency dropdown. The last-used broker is recalled from `flutter_secure_storage` and pre-selected. If the lookup fails (offline or unknown ISIN), the user can enter all fields manually.
+
+**`IsinLookupService.lookup()` return contract:**
+- `null` — connection-layer failure (DNS, timeout, no internet). The caller surfaces "Connection failed. Check your internet connection."
+- `[]` (empty list) — the server responded but found no listings for the ISIN (valid ISIN, unknown on OpenFIGI), or an HTTP 4xx/5xx response was received. The caller surfaces "No listings found for this ISIN."
+- `List<IsinLookupResult>` (non-empty) — at least one listing was found.
+
+Always check `null` and `isEmpty` separately. Using `results?.firstOrNull` collapses both failure modes and masks network errors.
+
+ISIN format is validated client-side (2-letter country code + 9 alphanumeric chars + 1 check digit using the Luhn-based ISO 6166 algorithm) before any network call is made. The currency field on the Edit Stock screen also allows the stored currency to be corrected after the fact.
 
 ### 5.5 Financial Arithmetic
 All monetary values are stored and calculated as `Decimal` (via the `decimal` package), never `double`, to avoid floating-point rounding errors.
 
 ### 5.6 Background Checks on Android
 True FCM push requires a backend server to send messages. To avoid a server dependency, background checks on Android are implemented using **WorkManager** (periodic background task, ~15 min minimum interval, network required). The task is registered in `main.dart` via a top-level `callbackDispatcher` and dispatched to `BackgroundCheckService.run()`.
+
+**WorkManager initialisation:** WorkManager's built-in `WorkManagerInitializer` ContentProvider is disabled in the Android manifest via `tools:node="remove"` on the `InitializationProvider` meta-data entry. This prevents a pre-Flutter ContentProvider crash on some devices. `Workmanager().initialize()` is called manually from Dart during `_main()`. The call is wrapped in a try-catch; a failure (e.g. pigeon channel not yet ready) is non-fatal — the app continues with background checks disabled and logs `WorkManager init failed` to the debug log.
+
+`AppDatabase.background(file)` — used inside the WorkManager isolate — opens the SQLite file directly with `NativeDatabase(file)` on the calling isolate (not via `LazyDatabase`), bypassing the plugin registration issue that affects `NativeDatabase.createInBackground`.
+
+The production `_openConnection()` (used by `AppDatabase()`) also uses `NativeDatabase(file)` directly, not `NativeDatabase.createInBackground()`. The background variant spawns a Dart isolate that does not inherit Flutter plugin registrations, so `sqlite3_flutter_libs` cannot load `libsqlite3.so` there, causing a SIGABRT in release builds.
 
 `BackgroundCheckService` is a static-only class that runs inside a WorkManager isolate (no Riverpod). It opens its own `AppDatabase.background(file)` connection and `MarketDataService` + `FlutterLocalNotificationsPlugin` instances, then performs the following checks:
 
@@ -532,7 +547,7 @@ For securities not covered by Yahoo Finance or Stooq (e.g. non-exchange-traded f
 ### 5.13 Nextcloud Sync Strategy
 
 #### Backup format
-Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature.
+Sync uses a **ZIP archive** containing JSON files (`brokers.json`, `stocks.json`, `transactions.json`, `dividends.json`, `stock_splits.json`, `meta.json`). This is handled by `BackupService.exportToZip()` / `importFromBytes()`. A separate `BackupService.exportToOds()` produces a human-readable ODS spreadsheet for the manual export/share feature. Both `exportToZip()` and `exportToOds()` wrap all five DAO reads in a single `_db.transaction()` call to guarantee an atomic consistent snapshot. Without this, a stock added concurrently between the stocks-read and transactions-read would appear in the transactions file but not the stocks file, causing FK constraint errors (or silent row drops) on the next restore.
 
 The ZIP backup filename pattern is `stockmanager_backup_YYYY-MM-DDTHH-MM-SSZ.zip` (full UTC timestamp; colons replaced with hyphens for filesystem compatibility). `findLatestBackup` and `_pruneOldBackups` also accept the legacy `YYYY-MM-DD` date-only format for backward compatibility with older backups already on the server.
 
@@ -561,7 +576,7 @@ On startup and after a credential save, `findLatestBackup()` (WebDAV PROPFIND) c
 
 Auto-upload is **suppressed** while a restore is pending user decision.
 
-On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. If the restore fails the screen stays open to display the error.
+On "Restore": `downloadFile()` fetches the ZIP bytes and `importFromBytes()` replaces all local data atomically inside a Drift transaction. `lastSyncAt` is updated in settings. `importFromBytes()` returns an `int` skip count — the number of child rows (transactions, dividends, splits) that could not be restored because their parent stock was absent from the backup (a race condition in backups created before the atomic-export fix). Both the local backup screen and the Nextcloud sync state surface a visible warning to the user when `skipped > 0` so no data is silently lost.
 
 #### Backup retention
 After every successful upload, `_pruneOldBackups` lists the remote directory, filters files matching the backup pattern, sorts newest-first, and deletes all beyond `AppSettings.nextcloudKeepExports` (default: 5). This is best-effort — individual delete failures are ignored.
@@ -730,6 +745,21 @@ Orders that fail (symbol not found, no historical price, no exchange rate) are l
 - The tile turns amber (`Colors.orange.shade700`) instead of green/red.
 - A second subtitle line reads "⚠ Price estimated — please verify".
 - `isThreeLine: true` is set on `ListTile` to accommodate the extra line.
+
+### 5.23 Startup Crash Diagnostics
+
+`main.dart` maintains a lightweight crash-log file at `<documents>/stockmanager_crash.txt`. All writes are **synchronous** (`File.writeAsStringSync(flush: true)`) so they survive a hard process kill (SIGKILL, OOM kill) that would leave async writes incomplete.
+
+**Lifecycle:**
+1. `_initCrashLogPath()` is awaited first in `_mainWithDiag()` before any other startup step.
+2. If a log file from the previous session exists at startup, `_CrashReportApp` is shown full-screen before the main app launches. The user can screenshot the log and tap "Clear and launch app" to continue.
+3. `_main()` appends numbered step markers (`[1]`–`[14]`) as startup proceeds through each major phase (WidgetsFlutterBinding, LogService, WorkManager, AppDatabase, NotificationService, services, runApp, postFrameCallback, permission request).
+4. The `runZonedGuarded` error handler calls the synchronous `_appendCrashLog('CRASH: $error\n$stack')` before `debugPrint`, so the last exception is flushed to disk even if the next write in the same zone kills the process.
+5. The log is cleared 15 seconds after the first frame (3 s + 7 s + 5 s in three checkpoints) to allow async provider/DB work to settle. Clearing too early would remove the diagnostic before a post-frame provider crash is recorded.
+
+**Known gap:** Crashes that occur before `_initCrashLogPath()` completes (i.e. during `WidgetsFlutterBinding.ensureInitialized()` or within the `getApplicationDocumentsDirectory()` call itself) hit the zone error handler when `_crashLogPath` is still null. `_appendCrashLog` silently no-ops in that case; the crash is printed to logcat via `debugPrint` but does not appear in the diagnostic screen on the next launch. Very-early startup failures must still be diagnosed via ADB.
+
+**Crash-report screen (`_CrashReportApp`):** A minimal `MaterialApp` (deep-orange theme) that renders the crash log in a `SelectableText` on a black background. It does not use `ProviderScope` or any production infrastructure — it must be renderable even when the database or plugins are broken.
 
 ---
 
