@@ -311,11 +311,61 @@ jobs:
       - name: Build Linux
         run: flutter build linux --release
 
+      - name: Package as Debian (.deb)
+        run: |
+          BUNDLE=src/build/linux/x64/release/bundle
+          PKG=/tmp/stock-manager-pkg
+          VERSION=0.0.1
+          ARCH=amd64
+
+          install -dm755 "$PKG/DEBIAN"
+          install -dm755 "$PKG/usr/lib/stock-manager"
+          install -dm755 "$PKG/usr/bin"
+          install -dm755 "$PKG/usr/share/applications"
+
+          # Copy the Flutter bundle (binary + lib/*.so + data/)
+          cp -r "$BUNDLE/." "$PKG/usr/lib/stock-manager/"
+
+          # Launcher: the binary uses RPATH $ORIGIN/lib so it resolves
+          # libflutter_linux_gtk.so relative to its own path — exec-ing
+          # the full path works without a cd wrapper.
+          printf '#!/bin/sh\nexec /usr/lib/stock-manager/stock_manager "$@"\n' \
+            > "$PKG/usr/bin/stock-manager"
+          chmod 755 "$PKG/usr/bin/stock-manager"
+
+          cat > "$PKG/usr/share/applications/stock-manager.desktop" << 'DESKTOP'
+[Desktop Entry]
+Name=StockManager
+Comment=Personal stock portfolio tracker
+Exec=/usr/bin/stock-manager
+Terminal=false
+Type=Application
+Categories=Finance;
+DESKTOP
+
+          INSTALLED_SIZE=$(du -sk "$PKG/usr" | cut -f1)
+          cat > "$PKG/DEBIAN/control" << CONTROL
+Package: stock-manager
+Version: $VERSION
+Architecture: $ARCH
+Maintainer: StockManager contributors
+Installed-Size: $INSTALLED_SIZE
+Depends: libgtk-3-0, libsecret-1-0
+Section: utils
+Priority: optional
+Description: Personal stock portfolio tracker
+ Cross-platform portfolio app for managing stocks across multiple
+ brokers with real-time valuations and Nextcloud sync.
+CONTROL
+
+          dpkg-deb --root-owner-group --build "$PKG" \
+            "stock-manager_${VERSION}_${ARCH}.deb"
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linux-bundle
-          path: src/build/linux/x64/release/bundle/
+          name: linux-deb
+          path: stock-manager_0.0.1_amd64.deb
 
   # ── Windows ────────────────────────────────────────────
   build-windows:
