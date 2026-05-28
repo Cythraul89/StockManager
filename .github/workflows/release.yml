@@ -191,14 +191,14 @@ jobs:
                   f.write(gradle)
               print('Injected release signing config into build.gradle.kts')
 
-      - name: Build signed AAB
+      - name: Build signed APK
         run: |
-          flutter build appbundle --release --build-number=${{ github.run_number }}
+          flutter build apk --release --build-number=${{ github.run_number }}
 
-      - name: Upload AAB to release
+      - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
-          files: src/build/app/outputs/bundle/release/app-release.aab
+          files: src/build/app/outputs/flutter-apk/app-release.apk
 
   # ── Linux ─────────────────────────────────────────────────────
   release-linux:
@@ -210,7 +210,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libsecret-1-dev
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libsecret-1-dev dpkg-dev
 
       - uses: subosito/flutter-action@v2
         with:
@@ -226,18 +226,56 @@ jobs:
       - name: Generate Linux platform files
         run: flutter create --platforms=linux .
 
+      - name: Compute version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build Linux
-        run: flutter build linux --release
-
-      - name: Package Linux bundle
         run: |
-          cd build/linux/x64/release
-          zip -r ../../../../stockmanager-linux-x64.zip bundle/
+          flutter build linux --release \
+            --build-name="${{ steps.ver.outputs.version }}" \
+            --build-number=${{ github.run_number }}
 
-      - name: Upload Linux archive to release
+      - name: Package as Debian (.deb)
+        run: |
+          BUNDLE=build/linux/x64/release/bundle
+          PKG=/tmp/stock-manager-pkg
+          VERSION="${{ steps.ver.outputs.version }}"
+          ARCH=amd64
+
+          install -dm755 "$PKG/DEBIAN"
+          install -dm755 "$PKG/usr/lib/stock-manager"
+          install -dm755 "$PKG/usr/bin"
+          install -dm755 "$PKG/usr/share/applications"
+
+          cp -r "$BUNDLE/." "$PKG/usr/lib/stock-manager/"
+
+          printf '#!/bin/sh\nexec /usr/lib/stock-manager/stock_manager "$@"\n' \
+            > "$PKG/usr/bin/stock-manager"
+          chmod 755 "$PKG/usr/bin/stock-manager"
+
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=StockManager' \
+            'Comment=Personal stock portfolio tracker' \
+            'Exec=/usr/bin/stock-manager' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=Finance;' \
+            > "$PKG/usr/share/applications/stock-manager.desktop"
+
+          INSTALLED_SIZE=$(du -sk "$PKG/usr" | cut -f1)
+          printf 'Package: stock-manager\nVersion: %s\nArchitecture: %s\nMaintainer: StockManager contributors\nInstalled-Size: %s\nDepends: libgtk-3-0, libsecret-1-0\nSection: utils\nPriority: optional\nDescription: Personal stock portfolio tracker\n Cross-platform portfolio app for managing stocks across multiple brokers with real-time valuations and Nextcloud sync.\n' \
+            "$VERSION" "$ARCH" "$INSTALLED_SIZE" \
+            > "$PKG/DEBIAN/control"
+
+          dpkg-deb --root-owner-group --build "$PKG" \
+            "stock-manager_${VERSION}_${ARCH}.deb"
+
+      - name: Upload Linux .deb to release
         uses: softprops/action-gh-release@v2
         with:
-          files: src/stockmanager-linux-x64.zip
+          files: src/stock-manager_${{ steps.ver.outputs.version }}_amd64.deb
 
   # ── Windows ──────────────────────────────────────────────────
   release-windows:

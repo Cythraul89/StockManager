@@ -93,7 +93,6 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       if (!mounted) return;
       await ref.read(stockActionsProvider).syncDividends(
             stock.id,
-            stock.currency,
             stock.isin,
             fetched,
             txs,
@@ -987,6 +986,19 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
                   // as target prices above); currency label matches the result.
                   CurrencyFormatter.format(
                       conv(data.trailingAnnualDividendRate!), currency),
+                ),
+              if ((data.trailingAnnualDividendRate?.isPositive ?? false) &&
+                  currentPrice != null &&
+                  currentPrice.isPositive &&
+                  pricesInStockCurrency)
+                _kv(
+                  context,
+                  'Trailing yield',
+                  '${(conv(data.trailingAnnualDividendRate!).toRational() /
+                          currentPrice.toRational() *
+                          Decimal.fromInt(100).toRational())
+                      .toDecimal(scaleOnInfinitePrecision: 2)
+                      .toStringFixed(2)}%',
                 ),
               if (data.fiveYearAvgDividendYield != null)
                 _kv(
