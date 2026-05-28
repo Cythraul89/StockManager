@@ -191,14 +191,14 @@ jobs:
                   f.write(gradle)
               print('Injected release signing config into build.gradle.kts')
 
-      - name: Build signed AAB
+      - name: Build signed APK
         run: |
-          flutter build appbundle --release --build-number=${{ github.run_number }}
+          flutter build apk --release --build-number=${{ github.run_number }}
 
-      - name: Upload AAB to release
+      - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
-          files: src/build/app/outputs/bundle/release/app-release.aab
+          files: src/build/app/outputs/flutter-apk/app-release.apk
 
   # ── Linux ─────────────────────────────────────────────────────
   release-linux:
