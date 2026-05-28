@@ -51,6 +51,7 @@ jobs:
           with open(manifest_path) as f:
               content = f.read()
           for perm in [
+              'android.permission.INTERNET',
               'android.permission.POST_NOTIFICATIONS',
               'android.permission.VIBRATE',
               'android.permission.RECEIVE_BOOT_COMPLETED',
@@ -154,6 +155,22 @@ jobs:
           if not matched:
               print('WARNING: No file_picker build files found in pub cache')
 
+          # WorkManager uses Room internally and instantiates WorkDatabase_Impl
+          # via reflection. R8 strips the no-arg constructor unless we keep it.
+          keep_rules = (
+              '\n# WorkManager — keep Room-generated impl used via reflection\n'
+              '-keep class androidx.work.impl.WorkDatabase_Impl { <init>(); }\n'
+              '-keep class * extends androidx.work.Worker {\n'
+              '    public <init>(android.content.Context,androidx.work.WorkerParameters);\n'
+              '}\n'
+              '-keep class * extends androidx.work.ListenableWorker {\n'
+              '    public <init>(android.content.Context,androidx.work.WorkerParameters);\n'
+              '}\n'
+          )
+          with open('android/app/proguard-rules.pro', 'a') as f:
+              f.write(keep_rules)
+          print('Appended WorkManager ProGuard keep rules')
+
           # Inject release signing config when key.properties exists.
           kp = 'android/key.properties'
           if os.path.exists(kp):
@@ -198,6 +215,8 @@ jobs:
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/build/app/outputs/flutter-apk/app-release.apk
 
   # ── Linux ─────────────────────────────────────────────────────
@@ -275,6 +294,8 @@ jobs:
       - name: Upload Linux .deb to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/stock-manager_${{ steps.ver.outputs.version }}_amd64.deb
 
   # ── Windows ──────────────────────────────────────────────────
@@ -307,6 +328,8 @@ jobs:
       - name: Upload Windows archive to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/stockmanager-windows-x64.zip
 
   # ── macOS ──────────────────────────────────────────────────
@@ -381,4 +404,6 @@ jobs:
       - name: Upload macOS archive to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/stockmanager-macos.zip
