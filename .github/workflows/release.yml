@@ -154,6 +154,22 @@ jobs:
           if not matched:
               print('WARNING: No file_picker build files found in pub cache')
 
+          # WorkManager uses Room internally and instantiates WorkDatabase_Impl
+          # via reflection. R8 strips the no-arg constructor unless we keep it.
+          keep_rules = (
+              '\n# WorkManager — keep Room-generated impl used via reflection\n'
+              '-keep class androidx.work.impl.WorkDatabase_Impl { <init>(); }\n'
+              '-keep class * extends androidx.work.Worker {\n'
+              '    public <init>(android.content.Context,androidx.work.WorkerParameters);\n'
+              '}\n'
+              '-keep class * extends androidx.work.ListenableWorker {\n'
+              '    public <init>(android.content.Context,androidx.work.WorkerParameters);\n'
+              '}\n'
+          )
+          with open('android/app/proguard-rules.pro', 'a') as f:
+              f.write(keep_rules)
+          print('Appended WorkManager ProGuard keep rules')
+
           # Inject release signing config when key.properties exists.
           kp = 'android/key.properties'
           if os.path.exists(kp):
