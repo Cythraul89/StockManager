@@ -208,9 +208,15 @@ jobs:
                   f.write(gradle)
               print('Injected release signing config into build.gradle.kts')
 
+      - name: Compute version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build signed APK
         run: |
-          flutter build apk --release --build-number=${{ github.run_number }}
+          flutter build apk --release \
+            --build-name="${{ steps.ver.outputs.version }}" \
+            --build-number=${{ github.run_number }}
 
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
