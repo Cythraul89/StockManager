@@ -198,6 +198,8 @@ jobs:
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/build/app/outputs/flutter-apk/app-release.apk
 
   # ── Linux ─────────────────────────────────────────────────────
@@ -275,6 +277,8 @@ jobs:
       - name: Upload Linux .deb to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/stock-manager_${{ steps.ver.outputs.version }}_amd64.deb
 
   # ── Windows ──────────────────────────────────────────────────
@@ -307,6 +311,8 @@ jobs:
       - name: Upload Windows archive to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/stockmanager-windows-x64.zip
 
   # ── macOS ──────────────────────────────────────────────────
@@ -381,4 +387,6 @@ jobs:
       - name: Upload macOS archive to release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: false
+          make_latest: true
           files: src/stockmanager-macos.zip
