@@ -51,6 +51,7 @@ jobs:
           with open(manifest_path) as f:
               content = f.read()
           for perm in [
+              'android.permission.INTERNET',
               'android.permission.POST_NOTIFICATIONS',
               'android.permission.VIBRATE',
               'android.permission.RECEIVE_BOOT_COMPLETED',
