@@ -10,6 +10,8 @@ import '../../core/models/dividend.dart';
 import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
+import '../../core/models/stock_split.dart';
+import '../../core/models/transaction.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 
@@ -76,6 +78,149 @@ class StockSummaryItem {
   // True when a required exchange rate is missing (price or portfolio conversion).
   final bool missingRate;
 }
+
+// ── Portfolio History ──────────────────────────────────────────────────────
+
+class PortfolioHistoryPoint {
+  const PortfolioHistoryPoint({
+    required this.year,
+    required this.investedCapital,
+    required this.realisedPnl,
+    required this.dividends,
+    this.totalValue,
+    required this.currency,
+  });
+
+  final int year;
+  // Cost basis of open positions at year-end in preferred currency.
+  final Decimal investedCapital;
+  // Cumulative realized P&L up to year-end in preferred currency.
+  final Decimal realisedPnl;
+  // Cumulative net dividends received up to year-end in preferred currency.
+  final Decimal dividends;
+  // Non-null only for the current year — historical prices are not stored.
+  final Decimal? totalValue;
+  final String currency;
+}
+
+final portfolioHistoryProvider =
+    FutureProvider<List<PortfolioHistoryPoint>>((ref) async {
+  final stocks = await ref.watch(stocksStreamProvider.future);
+  final settings = await ref.watch(settingsProvider.future);
+  final rates = ref.watch(exchangeRatesProvider).value ?? [];
+  final quotes = ref.watch(priceQuotesProvider);
+  final preferred = settings.preferredCurrency;
+
+  if (stocks.isEmpty) return [];
+
+  // Collect per-stock data and find earliest transaction date.
+  final stockData = <({
+    Stock stock,
+    List<StockTransaction> txs,
+    List<StockSplit> splits,
+    List<Dividend> dividends,
+  })>[];
+  DateTime? earliest;
+
+  for (final stock in stocks) {
+    final txs =
+        ref.watch(transactionsByStockProvider(stock.id)).value ?? [];
+    final splits =
+        ref.watch(splitsByStockProvider(stock.id)).value ?? [];
+    final dividends =
+        ref.watch(dividendsByStockProvider(stock.id)).value ?? [];
+    if (txs.isEmpty) continue;
+    final first =
+        txs.map((t) => t.executedAt).reduce((a, b) => a.isBefore(b) ? a : b);
+    if (earliest == null || first.isBefore(earliest)) earliest = first;
+    stockData.add((
+      stock: stock,
+      txs: txs,
+      splits: splits,
+      dividends: dividends,
+    ));
+  }
+
+  if (earliest == null || stockData.isEmpty) return [];
+
+  final currentYear = DateTime.now().year;
+  final startYear = earliest.year;
+  final points = <PortfolioHistoryPoint>[];
+
+  for (int year = startYear; year <= currentYear; year++) {
+    final yearEnd = DateTime(year, 12, 31, 23, 59, 59);
+    final isCurrentYear = year == currentYear;
+
+    Decimal investedCapital = Decimal.zero;
+    Decimal realisedPnl = Decimal.zero;
+    Decimal dividendTotal = Decimal.zero;
+    Decimal totalValue = Decimal.zero;
+
+    for (final d in stockData) {
+      final txsUpTo =
+          d.txs.where((tx) => !tx.executedAt.isAfter(yearEnd)).toList();
+      if (txsUpTo.isEmpty) continue;
+
+      // Only splits that occurred up to yearEnd apply to this snapshot.
+      final splitsUpTo =
+          d.splits.where((s) => !s.date.isAfter(yearEnd)).toList();
+
+      final pos = PortfolioCalculator.calculate(txsUpTo, splitsUpTo);
+      final pnl = PnlCalculator.calculate(
+        transactions: txsUpTo,
+        splits: splitsUpTo,
+        currentPrice: Decimal.zero,
+      );
+      final divs = d.dividends
+          .where((dv) =>
+              dv.type == DividendType.paid &&
+              dv.confirmed &&
+              !dv.date.isAfter(yearEnd))
+          .fold(Decimal.zero, (sum, dv) => sum + dv.netAmount);
+
+      final rate = ExchangeRate.find(rates, d.stock.currency, preferred);
+      investedCapital =
+          investedCapital + (rate?.convert(pos.totalInvested) ?? pos.totalInvested);
+      realisedPnl =
+          realisedPnl + (rate?.convert(pnl.realisedPnl) ?? pnl.realisedPnl);
+      dividendTotal =
+          dividendTotal + (rate?.convert(divs) ?? divs);
+
+      if (isCurrentYear) {
+        final quote = quotes[d.stock.id];
+        if (quote != null) {
+          final priceAdjRate =
+              ExchangeRate.find(rates, quote.currency, d.stock.currency);
+          final currentPrice =
+              (quote.currency != d.stock.currency && priceAdjRate != null)
+                  ? priceAdjRate.convert(quote.price)
+                  : quote.price;
+          final val = pos.sharesHeld * currentPrice;
+          totalValue =
+              totalValue + (rate?.convert(val) ?? val);
+        }
+      }
+    }
+
+    // Skip years with no activity.
+    if (investedCapital == Decimal.zero &&
+        realisedPnl == Decimal.zero &&
+        dividendTotal == Decimal.zero) continue;
+
+    points.add(PortfolioHistoryPoint(
+      year: year,
+      investedCapital: investedCapital,
+      realisedPnl: realisedPnl,
+      dividends: dividendTotal,
+      totalValue: isCurrentYear ? totalValue : null,
+      currency: preferred,
+    ));
+  }
+
+  return points;
+});
+
+// ── Portfolio Summary ──────────────────────────────────────────────────────
 
 final portfolioSummaryProvider =
     FutureProvider<PortfolioSummary>((ref) async {
