@@ -260,7 +260,20 @@ jobs:
                   '    }' + nl
               )
               gradle = signing_block + gradle
-              gradle = gradle.replace('    buildTypes {', signing_config + '    buildTypes {', 1)
+              # Inject signingConfigs block and a debug buildType override in one pass.
+              # flutter build apk --debug uses the debug buildType, which has its own
+              # implicit debug key — we must explicitly override it too, otherwise the
+              # debug APK is still signed with a per-runner ephemeral debug key.
+              debug_block = (
+                  nl + '        debug {' + nl +
+                  '            signingConfig = signingConfigs.getByName("release")' + nl +
+                  '        }'
+              )
+              gradle = gradle.replace(
+                  '    buildTypes {',
+                  signing_config + '    buildTypes {' + debug_block,
+                  1,
+              )
               gradle = gradle.replace(
                   'signingConfig = signingConfigs.getByName("debug")',
                   'signingConfig = signingConfigs.getByName("release")',
