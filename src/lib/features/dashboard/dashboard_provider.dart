@@ -208,7 +208,9 @@ final portfolioHistoryProvider =
     // Skip years with no activity.
     if (investedCapital == Decimal.zero &&
         realisedPnl == Decimal.zero &&
-        dividendTotal == Decimal.zero) continue;
+        dividendTotal == Decimal.zero) {
+      continue;
+    }
 
     points.add(PortfolioHistoryPoint(
       year: year,
