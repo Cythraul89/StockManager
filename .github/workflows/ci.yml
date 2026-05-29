@@ -74,6 +74,22 @@ jobs:
       - name: Scaffold Android platform
         run: flutter create --platforms=android .
 
+      - name: Write release keystore and key.properties
+        if: ${{ env.KEYSTORE_B64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > android/release.keystore
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=../release.keystore
+          EOF
+
       - name: Patch AndroidManifest (permissions, WorkManager)
         shell: python3 {0}
         run: |
@@ -216,6 +232,43 @@ jobs:
           with open('android/app/proguard-rules.pro', 'a') as f:
               f.write(keep_rules)
           print('Appended WorkManager ProGuard keep rules')
+
+          # Inject release signing config when key.properties exists.
+          kp = 'android/key.properties'
+          if os.path.exists(kp):
+              app_gradle = 'android/app/build.gradle.kts'
+              with open(app_gradle) as f:
+                  gradle = f.read()
+              nl = '\n'
+              signing_block = (
+                  'import java.util.Properties' + nl +
+                  'import java.io.FileInputStream' + nl + nl +
+                  'val keystoreProps = Properties().apply {' + nl +
+                  '    val f = rootProject.file("key.properties")' + nl +
+                  '    if (f.exists()) load(FileInputStream(f))' + nl +
+                  '}' + nl + nl
+              )
+              signing_config = (
+                  nl +
+                  '    signingConfigs {' + nl +
+                  '        create("release") {' + nl +
+                  '            keyAlias      = keystoreProps["keyAlias"]      as String' + nl +
+                  '            keyPassword   = keystoreProps["keyPassword"]   as String' + nl +
+                  '            storeFile     = file(keystoreProps["storeFile"] as String)' + nl +
+                  '            storePassword = keystoreProps["storePassword"] as String' + nl +
+                  '        }' + nl +
+                  '    }' + nl
+              )
+              gradle = signing_block + gradle
+              gradle = gradle.replace('    buildTypes {', signing_config + '    buildTypes {', 1)
+              gradle = gradle.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  1,
+              )
+              with open(app_gradle, 'w') as f:
+                  f.write(gradle)
+              print('Injected release signing config into build.gradle.kts')
 
       - name: Build debug APK
         run: |
