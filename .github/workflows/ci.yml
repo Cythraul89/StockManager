@@ -25,7 +25,7 @@ defaults:
 jobs:
   # ── Analyse & test ────────────────────────────────────────────────────────────
   analyze:
-    name: Analyze & Test
+    name: Analyse & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,16 +35,16 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Install pub dependencies
         run: flutter pub get
 
-      - name: Generate code
+      - name: Generate Drift & Riverpod code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Analyze
+      - name: Static analysis (flutter analyze --fatal-infos)
         run: flutter analyze --fatal-infos
 
-      - name: Test
+      - name: Unit tests
         run: flutter test
 
   # ── Android (debug APK) ───────────────────────────────────────────────────────
@@ -65,16 +65,16 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Install pub dependencies
         run: flutter pub get
 
-      - name: Generate code
+      - name: Generate Drift & Riverpod code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Generate Android platform files
+      - name: Scaffold Android platform
         run: flutter create --platforms=android .
 
-      - name: Patch AndroidManifest permissions
+      - name: Patch AndroidManifest (permissions, WorkManager)
         shell: python3 {0}
         run: |
           manifest_path = 'android/app/src/main/AndroidManifest.xml'
@@ -136,7 +136,7 @@ jobs:
           print(content)
           print('=== End AndroidManifest.xml ===\n')
 
-      - name: Patch build.gradle.kts (compileSdk, desugaring)
+      - name: Patch build.gradle.kts (compileSdk 36, desugaring, ProGuard)
         shell: python3 {0}
         run: |
           path = 'android/app/build.gradle.kts'
@@ -239,7 +239,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux build dependencies
+      - name: Install system dependencies (GTK, clang, cmake)
         run: |
           sudo apt-get update -q
           sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libsecret-1-dev dpkg-dev
@@ -249,16 +249,16 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Install pub dependencies
         run: flutter pub get
 
-      - name: Generate code
+      - name: Generate Drift & Riverpod code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Generate Linux platform files
+      - name: Scaffold Linux platform
         run: flutter create --platforms=linux .
 
-      - name: Build Linux
+      - name: Build Linux release bundle
         run: |
           BASE=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
           flutter build linux --release \
@@ -309,7 +309,7 @@ jobs:
 
   # ── Windows ───────────────────────────────────────────────────────────────────
   build-windows:
-    name: Build Windows
+    name: Build Windows (.zip)
     runs-on: windows-latest
     needs: analyze
     steps:
@@ -320,16 +320,16 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Install pub dependencies
         run: flutter pub get
 
-      - name: Generate code
+      - name: Generate Drift & Riverpod code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Generate Windows platform files
+      - name: Scaffold Windows platform
         run: flutter create --platforms=windows .
 
-      - name: Build Windows
+      - name: Build Windows release bundle and zip
         run: |
           $BASE = (Select-String -Path pubspec.yaml -Pattern '^version:').Line `
             -replace 'version:\s*', '' -replace '\+.*', ''
@@ -347,7 +347,7 @@ jobs:
 
   # ── macOS ─────────────────────────────────────────────────────────────────────
   build-macos:
-    name: Build macOS
+    name: Build macOS (.zip)
     runs-on: macos-latest
     needs: analyze
     env:
@@ -360,13 +360,13 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Install pub dependencies
         run: flutter pub get
 
-      - name: Generate code
+      - name: Generate Drift & Riverpod code
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Generate macOS platform files
+      - name: Scaffold macOS platform
         run: flutter create --platforms=macos .
 
       - name: Import signing certificate
@@ -383,14 +383,14 @@ jobs:
           security unlock-keychain -p "" build.keychain
           security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
 
-      - name: Build macOS
+      - name: Build macOS release app
         run: |
           BASE=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
           flutter build macos --release \
             --build-name="${BASE}-dev" \
             --build-number=${{ github.run_number }}
 
-      - name: Re-sign macOS app (ad-hoc, no sandbox)
+      - name: Ad-hoc re-sign (network + file entitlements, no sandbox)
         working-directory: src/build/macos/Build/Products/Release
         run: |
           cat > /tmp/nosandbox.entitlements << 'EOF'
@@ -409,7 +409,7 @@ jobs:
             --entitlements /tmp/nosandbox.entitlements \
             stock_manager.app
 
-      - name: Package macOS app
+      - name: Package .app as zip
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
             build/macos/Build/Products/Release/stock_manager.app \
@@ -434,7 +434,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Resolve dependencies
+      - name: Resolve pub dependencies
         run: flutter pub get
 
       - uses: anchore/sbom-action@v0
