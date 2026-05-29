@@ -17,6 +17,7 @@ import '../../core/models/news_article.dart';
 import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/asset_type.dart';
+import '../../core/models/exchange_rate.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
@@ -349,6 +350,7 @@ class StockActions {
   Future<void> syncDividends(
     String stockId,
     String isin,
+    String stockCurrency,
     List<FetchedDividend> fetched,
     List<StockTransaction> transactions,
     List<StockSplit> splits, {
@@ -359,6 +361,7 @@ class StockActions {
       return;
     }
 
+    final rates = _ref.read(exchangeRatesProvider).value ?? [];
     final taxRate = withholdingTaxRate(isin);
 
     for (final d in fetched) {
@@ -371,6 +374,14 @@ class StockActions {
           PortfolioCalculator.sharesAtDate(transactions, splits, d.date);
       if (sharesHeld <= Decimal.zero) continue;
 
+      // Convert per-share amount into the stock's trading currency so all
+      // figures for this stock are expressed in the same unit.
+      final exchangeRate = ExchangeRate.find(rates, d.currency, stockCurrency);
+      final amountPerShare = exchangeRate != null
+          ? exchangeRate.convert(d.amountPerShare)
+          : d.amountPerShare;
+      final currency = exchangeRate != null ? stockCurrency : d.currency;
+
       final type = d.isPaid ? DividendType.paid : DividendType.expected;
       // Paid auto-fetched dividends need user confirmation; expected do not.
       final needsConfirmation = d.isPaid;
@@ -378,7 +389,7 @@ class StockActions {
       Decimal? totalAmount;
       Decimal? withholdingTax;
       if (d.isPaid) {
-        totalAmount = d.amountPerShare * sharesHeld;
+        totalAmount = amountPerShare * sharesHeld;
         if (taxRate > Decimal.zero) {
           withholdingTax =
               (totalAmount.toRational() * taxRate.toRational())
@@ -391,9 +402,9 @@ class StockActions {
         stockId: stockId,
         type: type.name,
         date: d.date,
-        amountPerShare: d.amountPerShare,
+        amountPerShare: amountPerShare,
         totalAmount: Value(totalAmount),
-        currency: d.currency,
+        currency: currency,
         withholdingTax: Value(withholdingTax),
         source: const Value('auto'),
         confirmed: Value(!needsConfirmation),
