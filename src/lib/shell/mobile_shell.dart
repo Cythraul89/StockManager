@@ -10,7 +10,7 @@ class MobileShell extends StatelessWidget {
     _TabItem(label: 'Dashboard', icon: Icons.dashboard_outlined, path: '/'),
     _TabItem(label: 'Stocks', icon: Icons.show_chart, path: '/stocks'),
     _TabItem(label: 'Dividends', icon: Icons.payments_outlined, path: '/dividends'),
-    _TabItem(label: 'Brokers', icon: Icons.account_balance_outlined, path: '/brokers'),
+    _TabItem(label: 'Analysis', icon: Icons.analytics_outlined, path: '/analysis'),
     _TabItem(label: 'Settings', icon: Icons.settings_outlined, path: '/settings'),
   ];
 

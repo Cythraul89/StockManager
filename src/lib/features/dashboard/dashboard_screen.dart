@@ -6,7 +6,6 @@ import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'dashboard_provider.dart';
 import 'widgets/allocation_chart.dart';
-import 'widgets/portfolio_history_chart.dart';
 import 'widgets/portfolio_summary_card.dart';
 import 'widgets/stock_list_tile.dart';
 
@@ -83,7 +82,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     });
 
     final summaryAsync = ref.watch(portfolioSummaryProvider);
-    final historyAsync = ref.watch(portfolioHistoryProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -108,11 +106,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 16),
               AllocationChart(summary: summary),
               const SizedBox(height: 16),
-              if (historyAsync.value != null &&
-                  historyAsync.value!.isNotEmpty) ...[
-                PortfolioHistoryChart(points: historyAsync.value!),
-                const SizedBox(height: 16),
-              ],
               if (summary.stockItems.isEmpty)
                 const Center(
                   child: Padding(

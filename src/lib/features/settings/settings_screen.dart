@@ -47,6 +47,18 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
             SettingsSection(
+              title: 'Portfolio',
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.account_balance_outlined),
+                  title: const Text('Brokers'),
+                  subtitle: const Text('Manage your broker accounts'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/settings/brokers'),
+                ),
+              ],
+            ),
+            SettingsSection(
               title: 'Market Data',
               children: [
                 ListTile(
