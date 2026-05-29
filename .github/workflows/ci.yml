@@ -223,12 +223,13 @@ jobs:
           flutter build apk --debug \
             --build-name="${BASE}-dev" \
             --build-number=${{ github.run_number }}
-          cp build/app/outputs/flutter-apk/app-debug.apk StockManager-debug-android.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+            "StockManager-${BASE}-dev-android.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: android-debug-apk
-          path: src/StockManager-debug-android.apk
+          name: android-apk
+          path: src/StockManager-*-android.apk
           retention-days: 14
 
   # ── Linux (.deb) ──────────────────────────────────────────────────────────────
@@ -299,12 +300,13 @@ jobs:
             "$DEB_VERSION" "$ARCH" "$INSTALLED_SIZE" \
             > "$PKG/DEBIAN/control"
 
-          dpkg-deb --root-owner-group --build "$PKG" StockManager-linux-amd64.deb
+          dpkg-deb --root-owner-group --build "$PKG" \
+            "StockManager-${BASE}-dev-linux-amd64.deb"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-deb
-          path: src/StockManager-linux-amd64.deb
+          path: src/StockManager-*-linux-amd64.deb
           retention-days: 14
 
   # ── Windows ───────────────────────────────────────────────────────────────────
@@ -337,12 +339,12 @@ jobs:
             --build-name="$BASE-dev" `
             --build-number=${{ github.run_number }}
           Compress-Archive -Path build\windows\x64\runner\Release\* `
-            -DestinationPath StockManager-windows-x64.zip
+            -DestinationPath "StockManager-$BASE-dev-windows-x64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-zip
-          path: src/StockManager-windows-x64.zip
+          path: src/StockManager-*-windows-x64.zip
           retention-days: 14
 
   # ── macOS ─────────────────────────────────────────────────────────────────────
@@ -411,14 +413,15 @@ jobs:
 
       - name: Package .app as zip
         run: |
+          BASE=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
           ditto -c -k --sequesterRsrc --keepParent \
             build/macos/Build/Products/Release/stock_manager.app \
-            StockManager-macos.zip
+            "StockManager-${BASE}-dev-macos.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-zip
-          path: src/StockManager-macos.zip
+          path: src/StockManager-*-macos.zip
           retention-days: 14
 
   # ── SBOM ──────────────────────────────────────────────────────────────────────
