@@ -216,7 +216,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: android-apk
+          name: stockmanager-android-apk
           path: src/StockManager-*-android.apk
           retention-days: 7
 
@@ -291,7 +291,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-deb
+          name: stockmanager-linux-deb
           path: src/StockManager-*-linux-amd64.deb
           retention-days: 7
 
@@ -327,7 +327,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-zip
+          name: stockmanager-windows-zip
           path: src/StockManager-*-windows-x64.zip
           retention-days: 7
 
@@ -407,7 +407,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-zip
+          name: stockmanager-macos-zip
           path: src/StockManager-*-macos.zip
           retention-days: 7
 
