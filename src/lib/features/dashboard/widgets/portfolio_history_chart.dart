@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../dashboard_provider.dart';
 
+const _kForecastYears = 5;
+
 class PortfolioHistoryChart extends StatefulWidget {
   const PortfolioHistoryChart({super.key, required this.points});
 
@@ -15,10 +17,50 @@ class PortfolioHistoryChart extends StatefulWidget {
 }
 
 class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
+  bool _showForecast = false;
+
   static const _colorInvested = Color(0xFF4C7CE5);
   static const _colorGain = Color(0xFF2DB87D);
   static const _colorLoss = Color(0xFFE55C5C);
   static const _colorDividends = Color(0xFFE5A23C);
+
+  // Linear extrapolation of [_kForecastYears] future data points from the
+  // overall trend: slope = (last − first) / yearSpan for each metric.
+  List<PortfolioHistoryPoint> _forecast(List<PortfolioHistoryPoint> historical) {
+    if (historical.length < 2) return [];
+    final first = historical.first;
+    final last = historical.last;
+    final yearSpan = last.year - first.year;
+    if (yearSpan == 0) return [];
+
+    Decimal slope(Decimal end, Decimal start) =>
+        ((end - start).toRational() / Decimal.fromInt(yearSpan).toRational())
+            .toDecimal(scaleOnInfinitePrecision: 10);
+
+    Decimal project(Decimal base, Decimal s, int steps) =>
+        base +
+        (s.toRational() * Decimal.fromInt(steps).toRational())
+            .toDecimal(scaleOnInfinitePrecision: 10);
+
+    final sInvested = slope(last.investedCapital, first.investedCapital);
+    final sPnl = slope(last.realisedPnl, first.realisedPnl);
+    final sDivs = slope(last.dividends, first.dividends);
+
+    return List.generate(_kForecastYears, (i) {
+      final steps = i + 1;
+      final projInvested = project(last.investedCapital, sInvested, steps);
+      return PortfolioHistoryPoint(
+        year: last.year + steps,
+        // Cost basis cannot go negative.
+        investedCapital:
+            projInvested < Decimal.zero ? Decimal.zero : projInvested,
+        realisedPnl: project(last.realisedPnl, sPnl, steps),
+        dividends: project(last.dividends, sDivs, steps),
+        currency: last.currency,
+        isProjected: true,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +68,10 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
 
     final theme = Theme.of(context);
     final currency = widget.points.first.currency;
+    final canForecast = widget.points.length >= 2;
+    final forecast =
+        _showForecast && canForecast ? _forecast(widget.points) : <PortfolioHistoryPoint>[];
+    final allPoints = [...widget.points, ...forecast];
 
     return Card(
       child: Padding(
@@ -33,11 +79,17 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Portfolio History', style: theme.textTheme.titleMedium),
+            Row(
+              children: [
+                Text('Portfolio History', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                if (canForecast) _buildForecastToggle(context),
+              ],
+            ),
             const SizedBox(height: 16),
             SizedBox(
               height: 220,
-              child: _buildChart(context, currency),
+              child: _buildChart(context, allPoints, currency),
             ),
             const SizedBox(height: 12),
             _buildLegend(context),
@@ -48,25 +100,52 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
     );
   }
 
-  Widget _buildChart(BuildContext context, String currency) {
+  Widget _buildForecastToggle(BuildContext context) {
     final theme = Theme.of(context);
-    final points = widget.points;
+    return GestureDetector(
+      onTap: () => setState(() => _showForecast = !_showForecast),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: _showForecast
+            ? BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(6),
+              )
+            : null,
+        child: Text(
+          'Forecast',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: _showForecast
+                ? theme.colorScheme.onPrimaryContainer
+                : theme.colorScheme.onSurfaceVariant,
+            fontWeight:
+                _showForecast ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
 
-    // Determine Y-axis range across all bars.
+  Widget _buildChart(
+    BuildContext context,
+    List<PortfolioHistoryPoint> points,
+    String currency,
+  ) {
+    final theme = Theme.of(context);
+
     double maxY = 0;
     double minY = 0;
     for (final p in points) {
-      final top = p.investedCapital.toDouble();
-      final mid = p.realisedPnl.toDouble();
-      final bot = p.dividends.toDouble();
-      if (top > maxY) maxY = top;
-      if (mid > maxY) maxY = mid;
-      if (bot > maxY) maxY = bot;
-      if (mid < minY) minY = mid;
+      final invested = p.investedCapital.toDouble();
+      final pnl = p.realisedPnl.toDouble();
+      final divs = p.dividends.toDouble();
+      if (invested > maxY) maxY = invested;
+      if (pnl > maxY) maxY = pnl;
+      if (divs > maxY) maxY = divs;
+      if (pnl < minY) minY = pnl;
     }
     maxY *= 1.18;
     minY = minY < 0 ? minY * 1.18 : 0;
-
     if (maxY == 0) maxY = 1;
 
     final barWidth = points.length <= 5
@@ -81,6 +160,7 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
         minY: minY,
         barGroups: List.generate(points.length, (i) {
           final p = points[i];
+          final opacity = p.isProjected ? 0.35 : 1.0;
           final gainColor =
               p.realisedPnl >= Decimal.zero ? _colorGain : _colorLoss;
           return BarChartGroupData(
@@ -88,21 +168,21 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
             barRods: [
               BarChartRodData(
                 toY: p.investedCapital.toDouble(),
-                color: _colorInvested,
+                color: _colorInvested.withValues(alpha: opacity),
                 width: barWidth,
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(3)),
               ),
               BarChartRodData(
                 toY: p.realisedPnl.toDouble(),
-                color: gainColor,
+                color: gainColor.withValues(alpha: opacity),
                 width: barWidth,
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(3)),
               ),
               BarChartRodData(
                 toY: p.dividends.toDouble(),
-                color: _colorDividends,
+                color: _colorDividends.withValues(alpha: opacity),
                 width: barWidth,
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(3)),
@@ -162,12 +242,16 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
                 if (i < 0 || i >= points.length) {
                   return const SizedBox.shrink();
                 }
+                final p = points[i];
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    points[i].year.toString(),
+                    p.year.toString(),
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: p.isProjected
+                          ? theme.colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.5)
+                          : theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 );
@@ -186,11 +270,12 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
               const labels = ['Invested', 'Realised P&L', 'Dividends'];
               final values = [p.investedCapital, p.realisedPnl, p.dividends];
               final colors = [_colorInvested, gainColor, _colorDividends];
+              final prefix = p.isProjected ? '~' : '';
               final extra = rodIndex == 0 && p.totalValue != null
                   ? '\nValue: ${CurrencyFormatter.compact(p.totalValue!, currency)}'
                   : '';
               return BarTooltipItem(
-                '${p.year}\n',
+                '${p.year}${p.isProjected ? ' (forecast)' : ''}\n',
                 TextStyle(
                   color: theme.colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
@@ -199,7 +284,7 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
                 children: [
                   TextSpan(
                     text:
-                        '${labels[rodIndex]}: ${CurrencyFormatter.compact(values[rodIndex], currency)}$extra',
+                        '${labels[rodIndex]}: $prefix${CurrencyFormatter.compact(values[rodIndex], currency)}$extra',
                     style: TextStyle(
                       color: colors[rodIndex],
                       fontWeight: FontWeight.w500,
@@ -212,7 +297,7 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
           ),
         ),
       ),
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 250),
     );
   }
 
@@ -222,14 +307,20 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
       spacing: 16,
       runSpacing: 4,
       children: [
-        _legendItem(theme, _colorInvested, 'Invested'),
-        _legendItem(theme, _colorGain, 'Realised P&L'),
-        _legendItem(theme, _colorDividends, 'Dividends'),
+        _legendDot(theme, _colorInvested, 'Invested'),
+        _legendDot(theme, _colorGain, 'Realised P&L'),
+        _legendDot(theme, _colorDividends, 'Dividends'),
+        if (_showForecast)
+          _legendDot(
+            theme,
+            theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            'Forecast (trend)',
+          ),
       ],
     );
   }
 
-  Widget _legendItem(ThemeData theme, Color color, String label) {
+  Widget _legendDot(ThemeData theme, Color color, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

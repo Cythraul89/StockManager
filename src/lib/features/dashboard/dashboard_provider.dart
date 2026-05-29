@@ -89,6 +89,7 @@ class PortfolioHistoryPoint {
     required this.dividends,
     this.totalValue,
     required this.currency,
+    this.isProjected = false,
   });
 
   final int year;
@@ -101,6 +102,8 @@ class PortfolioHistoryPoint {
   // Non-null only for the current year — historical prices are not stored.
   final Decimal? totalValue;
   final String currency;
+  // True for extrapolated future data points.
+  final bool isProjected;
 }
 
 final portfolioHistoryProvider =
