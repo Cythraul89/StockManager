@@ -6,7 +6,9 @@ import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
 import '../../core/models/app_settings.dart';
 import '../../core/models/broker.dart';
+import '../../core/models/chart_range.dart';
 import '../../core/models/dividend.dart';
+import '../../core/models/price_point.dart';
 import '../../core/models/exchange_rate.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
@@ -146,6 +148,15 @@ final portfolioHistoryProvider =
 
   if (earliest == null || stockData.isEmpty) return [];
 
+  // Fetch max-range price history (monthly granularity) for every stock so we
+  // can compute historical portfolio values at each year-end. Riverpod caches
+  // these for 5 minutes, so the requests are shared with the stock-detail chart.
+  final priceHistories = <String, List<PricePoint>>{};
+  for (final d in stockData) {
+    priceHistories[d.stock.id] = await ref.watch(
+        priceHistoryProvider((d.stock.id, ChartRange.max)).future);
+  }
+
   final currentYear = DateTime.now().year;
   final startYear = earliest.year;
   final points = <PortfolioHistoryPoint>[];
@@ -158,6 +169,7 @@ final portfolioHistoryProvider =
     Decimal realisedPnl = Decimal.zero;
     Decimal dividendTotal = Decimal.zero;
     Decimal totalValue = Decimal.zero;
+    bool hasMarketValue = false;
 
     for (final d in stockData) {
       final txsUpTo =
@@ -189,7 +201,10 @@ final portfolioHistoryProvider =
       dividendTotal =
           dividendTotal + (rate?.convert(divs) ?? divs);
 
+      if (pos.sharesHeld <= Decimal.zero) continue;
+
       if (isCurrentYear) {
+        // Use live quote for the current year.
         final quote = quotes[d.stock.id];
         if (quote != null) {
           final priceAdjRate =
@@ -199,8 +214,26 @@ final portfolioHistoryProvider =
                   ? priceAdjRate.convert(quote.price)
                   : quote.price;
           final val = pos.sharesHeld * currentPrice;
-          totalValue =
-              totalValue + (rate?.convert(val) ?? val);
+          totalValue = totalValue + (rate?.convert(val) ?? val);
+          hasMarketValue = true;
+        }
+      } else {
+        // Use the last price point at or before Dec 31 of this year from the
+        // already-fetched max-range history (monthly granularity).
+        final history = priceHistories[d.stock.id] ?? const <PricePoint>[];
+        final pt = history
+            .where((p) => !p.date.isAfter(yearEnd))
+            .lastOrNull;
+        if (pt != null) {
+          final priceAdjRate =
+              ExchangeRate.find(rates, pt.currency, d.stock.currency);
+          final adjustedPrice =
+              (pt.currency != d.stock.currency && priceAdjRate != null)
+                  ? priceAdjRate.convert(pt.price)
+                  : pt.price;
+          final val = pos.sharesHeld * adjustedPrice;
+          totalValue = totalValue + (rate?.convert(val) ?? val);
+          hasMarketValue = true;
         }
       }
     }
@@ -217,7 +250,7 @@ final portfolioHistoryProvider =
       investedCapital: investedCapital,
       realisedPnl: realisedPnl,
       dividends: dividendTotal,
-      totalValue: isCurrentYear ? totalValue : null,
+      totalValue: hasMarketValue ? totalValue : null,
       currency: preferred,
     ));
   }
