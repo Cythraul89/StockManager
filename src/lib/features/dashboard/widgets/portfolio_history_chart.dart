@@ -47,14 +47,31 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
     final sPnl      = slope(last.realisedPnl,     first.realisedPnl);
     final sDivs     = slope(last.dividends,        first.dividends);
 
+    // Maintain the current unrealised-to-invested ratio in each forecast step
+    // so that projected portfolio value (totalValue) grows with invested capital.
+    // Without historical prices we can't compute a per-year rate, so we use the
+    // current year's ratio as the best available approximation.
+    final currentUnrealised = last.totalValue != null
+        ? last.totalValue! - last.investedCapital
+        : Decimal.zero;
+    final unrealisedRatio = last.investedCapital > Decimal.zero
+        ? currentUnrealised.toRational() / last.investedCapital.toRational()
+        : Decimal.zero.toRational();
+
     return List.generate(_kForecastYears, (i) {
-      final steps        = i + 1;
-      final projInvested = project(last.investedCapital, sInvested, steps);
+      final steps           = i + 1;
+      final projInvested    = project(last.investedCapital, sInvested, steps);
+      final clampedInvested =
+          projInvested < Decimal.zero ? Decimal.zero : projInvested;
+      final projTotalValue  = clampedInvested +
+          (clampedInvested.toRational() * unrealisedRatio)
+              .toDecimal(scaleOnInfinitePrecision: 10);
       return PortfolioHistoryPoint(
         year:            last.year + steps,
-        investedCapital: projInvested < Decimal.zero ? Decimal.zero : projInvested,
+        investedCapital: clampedInvested,
         realisedPnl:     project(last.realisedPnl, sPnl,  steps),
         dividends:       project(last.dividends,   sDivs, steps),
+        totalValue:      projTotalValue,
         currency:        last.currency,
         isProjected:     true,
       );
