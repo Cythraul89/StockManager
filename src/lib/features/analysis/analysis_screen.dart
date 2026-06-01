@@ -10,6 +10,40 @@ import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'analysis_provider.dart';
 
+// Aggregates analyst buy/strong_buy recommendations for currently-held stocks.
+// Moving this into a Provider instead of doing ref.watch in a build loop avoids
+// unpredictable subscription churn when the items list changes between frames.
+final _topBuysProvider =
+    Provider<List<({StockSummaryItem item, AnalystData analyst})>>((ref) {
+  final items = ref.watch(portfolioSummaryProvider).value?.stockItems ?? [];
+  final buys = <({StockSummaryItem item, AnalystData analyst})>[];
+  for (final item in items) {
+    if (!item.sharesHeld.isPositive) continue;
+    final analyst = ref.watch(analystDataProvider(item.stock.id)).value;
+    if (analyst == null) continue;
+    final key = analyst.recommendationKey?.toLowerCase();
+    if (key == 'strong_buy' || key == 'buy') {
+      buys.add((item: item, analyst: analyst));
+    }
+  }
+  buys.sort((a, b) {
+    final aStrong = a.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
+    final bStrong = b.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
+    if (aStrong != bStrong) return aStrong ? -1 : 1;
+    final aUpside = a.item.hasPrice && a.item.currentPrice.isPositive
+        ? a.analyst.targetMeanPrice.percentChangeFrom(a.item.currentPrice)
+        : null;
+    final bUpside = b.item.hasPrice && b.item.currentPrice.isPositive
+        ? b.analyst.targetMeanPrice.percentChangeFrom(b.item.currentPrice)
+        : null;
+    if (aUpside == null && bUpside == null) return 0;
+    if (aUpside == null) return 1;
+    if (bUpside == null) return -1;
+    return bUpside.compareTo(aUpside);
+  });
+  return buys;
+});
+
 const _predefinedPrompts = [
   'Summarise my portfolio performance and highlight the best and worst performers.',
   'Identify any concentration risks or sectors where I am overexposed.',
@@ -40,7 +74,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     await ref.read(analysisProvider.notifier).analyse(query.trim());
-    _scrollToBottom();
+    if (mounted) _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -243,41 +277,10 @@ class _TopBuysSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(portfolioSummaryProvider).value?.stockItems ?? [];
-    if (items.isEmpty) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-
-    // Collect buy/strong_buy from currently-held positions only.
-    final buys = <({StockSummaryItem item, AnalystData analyst})>[];
-    for (final item in items) {
-      if (!item.sharesHeld.isPositive) continue;
-      final analyst = ref.watch(analystDataProvider(item.stock.id)).value;
-      if (analyst == null) continue;
-      final key = analyst.recommendationKey?.toLowerCase();
-      if (key == 'strong_buy' || key == 'buy') {
-        buys.add((item: item, analyst: analyst));
-      }
-    }
-
+    final buys = ref.watch(_topBuysProvider);
     if (buys.isEmpty) return const SizedBox.shrink();
 
-    // Strong buy first; within each tier sort by upside descending.
-    buys.sort((a, b) {
-      final aStrong = a.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
-      final bStrong = b.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
-      if (aStrong != bStrong) return aStrong ? -1 : 1;
-      final aUpside = a.item.hasPrice && a.item.currentPrice.isPositive
-          ? a.analyst.targetMeanPrice.percentChangeFrom(a.item.currentPrice)
-          : null;
-      final bUpside = b.item.hasPrice && b.item.currentPrice.isPositive
-          ? b.analyst.targetMeanPrice.percentChangeFrom(b.item.currentPrice)
-          : null;
-      if (aUpside == null && bUpside == null) return 0;
-      if (aUpside == null) return 1;
-      if (bUpside == null) return -1;
-      return bUpside.compareTo(aUpside);
-    });
+    final theme = Theme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

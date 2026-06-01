@@ -58,12 +58,13 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
       final clampedInvested =
           projInvested < Decimal.zero ? Decimal.zero : projInvested;
       final projUnrealised  = project(lastUnrealised, sUnrealised, steps);
+      final projTotal       = clampedInvested + projUnrealised;
       return PortfolioHistoryPoint(
         year:            last.year + steps,
         investedCapital: clampedInvested,
         realisedPnl:     project(last.realisedPnl, sPnl,  steps),
         dividends:       project(last.dividends,   sDivs, steps),
-        totalValue:      clampedInvested + projUnrealised,
+        totalValue:      projTotal < Decimal.zero ? Decimal.zero : projTotal,
         currency:        last.currency,
         isProjected:     true,
       );
@@ -185,6 +186,7 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
       if (y3 > maxY) maxY = y3;
       if (y3 < minY) minY = y3;
       if (y2 < minY) minY = y2;
+      if (y1 < minY) minY = y1;
     }
 
     maxY *= 1.18;

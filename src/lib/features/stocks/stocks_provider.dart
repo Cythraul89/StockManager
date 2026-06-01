@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -124,7 +125,8 @@ final analystDataProvider =
   // Keep the result alive for 10 minutes so navigating away and back does not
   // trigger a full Yahoo Finance round-trip on every visit.
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 10), link.close);
+  final keepAliveTimer = Timer(const Duration(minutes: 10), link.close);
+  ref.onDispose(keepAliveTimer.cancel);
 
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
@@ -152,7 +154,8 @@ final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
   // Cache results for 5 minutes so navigating away and back does not trigger
   // a full refetch, especially important for long-range (5Y / MAX) requests.
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 5), link.close);
+  final keepAliveTimer = Timer(const Duration(minutes: 5), link.close);
+  ref.onDispose(keepAliveTimer.cancel);
 
   final stockAsync = ref.watch(stockByIdProvider(stockId));
   final stock = stockAsync.value;
@@ -170,7 +173,8 @@ final newsProvider =
   if (stock == null) return [];
 
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 30), link.close);
+  final keepAliveTimer = Timer(const Duration(minutes: 30), link.close);
+  ref.onDispose(keepAliveTimer.cancel);
 
   final settings = await ref.watch(settingsProvider.future);
   String? finnhubKey;
@@ -356,10 +360,7 @@ class StockActions {
     List<StockSplit> splits, {
     bool isAccumulating = false,
   }) async {
-    if (isAccumulating) {
-      _notifyChange();
-      return;
-    }
+    if (isAccumulating) return;
 
     final rates = _ref.read(exchangeRatesProvider).value ?? [];
     final taxRate = withholdingTaxRate(isin);
@@ -495,23 +496,28 @@ final stockActionsProvider = Provider<StockActions>((ref) {
 Broker _brokerFromRow(BrokerRow r) =>
     Broker(id: r.id, name: r.name, notes: r.notes);
 
-Stock _stockFromRow(StockRow r) => Stock(
-      id: r.id,
-      brokerId: r.brokerId,
-      isin: r.isin,
-      symbol: r.symbol,
-      name: r.name,
-      exchange: r.exchange,
-      currency: r.currency,
-      dripEnabled: r.dripEnabled,
-      assetType: AssetType.fromDb(r.assetType),
-      trailingStopPct: r.trailingStopPct != null
-          ? Decimal.tryParse(r.trailingStopPct!)
-          : null,
-      trailingStopHighWater: r.trailingStopHighWater != null
-          ? Decimal.tryParse(r.trailingStopHighWater!)
-          : null,
-    );
+Stock _stockFromRow(StockRow r) {
+  Decimal? _tryDec(String? v, String field) {
+    if (v == null) return null;
+    final d = Decimal.tryParse(v);
+    if (d == null) debugPrint('_stockFromRow[${r.id}]: malformed $field: $v');
+    return d;
+  }
+
+  return Stock(
+    id: r.id,
+    brokerId: r.brokerId,
+    isin: r.isin,
+    symbol: r.symbol,
+    name: r.name,
+    exchange: r.exchange,
+    currency: r.currency,
+    dripEnabled: r.dripEnabled,
+    assetType: AssetType.fromDb(r.assetType),
+    trailingStopPct: _tryDec(r.trailingStopPct, 'trailingStopPct'),
+    trailingStopHighWater: _tryDec(r.trailingStopHighWater, 'trailingStopHighWater'),
+  );
+}
 
 StockTransaction _txFromRow(TransactionRow r) => StockTransaction(
       id: r.id,

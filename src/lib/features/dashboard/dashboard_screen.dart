@@ -19,6 +19,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _hideClosedPositions = false;
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -27,7 +28,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _refreshPrices() async {
-    await Future.wait([_fetchQuotes(), _fetchRates()]);
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    try {
+      await Future.wait([_fetchQuotes(), _fetchRates()]);
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   Future<void> _fetchQuotes() async {

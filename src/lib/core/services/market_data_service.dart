@@ -79,8 +79,8 @@ class MarketDataService {
   }
 
   /// Performs the actual Yahoo Finance GDPR consent flow + crumb fetch.
-  /// Errors are swallowed and logged; callers proceed and will fail gracefully
-  /// on the subsequent API call (where 401/403 triggers session invalidation).
+  /// Throws if the crumb cannot be obtained so _ensureSession can propagate
+  /// the failure to waiting callers via completer.completeError.
   Future<void> _doInitSession() async {
     try {
       // name→value map built from every Set-Cookie header we encounter.
@@ -213,9 +213,12 @@ class MarketDataService {
         _crumb = crumb;
         _sessionInitAt = DateTime.now();
         debugPrint('MarketDataService: session established');
+      } else {
+        throw Exception('Yahoo Finance crumb not obtained (value="$crumb")');
       }
     } catch (e) {
       debugPrint('MarketDataService: Yahoo session init failed: $e');
+      rethrow;
     }
   }
 
@@ -292,8 +295,8 @@ class MarketDataService {
   /// Fetches analyst consensus, 52-week range, valuation, and recommendation
   /// breakdown from Yahoo Finance quoteSummary in a single request.
   Future<AnalystData?> fetchAnalystData(String symbol) async {
-    await _ensureSession();
     try {
+      await _ensureSession();
       final response = await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
         queryParameters: _quoteSummaryParams({
@@ -364,7 +367,7 @@ class MarketDataService {
         targetLowPrice: raw(fd, 'targetLowPrice'),
         targetHighPrice: raw(fd, 'targetHighPrice'),
         recommendationKey: recKey?.isNotEmpty == true ? recKey : null,
-        numberOfAnalysts: numRaw is int ? numRaw : null,
+        numberOfAnalysts: numRaw is num ? numRaw.toInt() : null,
         financialCurrency: currency,
         // Consensus breakdown
         strongBuyCount: trend?['strongBuy'] as int?,
@@ -873,6 +876,7 @@ class MarketDataService {
       if (result == null) { return null; }
 
       final rawCurrency = (result['meta']?['currency'] as String?) ?? '';
+      if (rawCurrency.isEmpty) return null;
       final quotes = result['indicators']?['quote'] as List?;
       final closes =
           (quotes?.firstOrNull as Map<String, dynamic>?)?['close'] as List?;

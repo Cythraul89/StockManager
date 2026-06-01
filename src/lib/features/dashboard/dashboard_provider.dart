@@ -149,12 +149,15 @@ final portfolioHistoryProvider =
   if (earliest == null || stockData.isEmpty) return [];
 
   // Fetch max-range price history (monthly granularity) for every stock so we
-  // can compute historical portfolio values at each year-end. Riverpod caches
-  // these for 5 minutes, so the requests are shared with the stock-detail chart.
+  // can compute historical portfolio values at each year-end. Use ref.read so
+  // each history result arriving does not re-trigger this entire provider.
+  // Riverpod caches these for 5 minutes, shared with the stock-detail chart.
   final priceHistories = <String, List<PricePoint>>{};
-  for (final d in stockData) {
-    priceHistories[d.stock.id] = await ref.watch(
-        priceHistoryProvider((d.stock.id, ChartRange.max)).future);
+  final historyFutures = stockData.map(
+      (d) => ref.read(priceHistoryProvider((d.stock.id, ChartRange.max)).future));
+  final histories = await Future.wait(historyFutures);
+  for (var i = 0; i < stockData.length; i++) {
+    priceHistories[stockData[i].stock.id] = histories[i];
   }
 
   final currentYear = DateTime.now().year;
