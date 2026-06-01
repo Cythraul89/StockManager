@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/price_quote.dart';
+import '../../core/utils/decimal_math.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 import 'dashboard_provider.dart';
@@ -17,6 +18,8 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  bool _hideClosedPositions = false;
+
   @override
   void initState() {
     super.initState();
@@ -88,6 +91,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         title: const Text('Dashboard'),
         actions: [
           IconButton(
+            icon: Icon(
+              _hideClosedPositions
+                  ? Icons.visibility_off
+                  : Icons.visibility_outlined,
+            ),
+            tooltip: _hideClosedPositions
+                ? 'Show closed positions'
+                : 'Hide closed positions',
+            onPressed: () =>
+                setState(() => _hideClosedPositions = !_hideClosedPositions),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh prices',
             onPressed: _refreshPrices,
@@ -97,43 +112,80 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       body: summaryAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (summary) => RefreshIndicator(
-          onRefresh: _refreshPrices,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              PortfolioSummaryCard(summary: summary),
-              const SizedBox(height: 16),
-              AllocationChart(summary: summary),
-              const SizedBox(height: 16),
-              if (summary.stockItems.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Text('No stocks yet. Add one to get started.'),
-                  ),
-                )
-              else ...[
-                Text(
-                  'Holdings',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
+        data: (summary) {
+          final allItems = summary.stockItems;
+          final displayItems = _hideClosedPositions
+              ? allItems.where((i) => i.sharesHeld.isPositive).toList()
+              : allItems;
+          final hiddenCount = allItems.length - displayItems.length;
+
+          return RefreshIndicator(
+            onRefresh: _refreshPrices,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                PortfolioSummaryCard(summary: summary),
+                const SizedBox(height: 16),
+                AllocationChart(summary: summary),
+                const SizedBox(height: 16),
+                if (allItems.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text('No stocks yet. Add one to get started.'),
+                    ),
+                  )
+                else ...[
+                  Row(
                     children: [
-                      for (int i = 0; i < summary.stockItems.length; i++) ...[
-                        if (i > 0) const Divider(height: 1),
-                        StockListTile(item: summary.stockItems[i]),
+                      Text(
+                        'Holdings',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (hiddenCount > 0) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '($hiddenCount closed hidden)',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
                       ],
                     ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  if (displayItems.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text(
+                          'All positions are closed.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    )
+                  else
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          for (int i = 0; i < displayItems.length; i++) ...[
+                            if (i > 0) const Divider(height: 1),
+                            StockListTile(item: displayItems[i]),
+                          ],
+                        ],
+                      ),
+                    ),
+                ],
               ],
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
