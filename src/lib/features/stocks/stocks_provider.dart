@@ -497,7 +497,7 @@ Broker _brokerFromRow(BrokerRow r) =>
     Broker(id: r.id, name: r.name, notes: r.notes);
 
 Stock _stockFromRow(StockRow r) {
-  Decimal? _tryDec(String? v, String field) {
+  Decimal? tryDec(String? v, String field) {
     if (v == null) return null;
     final d = Decimal.tryParse(v);
     if (d == null) debugPrint('_stockFromRow[${r.id}]: malformed $field: $v');
@@ -514,8 +514,8 @@ Stock _stockFromRow(StockRow r) {
     currency: r.currency,
     dripEnabled: r.dripEnabled,
     assetType: AssetType.fromDb(r.assetType),
-    trailingStopPct: _tryDec(r.trailingStopPct, 'trailingStopPct'),
-    trailingStopHighWater: _tryDec(r.trailingStopHighWater, 'trailingStopHighWater'),
+    trailingStopPct: tryDec(r.trailingStopPct, 'trailingStopPct'),
+    trailingStopHighWater: tryDec(r.trailingStopHighWater, 'trailingStopHighWater'),
   );
 }
 
