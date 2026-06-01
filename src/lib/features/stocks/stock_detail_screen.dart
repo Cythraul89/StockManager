@@ -864,8 +864,13 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
         (data.strongSellCount ?? 0);
     final hasConsensus = totalConsensus > 0;
 
-    final hasValuation =
-        data.trailingPE != null || data.forwardPE != null || epsConverted != null;
+    final hasValuation = data.trailingPE != null ||
+        data.forwardPE != null ||
+        epsConverted != null ||
+        data.evToEbitda != null ||
+        data.priceToBook != null ||
+        data.pegRatio != null ||
+        data.freeCashFlowYield != null;
     final has52Week = fiftyTwoLow != null && fiftyTwoHigh != null;
 
     return Card(
@@ -972,6 +977,24 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               if (epsConverted != null)
                 _kv(context, 'EPS (TTM)',
                     CurrencyFormatter.format(epsConverted, currency)),
+              if (data.evToEbitda != null)
+                _kv(context, 'EV/EBITDA',
+                    '${data.evToEbitda!.toStringFixed(1)}×'),
+              if (data.priceToBook != null)
+                _kv(context, 'P/B ratio',
+                    '${data.priceToBook!.toStringFixed(2)}×'),
+              if (data.pegRatio != null)
+                _kv(context, 'PEG ratio',
+                    data.pegRatio!.toStringFixed(2)),
+              if (data.freeCashFlowYield != null)
+                _kv(
+                  context,
+                  'FCF yield',
+                  '${(data.freeCashFlowYield!.toRational() *
+                          Decimal.fromInt(100).toRational())
+                      .toDecimal(scaleOnInfinitePrecision: 2)
+                      .toStringFixed(2)}%',
+                ),
             ],
 
             // ── Dividends ──────────────────────────────────────────────────
