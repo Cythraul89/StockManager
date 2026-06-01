@@ -183,7 +183,7 @@ Features confirmed for a future version. Not in scope for the initial release.
 - Upside / downside percentage relative to the current price is shown next to the mean target, colour-coded green (upside) or red (downside).
 - A **consensus breakdown bar** shows the proportion of Strong Buy / Buy / Hold / Sell / Strong Sell ratings visually.
 - **52-week high/low** range bar is shown on the same card.
-- **Valuation metrics** — trailing P/E, forward P/E, EPS (TTM) — are shown in the stock's trading currency.
+- **Valuation metrics** — trailing P/E, forward P/E, EPS (TTM), EV/EBITDA, P/B ratio, PEG ratio, and FCF yield — are shown when available, in the stock's trading currency.
 - All analyst prices are converted from the stock's trading currency to the stock's base currency for display; currency conversion uses the same exchange rate mechanism as portfolio values.
 - A **refresh button** on the analysis card allows the user to force a re-fetch at any time.
 - Data is cached for 10 minutes per stock (no network round-trip on quick navigation away and back).
@@ -235,6 +235,13 @@ Features confirmed for a future version. Not in scope for the initial release.
 
 **Planned for other brokers:** DEGIRO, Trade Republic, Scalable Capital, Comdirect, Interactive Brokers. Each broker needs a named import profile mapping its CSV/XLSX columns to the app's data model. Unrecognised rows are flagged for manual review before import is confirmed.
 
+### 10.9 Dashboard Closed-Position Filter ✓ *(delivered)*
+- The dashboard Holdings list includes a **toggle button** in the AppBar to hide positions where the user currently holds zero shares (fully sold / closed positions).
+- When the filter is active, a count of hidden closed positions is shown next to the "Holdings" section header (e.g. "(3 closed hidden)").
+- When all visible positions are closed and the filter is active, an "All positions are closed." placeholder replaces the empty list.
+- The filter state is local to the session (not persisted); it defaults to showing all positions.
+- The portfolio summary card and allocation chart are unaffected by the filter — they always reflect the full portfolio.
+
 ### 10.8 AI Portfolio Analysis ✓ *(delivered — Claude, Groq, Gemini)*
 - The user can request an **AI-powered analysis of their portfolio** via the Claude API (Anthropic).
 - The feature requires the user to supply their own **Anthropic API key**, stored in the settings table (same pattern as the Finnhub key).
@@ -257,4 +264,5 @@ Features confirmed for a future version. Not in scope for the initial release.
 - All providers stream their responses via SSE; the response is rendered as Markdown in real-time.
 - The LLM is instructed to append `---STOCK_SUGGESTIONS---` followed by a JSON array of `{isin, name, reason}` objects. Suggestions are displayed as "Add stock" chips below the response; tapping one opens the Add Stock screen pre-filled with the ISIN.
 - Prompt caching (`cache_control: ephemeral`) is applied to the system prompt block when using Claude, reducing cost on repeated queries.
+- In the idle state (before any analysis is run), the Analysis screen displays a **Top Buy Recommendations** panel listing currently held stocks that have a `buy` or `strong_buy` analyst consensus rating. Stocks are sorted with `strong_buy` first, then by upside-to-target descending. Each entry shows the stock name, coloured recommendation badge, number of contributing analysts, and upside percentage to the mean target price. Only stocks with cached analyst data are shown; the panel is hidden if there are no qualifying holdings.
 

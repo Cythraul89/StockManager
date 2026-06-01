@@ -33,11 +33,13 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 
 ## 1. Dashboard
 
-**Purpose:** At-a-glance portfolio health — total value, P&L, upcoming dividends, top movers.
+**Purpose:** At-a-glance portfolio health — total value, P&L, allocation, portfolio history, holdings.
 
 ### Mobile
 ```
 ┌─────────────────────────────┐
+│  Dashboard        [👁] [↺]  │  ← visibility toggle · refresh
+│                             │
 │  Portfolio Value            │
 │  € 24,830.12        ▲ +1.4% │
 │                             │
@@ -59,7 +61,15 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │  │         Others  10.0%  ││
 │  └─────────────────────────┘│
 │                             │
-│  Holdings                   │
+│  Portfolio History          │  ← PortfolioHistoryChart
+│  ┌─────────────────────────┐│
+│  │   ████████████████░░░░  ││  ← stacked area: invested (blue)
+│  │   ░░░░░░░░░░░░░░░░░░░░  ││    + unrealised (teal on top)
+│  │  2022  2023  2024  2025 ││    + realised (dark green on top)
+│  │  Dividends sub-chart    ││  ← separate bar sub-chart (amber)
+│  └─────────────────────────┘│
+│                             │
+│  Holdings  (3 closed hidden)│  ← suffix shown when filter is active
 │  ┌─────────────────────────┐│
 │  │ AAPL [Buy] ╭╮  +3.2% €189││  ← badge · sparkline · value
 │  │ MSFT [Hold]╯╰  -1.1% €412││
@@ -67,6 +77,8 @@ The sync status indicator (●) shows last sync time and triggers a manual sync 
 │  └─────────────────────────┘│
 └─────────────────────────────┘
 ```
+
+**Closed-position filter:** The eye icon in the AppBar toggles visibility of zero-share positions (fully sold stocks whose records still exist). When active, the icon changes to `visibility_off` and the Holdings header shows `(N closed hidden)`. The summary card and allocation chart are unaffected.
 
 **Stock tiles:** Each tile in the stock list (dashboard and Stocks tab) shows:
 - A small coloured recommendation badge (Str.Buy · Buy · Hold · Undprf. · Sell) next to the ticker symbol, loaded silently via `analystDataProvider` (10-minute keepAlive); hidden while loading or when unavailable.
@@ -183,6 +195,10 @@ Selecting a stock in the left panel loads the detail in the right panel without 
 │  │ P/E (trailing)  28.4×   ││
 │  │ P/E (forward)   24.1×   ││
 │  │ EPS (TTM)       $ 6.73  ││
+│  │ EV/EBITDA       18.2×   ││
+│  │ P/B ratio        5.41×  ││
+│  │ PEG ratio        2.34   ││
+│  │ FCF yield        3.21%  ││
 │  │                         ││
 │  │ Dividends               ││
 │  │ Annual rate     $ 1.00  ││  ← trailingAnnualDividendRate; hidden when zero/null
@@ -618,6 +634,102 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 - The API key is stored in `flutter_secure_storage`; it is never written to the SQLite database.
 - Switching providers or saving a new API key invalidates all cached analyst data so the next Analysis tab open re-fetches from the new source.
 - The "API key required" prompt in the Analysis card (when key is not set) deep-links directly to this screen.
+
+---
+
+## 16. AI Portfolio Analysis
+
+**Purpose:** Conversational analysis of the user's portfolio via a user-supplied LLM API key.
+
+### Mobile (idle state)
+```
+┌─────────────────────────────┐
+│  AI Portfolio Analysis  [🔑]│
+│                             │
+│  ╔═════════════════════════╗ │  ← Privacy notice (always shown)
+│  ║ ⓘ Your portfolio data  ║ │
+│  ║ is sent to the AI      ║ │
+│  ║ provider. See Privacy  ║ │
+│  ║ Policy for details.    ║ │
+│  ╚═════════════════════════╝ │
+│                             │
+│  Buy recommendations in your│  ← _TopBuysSection (buy/strong_buy only)
+│  portfolio                  │
+│  ┌─────────────────────────┐│
+│  │ AAPL     [Strong Buy]   ││  ← name + coloured badge
+│  │ AAPL · 14 analysts ·   ││
+│  │ +21.3% to target        ││
+│  ├─────────────────────────┤│
+│  │ VOW3     [Buy]          ││
+│  │ VOW3 · 8 analysts ·    ││
+│  │ +12.0% to target        ││
+│  └─────────────────────────┘│
+│                             │
+│  Quick analysis             │
+│  ┌──────────────────────────┐│  ← ActionChip prompts
+│  │ Summarise my portfolio…  ││
+│  │ Identify concentration…  ││
+│  │ Which positions have…    ││
+│  └──────────────────────────┘│
+│  Or type a custom question  │
+│                             │
+│  ─────────────────────────── │
+│  [ Ask about your portfolio…]│  ← input bar
+│                         [→] │
+└─────────────────────────────┘
+```
+
+### Mobile (done state)
+```
+┌─────────────────────────────┐
+│  AI Portfolio Analysis [↺][🔑]│  ← reset button appears
+│                             │
+│  ╔═════════════════════════╗ │
+│  ║ ✨ AI Analysis          ║ │
+│  ║ Your portfolio shows …  ║ │
+│  ║ (Markdown rendered)     ║ │
+│  ╚═════════════════════════╝ │
+│                             │
+│  ┌─────────────────────────┐│  ← Suggested stocks to add
+│  │ + Suggested stocks      ││
+│  │ NOVO-B · Novo Nordisk   ││
+│  │ Strong healthcare…      ││
+│  │                  [Add]  ││
+│  └─────────────────────────┘│
+│                             │
+│  ─────────────────────────── │
+│  [ Ask a follow-up…        ]│
+│                         [→] │
+└─────────────────────────────┘
+```
+
+**Buy recommendations panel** — visible only in the idle state before a query is submitted. Shows currently-held positions where the analyst consensus (from the `analystDataProvider` keepAlive cache) is `buy` or `strong_buy`, sorted strong_buy first then by highest upside-to-analyst-target. Tapping a tile navigates to the stock detail screen. Hidden if no analyst data is loaded yet or no buy ratings exist in the portfolio.
+
+**Suggested stocks** — if the LLM response contains a `---STOCK_SUGGESTIONS---` block, the parsed `{isin, name, reason}` objects are shown as tiles below the response. Tapping "Add" opens the Add Stock screen pre-filled with the ISIN.
+
+---
+
+## 17. AI Analysis Settings
+
+```
+┌─────────────────────────────┐
+│  ← API Key & Model          │
+│                             │
+│  Provider                   │
+│  ( ● ) Claude (Anthropic)   │
+│  (   ) Groq (free)          │
+│  (   ) Gemini (free)        │
+│                             │
+│  API Key                    │
+│  [ ••••••••••••••      👁 ] │
+│                             │
+│  Model                      │
+│  ( ● ) claude-opus-4-7      │
+│  (   ) claude-sonnet-4-6    │
+│                             │
+│  [ Save                    ]│
+└─────────────────────────────┘
+```
 
 ---
 
