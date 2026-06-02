@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,12 +14,34 @@ import 'analysis_provider.dart';
 // Aggregates analyst buy/strong_buy recommendations for currently-held stocks.
 // Moving this into a Provider instead of doing ref.watch in a build loop avoids
 // unpredictable subscription churn when the items list changes between frames.
+// Each analystDataProvider lookup triggers a live (rate-limited) market-data
+// round-trip, so cap how many we fan out for this summary panel. We pick the
+// largest holdings by value, which are the most material to a buy/sell view;
+// recommendations for smaller positions still surface on each stock's detail
+// screen. Typical portfolios stay well under this cap.
+const _kMaxAnalystLookups = 20;
+
+// Upside (% to analyst target) for a held position, or null when it can't be
+// computed. Mirrors the guard used in _BuyTile so sort order matches display.
+Decimal? _upsideOf(StockSummaryItem item, AnalystData analyst) {
+  if (!item.hasPrice ||
+      !item.currentPrice.isPositive ||
+      !analyst.targetMeanPrice.isPositive) {
+    return null;
+  }
+  return analyst.targetMeanPrice.percentChangeFrom(item.currentPrice);
+}
+
 final _topBuysProvider =
     Provider<List<({StockSummaryItem item, AnalystData analyst})>>((ref) {
   final items = ref.watch(portfolioSummaryProvider).value?.stockItems ?? [];
+  // Only held positions, largest first, capped to bound market-data fan-out.
+  final held = items.where((i) => i.sharesHeld.isPositive).toList()
+    ..sort((a, b) => b.currentValue.compareTo(a.currentValue));
+  final candidates = held.take(_kMaxAnalystLookups);
+
   final buys = <({StockSummaryItem item, AnalystData analyst})>[];
-  for (final item in items) {
-    if (!item.sharesHeld.isPositive) continue;
+  for (final item in candidates) {
     final analyst = ref.watch(analystDataProvider(item.stock.id)).value;
     if (analyst == null) continue;
     final key = analyst.recommendationKey?.toLowerCase();
@@ -30,12 +53,8 @@ final _topBuysProvider =
     final aStrong = a.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
     final bStrong = b.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
     if (aStrong != bStrong) return aStrong ? -1 : 1;
-    final aUpside = a.item.hasPrice && a.item.currentPrice.isPositive
-        ? a.analyst.targetMeanPrice.percentChangeFrom(a.item.currentPrice)
-        : null;
-    final bUpside = b.item.hasPrice && b.item.currentPrice.isPositive
-        ? b.analyst.targetMeanPrice.percentChangeFrom(b.item.currentPrice)
-        : null;
+    final aUpside = _upsideOf(a.item, a.analyst);
+    final bUpside = _upsideOf(b.item, b.analyst);
     if (aUpside == null && bUpside == null) return 0;
     if (aUpside == null) return 1;
     if (bUpside == null) return -1;

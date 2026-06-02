@@ -127,22 +127,28 @@ final portfolioHistoryProvider =
   })>[];
   DateTime? earliest;
 
-  for (final stock in stocks) {
-    final txs =
-        ref.watch(transactionsByStockProvider(stock.id)).value ?? [];
-    final splits =
-        ref.watch(splitsByStockProvider(stock.id)).value ?? [];
-    final dividends =
-        ref.watch(dividendsByStockProvider(stock.id)).value ?? [];
+  // Await each stock's transaction/split/dividend streams (first emission) so a
+  // still-loading stream is not silently treated as empty, which would drop the
+  // stock from the computation and render understated historical values. Watch
+  // the `.future` to keep reactivity (a new transaction re-runs this provider).
+  final txLists = await Future.wait(
+      stocks.map((s) => ref.watch(transactionsByStockProvider(s.id).future)));
+  final splitLists = await Future.wait(
+      stocks.map((s) => ref.watch(splitsByStockProvider(s.id).future)));
+  final divLists = await Future.wait(
+      stocks.map((s) => ref.watch(dividendsByStockProvider(s.id).future)));
+
+  for (var i = 0; i < stocks.length; i++) {
+    final txs = txLists[i];
     if (txs.isEmpty) continue;
     final first =
         txs.map((t) => t.executedAt).reduce((a, b) => a.isBefore(b) ? a : b);
     if (earliest == null || first.isBefore(earliest)) earliest = first;
     stockData.add((
-      stock: stock,
+      stock: stocks[i],
       txs: txs,
-      splits: splits,
-      dividends: dividends,
+      splits: splitLists[i],
+      dividends: divLists[i],
     ));
   }
 
@@ -173,11 +179,13 @@ final portfolioHistoryProvider =
     Decimal dividendTotal = Decimal.zero;
     Decimal totalValue = Decimal.zero;
     bool hasMarketValue = false;
+    bool hasActivity = false;
 
     for (final d in stockData) {
       final txsUpTo =
           d.txs.where((tx) => !tx.executedAt.isAfter(yearEnd)).toList();
       if (txsUpTo.isEmpty) continue;
+      hasActivity = true;
 
       // Only splits that occurred up to yearEnd apply to this snapshot.
       final splitsUpTo =
@@ -241,12 +249,10 @@ final portfolioHistoryProvider =
       }
     }
 
-    // Skip years with no activity.
-    if (investedCapital == Decimal.zero &&
-        realisedPnl == Decimal.zero &&
-        dividendTotal == Decimal.zero) {
-      continue;
-    }
+    // Skip only years before any holding had its first transaction. Using a
+    // real activity flag (rather than all-values-zero) keeps break-even
+    // fully-closed years and avoids retaining empty years on rounding residue.
+    if (!hasActivity) continue;
 
     points.add(PortfolioHistoryPoint(
       year: year,

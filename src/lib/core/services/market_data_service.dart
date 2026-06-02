@@ -875,8 +875,10 @@ class MarketDataService {
           (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
       if (result == null) { return null; }
 
+      // An empty currency is tolerated here: this function returns only the
+      // price (currency is discarded), and _normalizeCurrency leaves the value
+      // unchanged for a non-GBp currency, so a valid close is still usable.
       final rawCurrency = (result['meta']?['currency'] as String?) ?? '';
-      if (rawCurrency.isEmpty) return null;
       final quotes = result['indicators']?['quote'] as List?;
       final closes =
           (quotes?.firstOrNull as Map<String, dynamic>?)?['close'] as List?;
@@ -992,8 +994,11 @@ class MarketDataService {
 
   Future<FetchedDividend?> _fetchExpectedDividendFromYahoo(
       String symbol, List<FetchedDividend> recentPaid) async {
-    await _ensureSession();
     try {
+      // Inside the try so a failed session init (which now throws) returns null
+      // instead of propagating through fetchDividends and discarding the
+      // already-fetched paid-dividend list.
+      await _ensureSession();
       final response = await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
         queryParameters: _quoteSummaryParams({'modules': 'calendarEvents'}),

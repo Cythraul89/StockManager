@@ -47,9 +47,23 @@ class _PortfolioHistoryChartState extends State<PortfolioHistoryChart> {
     final sPnl      = slope(last.realisedPnl,     first.realisedPnl);
     final sDivs     = slope(last.dividends,        first.dividends);
 
-    // Project unrealised P&L using its own historical trend, now that all
-    // historical points have real totalValue from price history.
-    final sUnrealised = slope(_unrealisedFor(last), _unrealisedFor(first));
+    // Project unrealised P&L using its own historical trend, computed only over
+    // points that actually have a market value. A year with no price-history
+    // point leaves totalValue null (so _unrealisedFor is 0); including those
+    // would skew the slope toward zero. Fall back to a flat (zero-slope)
+    // projection when fewer than two valued points exist.
+    final valued = historical.where((p) => p.totalValue != null).toList();
+    Decimal sUnrealised = Decimal.zero;
+    if (valued.length >= 2) {
+      final valuedSpan = valued.last.year - valued.first.year;
+      if (valuedSpan > 0) {
+        sUnrealised =
+            ((_unrealisedFor(valued.last) - _unrealisedFor(valued.first))
+                        .toRational() /
+                    Decimal.fromInt(valuedSpan).toRational())
+                .toDecimal(scaleOnInfinitePrecision: 10);
+      }
+    }
     final lastUnrealised = _unrealisedFor(last);
 
     return List.generate(_kForecastYears, (i) {

@@ -167,11 +167,20 @@ class AppDatabase extends _$AppDatabase {
                 // Multiple brokers remain but none matches the orphan's id.
                 // Insert a sentinel recovery broker and reassign to it so the
                 // user can manually re-assign the affected stocks.
-                targetId = '00000000-0000-0000-0000-000000000001';
+                const recoveryName = 'Unknown (auto-recovered)';
                 await customStatement(
                   'INSERT OR IGNORE INTO brokers (id, name) VALUES (?, ?)',
-                  [targetId, 'Unknown (auto-recovered)'],
+                  ['00000000-0000-0000-0000-000000000001', recoveryName],
                 );
+                // Read back the actual id: if a broker with this name already
+                // existed (UNIQUE(name)), the INSERT OR IGNORE was a no-op and
+                // the hardcoded id does not exist, so reassigning to it would
+                // re-create the orphan. Always use the row that is really there.
+                final recovery = await customSelect(
+                  'SELECT id FROM brokers WHERE name = ? LIMIT 1',
+                  variables: [Variable<String>(recoveryName)],
+                ).getSingle();
+                targetId = recovery.read<String>('id');
               }
               await customStatement(
                 'UPDATE stocks SET broker_id = ? '
