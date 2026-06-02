@@ -228,10 +228,14 @@ class StockActions {
   }
 
   Future<void> updateStock(Stock stock) async {
-    await _db.stocksDao.upsert(
+    // Use a partial UPDATE that excludes broker_id. The upsert's
+    // ON CONFLICT DO UPDATE re-checks FK constraints on every column in the
+    // SET clause, which crashes when broker_id is stale (e.g. after a restore
+    // where the referenced broker was absent). The edit-stock screen never
+    // reassigns a stock to a different broker, so broker_id is safe to omit.
+    await _db.stocksDao.updateDetails(
       StocksCompanion(
         id: Value(stock.id),
-        brokerId: Value(stock.brokerId),
         isin: Value(stock.isin),
         symbol: Value(stock.symbol),
         name: Value(stock.name),
