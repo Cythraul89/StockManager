@@ -178,7 +178,7 @@ class AppDatabase extends _$AppDatabase {
                 // re-create the orphan. Always use the row that is really there.
                 final recovery = await customSelect(
                   'SELECT id FROM brokers WHERE name = ? LIMIT 1',
-                  variables: [Variable<String>(recoveryName)],
+                  variables: [const Variable<String>(recoveryName)],
                 ).getSingle();
                 targetId = recovery.read<String>('id');
               }
