@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.background(File file) : super(NativeDatabase(file));
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -105,6 +105,22 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(transactions, transactions.externalRef);
           }
           if (from < 15) {
+            // Re-assign stocks from duplicate brokers to the surviving broker
+            // (earliest rowid) BEFORE deleting the duplicates, so no stock is
+            // left with an orphaned broker_id.
+            await customStatement(
+              'UPDATE stocks '
+              'SET broker_id = ('
+              '  SELECT MIN_BROKER.id FROM brokers AS MIN_BROKER '
+              '  INNER JOIN brokers AS OWN_BROKER ON LOWER(MIN_BROKER.name) = LOWER(OWN_BROKER.name) '
+              '  WHERE OWN_BROKER.id = stocks.broker_id '
+              '  ORDER BY MIN_BROKER.rowid ASC LIMIT 1'
+              ') '
+              'WHERE broker_id IN ('
+              '  SELECT id FROM brokers '
+              '  WHERE rowid NOT IN (SELECT MIN(rowid) FROM brokers GROUP BY LOWER(name))'
+              ')',
+            );
             // Remove duplicate broker names (keep the earliest row for each
             // name), then recreate the table with a UNIQUE(name) constraint.
             await customStatement(
@@ -128,6 +144,41 @@ class AppDatabase extends _$AppDatabase {
             await customStatement(
               'ALTER TABLE "brokers_new" RENAME TO "brokers"',
             );
+          }
+          if (from < 16) {
+            // Heal stocks with orphaned broker_id references left by the broken
+            // v15 migration (which deleted duplicate brokers without first
+            // re-assigning their stocks). FK enforcement is off during onUpgrade,
+            // so this UPDATE runs unconditionally and is a no-op for clean DBs.
+            final orphanResult = await customSelect(
+              'SELECT COUNT(*) AS n FROM stocks '
+              'WHERE broker_id NOT IN (SELECT id FROM brokers)',
+            ).getSingle();
+            final orphanCount = orphanResult.read<int>('n');
+            if (orphanCount > 0) {
+              final brokerRows = await customSelect(
+                'SELECT id FROM brokers ORDER BY rowid LIMIT 2',
+              ).get();
+              final String targetId;
+              if (brokerRows.length == 1) {
+                // Only one broker survives — reassign everything to it.
+                targetId = brokerRows.first.read<String>('id');
+              } else {
+                // Multiple brokers remain but none matches the orphan's id.
+                // Insert a sentinel recovery broker and reassign to it so the
+                // user can manually re-assign the affected stocks.
+                targetId = '00000000-0000-0000-0000-000000000001';
+                await customStatement(
+                  'INSERT OR IGNORE INTO brokers (id, name) VALUES (?, ?)',
+                  [targetId, 'Unknown (auto-recovered)'],
+                );
+              }
+              await customStatement(
+                'UPDATE stocks SET broker_id = ? '
+                'WHERE broker_id NOT IN (SELECT id FROM brokers)',
+                [targetId],
+              );
+            }
           }
         },
         beforeOpen: (details) async {
