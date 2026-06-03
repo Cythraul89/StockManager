@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/calculators/dividend_calculator.dart';
 import '../../core/calculators/pnl_calculator.dart';
 import '../../core/calculators/portfolio_calculator.dart';
+import '../../core/models/analyst_data.dart';
 import '../../core/models/app_settings.dart';
 import '../../core/models/broker.dart';
 import '../../core/models/chart_range.dart';
@@ -385,4 +386,56 @@ PortfolioSummary _buildSummary(
     stockItems: items,
   );
 }
+
+// ── Top buy recommendations ────────────────────────────────────────────────
+
+// Max holdings to fan out analyst lookups for — bounds concurrent HTTP requests
+// against the rate-limited Yahoo/Finnhub endpoints.
+const kMaxAnalystLookups = 20;
+
+// Returns the analyst upside (% to mean target) or null when not computable.
+// Shared between the sort comparator and tile display so they stay consistent.
+Decimal? analystUpside(StockSummaryItem item, AnalystData analyst) {
+  if (!item.hasPrice ||
+      !item.currentPrice.isPositive ||
+      !analyst.targetMeanPrice.isPositive) {
+    return null;
+  }
+  return analyst.targetMeanPrice.percentChangeFrom(item.currentPrice);
+}
+
+// Held positions with a buy or strong-buy recommendation, sorted by:
+//   1. strong-buy first
+//   2. highest upside to analyst mean target
+// Watching analystDataProvider for each holding triggers background fetches;
+// the cap bounds concurrent market-data requests to the largest holdings.
+final topBuysProvider =
+    Provider<List<({StockSummaryItem item, AnalystData analyst})>>((ref) {
+  final items = ref.watch(portfolioSummaryProvider).value?.stockItems ?? [];
+  final held = items.where((i) => i.sharesHeld.isPositive).toList()
+    ..sort((a, b) => b.currentValue.compareTo(a.currentValue));
+  final candidates = held.take(kMaxAnalystLookups);
+
+  final buys = <({StockSummaryItem item, AnalystData analyst})>[];
+  for (final item in candidates) {
+    final analyst = ref.watch(analystDataProvider(item.stock.id)).value;
+    if (analyst == null) continue;
+    final key = analyst.recommendationKey?.toLowerCase();
+    if (key == 'strong_buy' || key == 'buy') {
+      buys.add((item: item, analyst: analyst));
+    }
+  }
+  buys.sort((a, b) {
+    final aStrong = a.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
+    final bStrong = b.analyst.recommendationKey?.toLowerCase() == 'strong_buy';
+    if (aStrong != bStrong) return aStrong ? -1 : 1;
+    final aUp = analystUpside(a.item, a.analyst);
+    final bUp = analystUpside(b.item, b.analyst);
+    if (aUp == null && bUp == null) return 0;
+    if (aUp == null) return 1;
+    if (bUp == null) return -1;
+    return bUp.compareTo(aUp);
+  });
+  return buys;
+});
 
