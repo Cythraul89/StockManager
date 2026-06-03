@@ -16,6 +16,7 @@ class Stock extends Equatable {
     this.assetType = AssetType.stock,
     this.trailingStopPct,
     this.trailingStopHighWater,
+    this.manualYieldPct,
   });
 
   final String id;
@@ -32,6 +33,9 @@ class Stock extends Equatable {
   // trailingStopHighWater is the peak price recorded since the alert was set.
   final Decimal? trailingStopPct;
   final Decimal? trailingStopHighWater;
+  // Manual annual yield/interest override in percent (e.g. 6.36 = 6.36% p.a.).
+  // Used for fixed-income assets that pay interest rather than dividends.
+  final Decimal? manualYieldPct;
 
   Stock copyWith({
     String? id,
@@ -45,6 +49,7 @@ class Stock extends Equatable {
     AssetType? assetType,
     Object? trailingStopPct = _absent,
     Object? trailingStopHighWater = _absent,
+    Object? manualYieldPct = _absent,
   }) =>
       Stock(
         id: id ?? this.id,
@@ -62,6 +67,9 @@ class Stock extends Equatable {
         trailingStopHighWater: trailingStopHighWater == _absent
             ? this.trailingStopHighWater
             : trailingStopHighWater as Decimal?,
+        manualYieldPct: manualYieldPct == _absent
+            ? this.manualYieldPct
+            : manualYieldPct as Decimal?,
       );
 
   @override
@@ -77,6 +85,7 @@ class Stock extends Equatable {
         assetType,
         trailingStopPct,
         trailingStopHighWater,
+        manualYieldPct,
       ];
 }
 

@@ -243,6 +243,7 @@ class StockActions {
         currency: Value(stock.currency),
         dripEnabled: Value(stock.dripEnabled),
         assetType: Value(stock.assetType.dbValue),
+        manualYieldPct: Value(stock.manualYieldPct?.toString()),
       ),
     );
     _notifyChange();
@@ -520,6 +521,7 @@ Stock _stockFromRow(StockRow r) {
     assetType: AssetType.fromDb(r.assetType),
     trailingStopPct: tryDec(r.trailingStopPct, 'trailingStopPct'),
     trailingStopHighWater: tryDec(r.trailingStopHighWater, 'trailingStopHighWater'),
+    manualYieldPct: tryDec(r.manualYieldPct, 'manualYieldPct'),
   );
 }
 

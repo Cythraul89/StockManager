@@ -330,6 +330,7 @@ PortfolioSummary _buildSummary(
           .toList(),
       currentPrice: currentPrice,
       sharesHeld: pos.sharesHeld,
+      manualYieldPct: stock.manualYieldPct,
     );
 
     // Convert from stock.currency to preferred.

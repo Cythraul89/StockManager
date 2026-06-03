@@ -52,7 +52,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.background(File file) : super(NativeDatabase(file));
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -188,6 +188,9 @@ class AppDatabase extends _$AppDatabase {
                 [targetId],
               );
             }
+          }
+          if (from < 17) {
+            await m.addColumn(stocks, stocks.manualYieldPct);
           }
         },
         beforeOpen: (details) async {
