@@ -15,6 +15,7 @@ import '../../core/models/price_quote.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
+import '../../core/utils/decimal_math.dart';
 import '../settings/settings_provider.dart';
 import '../stocks/stocks_provider.dart';
 

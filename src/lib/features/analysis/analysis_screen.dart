@@ -7,7 +7,6 @@ import '../../core/models/analyst_data.dart';
 import '../../core/utils/decimal_math.dart';
 import '../dashboard/dashboard_provider.dart';
 import '../settings/settings_provider.dart';
-import '../stocks/stocks_provider.dart';
 import 'analysis_provider.dart';
 
 const _predefinedPrompts = [
