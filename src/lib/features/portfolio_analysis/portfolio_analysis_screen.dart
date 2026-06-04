@@ -152,7 +152,7 @@ class _BuyTile extends StatelessWidget {
             '${analyst.numberOfAnalysts} analysts',
           if (upsideStr != null) upsideStr,
           if (item.hasPrice)
-            CurrencyFormatter.format(item.currentPrice, item.stock.currency),
+            CurrencyFormatter.format(item.rawQuotePrice, item.quoteCurrency),
         ].join(' · '),
         style: theme.textTheme.bodySmall
             ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -164,7 +164,7 @@ class _BuyTile extends StatelessWidget {
               children: [
                 Text(
                   CurrencyFormatter.format(
-                      analyst.targetMeanPrice, item.stock.currency),
+                      analyst.targetMeanPrice, item.quoteCurrency),
                   style: theme.textTheme.bodySmall
                       ?.copyWith(fontWeight: FontWeight.w600),
                 ),

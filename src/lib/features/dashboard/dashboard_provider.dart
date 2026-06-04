@@ -398,12 +398,15 @@ const kMaxAnalystLookups = 20;
 // Returns the analyst upside (% to mean target) or null when not computable.
 // Shared between the sort comparator and tile display so they stay consistent.
 Decimal? analystUpside(StockSummaryItem item, AnalystData analyst) {
+  // targetMeanPrice is in quoteCurrency; rawQuotePrice is also in quoteCurrency.
+  // Using currentPrice (which is converted to stock.currency) would produce a
+  // wrong ratio whenever quoteCurrency != stock.currency.
   if (!item.hasPrice ||
-      !item.currentPrice.isPositive ||
+      !item.rawQuotePrice.isPositive ||
       !analyst.targetMeanPrice.isPositive) {
     return null;
   }
-  return analyst.targetMeanPrice.percentChangeFrom(item.currentPrice);
+  return analyst.targetMeanPrice.percentChangeFrom(item.rawQuotePrice);
 }
 
 // Held positions with a buy or strong-buy recommendation, sorted by:

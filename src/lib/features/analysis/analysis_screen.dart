@@ -290,10 +290,10 @@ class _BuyTile extends StatelessWidget {
 
     String? upsideStr;
     if (item.hasPrice &&
-        item.currentPrice.isPositive &&
+        item.rawQuotePrice.isPositive &&
         analyst.targetMeanPrice.isPositive) {
       final upside =
-          analyst.targetMeanPrice.percentChangeFrom(item.currentPrice);
+          analyst.targetMeanPrice.percentChangeFrom(item.rawQuotePrice);
       final sign = upside.isNegative ? '' : '+';
       upsideStr = '$sign${upside.toStringFixed(1)}% to target';
     }
