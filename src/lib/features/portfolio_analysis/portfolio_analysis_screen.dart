@@ -6,100 +6,87 @@ import '../../core/models/analyst_data.dart';
 import '../../core/utils/currency_formatter.dart';
 import '../../core/utils/decimal_math.dart';
 import '../dashboard/dashboard_provider.dart';
+import '../dashboard/widgets/portfolio_history_chart.dart';
 
 class PortfolioAnalysisScreen extends ConsumerWidget {
   const PortfolioAnalysisScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final historyAsync = ref.watch(portfolioHistoryProvider);
     final buys = ref.watch(topBuysProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Top Buy Recommendations')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Based on analyst consensus, these are your most recommended '
-            'holdings to add to.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (buys.isEmpty)
-            _EmptyState(theme: theme)
-          else ...[
-            Card(
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                children: [
-                  for (int i = 0; i < buys.take(10).length; i++) ...[
-                    if (i > 0) const Divider(height: 1),
-                    _BuyTile(
-                      rank: i + 1,
-                      item: buys[i].item,
-                      analyst: buys[i].analyst,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (buys.length > 10) ...[
-              const SizedBox(height: 8),
+      appBar: AppBar(title: const Text('Analysis')),
+      body: historyAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (points) => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (points.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(
+                  child: Text(
+                    'No data yet.\nAdd transactions to see your portfolio history.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else
+              PortfolioHistoryChart(points: points),
+            const SizedBox(height: 24),
+            if (buys.isNotEmpty) ...[
               Text(
-                '${buys.length - 10} more buy-rated holdings not shown.',
+                'Buy recommendations',
+                style: theme.textTheme.titleSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Based on analyst consensus for your current holdings.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (int i = 0; i < buys.take(10).length; i++) ...[
+                      if (i > 0) const Divider(height: 1),
+                      _BuyTile(
+                        rank: i + 1,
+                        item: buys[i].item,
+                        analyst: buys[i].analyst,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (buys.length > 10) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${buys.length - 10} more buy-rated holdings not shown.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 16),
+              Text(
+                'Analyst data from Yahoo Finance / Finnhub — may be delayed. Not financial advice.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
                 textAlign: TextAlign.center,
               ),
             ],
           ],
-          const SizedBox(height: 24),
-          Text(
-            'Analyst data is fetched from Yahoo Finance / Finnhub and may be '
-            'delayed. This is not financial advice.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.theme});
-  final ThemeData theme;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48),
-      child: Column(
-        children: [
-          Icon(Icons.analytics_outlined,
-              size: 48, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(height: 16),
-          Text(
-            'No buy recommendations yet',
-            style: theme.textTheme.titleSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Analyst data is loaded in the background.\n'
-            'Visit each stock\'s detail screen to trigger a fetch,\n'
-            'or wait a moment for data to arrive.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+        ),
       ),
     );
   }
