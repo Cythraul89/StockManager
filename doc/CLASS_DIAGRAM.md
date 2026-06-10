@@ -27,6 +27,7 @@ classDiagram
         +AssetType assetType
         +Decimal? trailingStopPct
         +Decimal? trailingStopHighWater
+        +Decimal? manualYieldPct
         +copyWith() Stock
     }
 
@@ -40,6 +41,7 @@ classDiagram
         +String currency
         +Decimal fees
         +String? notes
+        +String? externalRef
         +totalCost() Decimal
         +copyWith() StockTransaction
     }
@@ -315,7 +317,7 @@ classDiagram
     }
 
     class DividendCalculator {
-        +calculate(dividends, price, shares) DividendSummary
+        +calculate(dividends, price, shares, manualYieldPct?) DividendSummary
         +convert(summary, rate) DividendSummary
         +estimatedTotal() Decimal
     }
@@ -474,7 +476,7 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 14
+        +schemaVersion = 17
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
@@ -676,6 +678,14 @@ estimatedAnnualDividendProvider  (Provider — synchronous, no extra API calls)
              ├── totalStocks: int        (held stocks with shares > 0)
              └── currency: String        (preferred display currency)
 
+topBuysProvider  (Provider — synchronous)
+  ├── portfolioSummaryProvider  ← held positions sorted by value
+  └── analystDataProvider(id)   ← reads keepAlive cache; no extra HTTP calls
+       │
+       └── produces List~({StockSummaryItem item, AnalystData analyst})~
+             sorted: strong_buy first, then descending analystUpside()
+             capped at kMaxAnalystLookups = 20 positions
+
 portfolioHistoryProvider (FutureProvider)
   ├── stocksStreamProvider          (all stocks)
   ├── settingsProvider              (preferredCurrency)
@@ -727,6 +737,8 @@ ShellRoute (AdaptiveShell)
 │       └── /stocks/:id/dividends/:divId/edit         EditDividendScreen
 │
 ├── /dividends                     DividendsScreen
+│
+├── /analysis                      PortfolioAnalysisScreen
 │
 ├── /brokers                       BrokersScreen
 │   ├── /brokers/add               AddBrokerScreen

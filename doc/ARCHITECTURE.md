@@ -117,6 +117,7 @@ Notable provider files:
 | last_known_consensus | TEXT? | Most recent analyst `recommendationKey`; used by `BackgroundCheckService` to detect rating changes between runs |
 | trailing_stop_pct | TEXT? (DECIMAL) | Drop threshold in percent (e.g. `10` = −10%); null = alert disabled |
 | trailing_stop_high_water | TEXT? (DECIMAL) | Peak price in `stock.currency` recorded since the alert was enabled; null = not yet seeded (set on first background check after enabling) |
+| manual_yield_pct | TEXT? (DECIMAL) | Annual interest/yield override in percent (e.g. `6.36` = 6.36% p.a.); null = not set. Used for fixed-income assets that pay interest instead of dividends, so yield shows in the portfolio even without dividend data (schema v17) |
 
 **transactions**
 | Column | Type | Notes |
@@ -475,6 +476,12 @@ Yahoo Finance returns analyst price targets in the stock's **trading currency** 
 | Valuation | Trailing P/E · Forward P/E · EPS (TTM) · EV/EBITDA · P/B ratio · PEG ratio · FCF yield; all converted to stock currency where applicable. FCF yield is displayed as a percentage (fraction × 100). Rows are omitted when the value is null (e.g. EV/EBITDA for stocks not covered by the chosen provider). |
 | Dividends | Annual rate (`trailingAnnualDividendRate`, hidden when zero/null) · 5Y avg yield (`fiveYearAvgDividendYield`, %) · Est. annual income (shares × current price × 5Y yield ÷ 100, in stock currency, shown when shares > 0 and yield is available) |
 
+#### Buy recommendations currency
+
+`analystUpside()` (a top-level helper in `dashboard_provider.dart`) computes the percentage upside from current price to analyst mean target. Both `targetMeanPrice` and `rawQuotePrice` are in `quoteCurrency`, so the ratio is computed as `targetMeanPrice.percentChangeFrom(rawQuotePrice)`. Using `currentPrice` (which is converted to `stock.currency`) would produce a wrong ratio whenever `quoteCurrency ≠ stock.currency`.
+
+`PortfolioAnalysisScreen` (`/analysis`) displays both the current price and the analyst target in `quoteCurrency` to keep both figures in the same unit.
+
 ### 5.10 Price History Chart and Change Badges
 
 `MarketDataService.fetchPriceHistory(symbol, range)` fetches OHLCV closing prices from the Yahoo Finance v8 chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/{symbol}`). It does not require a session crumb (the v8 endpoint accepts unauthenticated requests) but uses `_withYahooRetry` for 429 backoff. The currency is read from `meta.currency` in the response and embedded in every returned `PricePoint`.
@@ -705,7 +712,7 @@ All three use `Dio` with `ResponseType.stream` and a shared line-buffer SSE pars
 
 **ISIN suggestions:** The system prompt instructs the LLM to optionally append a `---STOCK_SUGGESTIONS---` delimiter followed by a JSON array of `{isin, name, reason}` objects. `_parseSuggestions()` splits on this delimiter after streaming completes, decodes the JSON, and exposes suggestions as `List<StockSuggestion>`. Each suggestion is displayed with an "Add" button that routes to `/stocks/add` with the ISIN pre-filled via `state.extra`.
 
-**Buy recommendations panel:** In the `idle` state, a `_TopBuysSection` card is rendered above the prompt chips. It watches `portfolioSummaryProvider` and, for each currently-held position, reads the `analystDataProvider` keepAlive cache. Positions where `recommendationKey` is `buy` or `strong_buy` are collected, sorted (strong_buy first, then by descending upside-to-analyst-target), and shown as compact `ListTile` rows with a coloured recommendation badge, analyst count, and upside percentage. Tapping a tile navigates to the stock detail screen. The section is invisible when no cached buy/strong_buy data is available yet.
+**Buy recommendations panel:** In the `idle` state, a `_TopBuysSection` card is rendered above the prompt chips. It watches `topBuysProvider` (a shared `Provider` in `dashboard_provider.dart`) which filters held positions with `buy` or `strong_buy` analyst consensus, sorts them (strong_buy first, then descending upside), and caps lookups at `kMaxAnalystLookups = 20`. Tapping a tile navigates to the stock detail screen. The section is invisible when no cached buy/strong_buy data is available yet.
 
 **State machine:** `AnalysisState` cycles through `idle → loading → streaming → done | error`. The UI shows the buy recommendations panel and predefined prompt chips in the idle state, a spinner during loading, a streaming `MarkdownBody` during streaming (auto-scrolls via `ScrollController`), and the completed response plus optional suggestion chips when done.
 
@@ -843,6 +850,23 @@ Projected `totalValue = clampedInvested + projUnrealised` (both clamped to zero)
 
 **Crash-report screen (`_CrashReportApp`):** A minimal `MaterialApp` (deep-orange theme) that renders the crash log in a `SelectableText` on a black background. It does not use `ProviderScope` or any production infrastructure — it must be renderable even when the database or plugins are broken.
 
+### 5.25 Top Buy Recommendations
+
+`topBuysProvider` is a synchronous `Provider` in `dashboard_provider.dart` that aggregates analyst buy/strong-buy recommendations across the user's current holdings.
+
+**Algorithm:**
+1. Reads `portfolioSummaryProvider` for all held positions (shares > 0), sorted by `currentValue` descending.
+2. Takes the top `kMaxAnalystLookups = 20` by value to bound concurrent HTTP requests against Yahoo/Finnhub rate limits.
+3. For each, reads the `analystDataProvider(stockId)` keepAlive cache (no new HTTP calls unless the cache is cold).
+4. Filters to `recommendationKey` of `buy` or `strong_buy`.
+5. Sorts: strong_buy first, then descending `analystUpside()` (% to analyst mean target).
+
+`analystUpside(item, analyst)` computes `targetMeanPrice.percentChangeFrom(rawQuotePrice)`. Both are in `quoteCurrency`, ensuring a correct ratio regardless of whether the stock currency differs from the quote currency.
+
+**`PortfolioAnalysisScreen` (`/analysis`)** uses `topBuysProvider` to show the buy recommendations card below the portfolio history chart. The `_TopBuysSection` in `AnalysisScreen` (`/settings/ai-analysis`) also reads the same provider.
+
+**`DividendCalculator.calculate()` — `manualYieldPct` override:** The optional `manualYieldPct` parameter (a `Decimal?`) is used for fixed-income assets (bonds, impact-lending funds) that accrue interest rather than paying dividends. When set and `_annualYield()` returns zero (no confirmed paid dividends in the last 12 months), `manualYieldPct` is used as `annualYieldPct` in the returned `DividendSummary`. The value is stored on the `Stock` model and passed through `portfolioSummaryProvider`.
+
 ---
 
 ## 6. Navigation Map
@@ -864,6 +888,7 @@ Projected `totalValue = clampedInvested + projUnrealised` (both clamped to zero)
 /settings                → Settings
 /settings/ai-analysis    → AI Portfolio Analysis (AnalysisScreen)
 /settings/ai-analysis/key → Provider / API key / model picker (AiAnalysisSettingsScreen)
+/analysis                → Portfolio Analysis (chart + buy recommendations)
 /settings/broker-import         → Import from Broker (broker picker)
 /settings/broker-import/flatex  → FlatexImportScreen (CSV parse → preview → import)
 /settings/backup         → Local backup (export / import ZIP)
