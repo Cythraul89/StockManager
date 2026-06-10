@@ -94,6 +94,7 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
       await ref.read(stockActionsProvider).syncDividends(
             stock.id,
             stock.isin,
+            stock.currency,
             fetched,
             txs,
             splits,
@@ -119,32 +120,31 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
     }
   }
 
-  void _showManualPriceDialog(Stock stock) {
-    final notifier = ref.read(priceQuotesProvider.notifier);
-
-    showDialog<({String currency, Decimal price})>(
+  Future<void> _showManualPriceDialog(Stock stock) async {
+    final result = await showDialog<({String currency, Decimal price})>(
       context: context,
       builder: (ctx) => ManualPriceDialog(initialCurrency: stock.currency),
-    ).then((result) async {
-      if (result == null) return;
-      try {
-        await ref
-            .read(stockActionsProvider)
-            .setManualPrice(stock.id, result.price, result.currency);
-        final quote = PriceQuote(
-          stockId: stock.id,
-          price: result.price,
-          currency: result.currency,
-          fetchedAt: DateTime.now(),
-          isManualOverride: true,
-        );
-        final updated = Map<String, PriceQuote>.from(notifier.state);
-        updated[stock.id] = quote;
-        notifier.state = updated;
-      } catch (e) {
-        debugPrint('StockDetail: setManualPrice failed: $e');
-      }
-    });
+    );
+    if (result == null || !mounted) return;
+    try {
+      await ref
+          .read(stockActionsProvider)
+          .setManualPrice(stock.id, result.price, result.currency);
+      if (!mounted) return;
+      final notifier = ref.read(priceQuotesProvider.notifier);
+      final quote = PriceQuote(
+        stockId: stock.id,
+        price: result.price,
+        currency: result.currency,
+        fetchedAt: DateTime.now(),
+        isManualOverride: true,
+      );
+      final updated = Map<String, PriceQuote>.from(notifier.state);
+      updated[stock.id] = quote;
+      notifier.state = updated;
+    } catch (e) {
+      debugPrint('StockDetail: setManualPrice failed: $e');
+    }
   }
 
   @override
@@ -673,10 +673,12 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
 
   Widget _changeBadge(BuildContext context, String label, Decimal pct) {
     final theme = Theme.of(context);
-    final isPositive = !pct.isNegative;
-    final color =
-        isPositive ? Colors.green.shade600 : theme.colorScheme.error;
-    final sign = isPositive ? '+' : '';
+    final color = pct.isPositive
+        ? Colors.green.shade600
+        : (pct.isNegative
+            ? theme.colorScheme.error
+            : theme.colorScheme.onSurfaceVariant);
+    final sign = pct.isPositive ? '+' : '';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -863,8 +865,13 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
         (data.strongSellCount ?? 0);
     final hasConsensus = totalConsensus > 0;
 
-    final hasValuation =
-        data.trailingPE != null || data.forwardPE != null || epsConverted != null;
+    final hasValuation = data.trailingPE != null ||
+        data.forwardPE != null ||
+        epsConverted != null ||
+        data.evToEbitda != null ||
+        data.priceToBook != null ||
+        data.pegRatio != null ||
+        data.freeCashFlowYield != null;
     final has52Week = fiftyTwoLow != null && fiftyTwoHigh != null;
 
     return Card(
@@ -971,6 +978,24 @@ class _StockDetailScreenState extends ConsumerState<StockDetailScreen> {
               if (epsConverted != null)
                 _kv(context, 'EPS (TTM)',
                     CurrencyFormatter.format(epsConverted, currency)),
+              if (data.evToEbitda != null)
+                _kv(context, 'EV/EBITDA',
+                    '${data.evToEbitda!.toStringFixed(1)}×'),
+              if (data.priceToBook != null)
+                _kv(context, 'P/B ratio',
+                    '${data.priceToBook!.toStringFixed(2)}×'),
+              if (data.pegRatio != null)
+                _kv(context, 'PEG ratio',
+                    data.pegRatio!.toStringFixed(2)),
+              if (data.freeCashFlowYield != null)
+                _kv(
+                  context,
+                  'FCF yield',
+                  '${(data.freeCashFlowYield!.toRational() *
+                          Decimal.fromInt(100).toRational())
+                      .toDecimal(scaleOnInfinitePrecision: 2)
+                      .toStringFixed(2)}%',
+                ),
             ],
 
             // ── Dividends ──────────────────────────────────────────────────

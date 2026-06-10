@@ -19,7 +19,7 @@ class BrokerTile extends StatelessWidget {
             ? Text(broker.notes!, maxLines: 1, overflow: TextOverflow.ellipsis)
             : null,
         trailing: const Icon(Icons.chevron_right),
-        onTap: () => context.push('/brokers/${broker.id}/edit'),
+        onTap: () => context.push('/settings/brokers/${broker.id}/edit'),
       ),
     );
   }

@@ -17,6 +17,7 @@ class Stocks extends Table {
   TextColumn get lastKnownConsensus => text().nullable()();
   TextColumn get trailingStopPct => text().nullable()();
   TextColumn get trailingStopHighWater => text().nullable()();
+  TextColumn get manualYieldPct => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

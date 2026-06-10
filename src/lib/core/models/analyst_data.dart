@@ -19,6 +19,10 @@ class AnalystData extends Equatable {
     this.trailingPE,
     this.forwardPE,
     this.trailingEps,
+    this.evToEbitda,
+    this.priceToBook,
+    this.pegRatio,
+    this.freeCashFlowYield,
     this.yearChangePct,
     this.fiveYearAvgDividendYield,
     this.trailingAnnualDividendRate,
@@ -50,6 +54,14 @@ class AnalystData extends Equatable {
   final Decimal? trailingPE;
   final Decimal? forwardPE;
   final Decimal? trailingEps;
+  // Enterprise Value / EBITDA — from defaultKeyStatistics.enterpriseToEbitda.
+  final Decimal? evToEbitda;
+  // Price / Book ratio — from defaultKeyStatistics.priceToBook.
+  final Decimal? priceToBook;
+  // PEG ratio (P/E divided by earnings growth) — from defaultKeyStatistics.pegRatio.
+  final Decimal? pegRatio;
+  // Free cash flow yield as a fraction (e.g. 0.05 = 5%) — freeCashflow / marketCap.
+  final Decimal? freeCashFlowYield;
   // 52-week price return as a decimal fraction (e.g. 0.157 = +15.7%).
   // From defaultKeyStatistics.52WeekChange; multiply by 100 for display.
   final Decimal? yearChangePct;
@@ -77,6 +89,10 @@ class AnalystData extends Equatable {
     Decimal? trailingPE,
     Decimal? forwardPE,
     Decimal? trailingEps,
+    Decimal? evToEbitda,
+    Decimal? priceToBook,
+    Decimal? pegRatio,
+    Decimal? freeCashFlowYield,
     Decimal? yearChangePct,
     Decimal? fiveYearAvgDividendYield,
     Decimal? trailingAnnualDividendRate,
@@ -98,6 +114,10 @@ class AnalystData extends Equatable {
       trailingPE: trailingPE ?? this.trailingPE,
       forwardPE: forwardPE ?? this.forwardPE,
       trailingEps: trailingEps ?? this.trailingEps,
+      evToEbitda: evToEbitda ?? this.evToEbitda,
+      priceToBook: priceToBook ?? this.priceToBook,
+      pegRatio: pegRatio ?? this.pegRatio,
+      freeCashFlowYield: freeCashFlowYield ?? this.freeCashFlowYield,
       yearChangePct: yearChangePct ?? this.yearChangePct,
       fiveYearAvgDividendYield:
           fiveYearAvgDividendYield ?? this.fiveYearAvgDividendYield,
@@ -124,6 +144,10 @@ class AnalystData extends Equatable {
         trailingPE,
         forwardPE,
         trailingEps,
+        evToEbitda,
+        priceToBook,
+        pegRatio,
+        freeCashFlowYield,
         yearChangePct,
         fiveYearAvgDividendYield,
         trailingAnnualDividendRate,

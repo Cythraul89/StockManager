@@ -24,6 +24,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
 - On the Edit Stock screen, a **Research** button re-runs the ISIN lookup at any time, allowing the user to update the symbol, name, exchange, and currency in one step (e.g. after a ticker change or delisting migration).
 - Stocks can be held in **different currencies**.
 - Stocks can be added and removed in the app.
+- For **fixed-income assets** (bonds, impact-lending funds, etc.) that pay periodic interest rather than dividends, the user can enter an **annual interest / yield %** override on the Edit Stock screen (e.g. `6.36` for 6.36% p.a.). This value is used as the estimated annual yield in the portfolio view whenever no confirmed paid-dividend history is available, so interest-bearing positions appear alongside dividend-paying stocks without requiring manual dividend entries.
 
 ### 3.1 Transactions
 
@@ -35,6 +36,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
   - Price per share at execution
   - Currency
   - Optional: fees/commission, notes
+  - Optional: **broker order / transaction number** — a free-text reference to the broker's own order ID; used for deduplication when re-importing broker CSV exports so the same order is never created twice
 
 ### 3.2 Stock Splits
 
@@ -102,7 +104,7 @@ StockManager is a cross-platform portfolio tracking application for managing sto
   - Upcoming expected dividends with dates and estimated totals
   - **Estimated annual income** — derived from Yahoo Finance's 5-year average dividend yield × current position value for each stock; shown on the dividend overview as a portfolio-wide estimate with a coverage note (how many stocks have cached analyst data)
 - Each stock has an optional **Dividend Reinvestment (DRIP)** flag; when enabled, recorded dividend payments automatically generate a corresponding buy transaction for that stock.
-- Each stock displays its **annual dividend yield** (annual dividend per share ÷ current price × 100).
+- Each stock displays its **annual dividend yield** (annual dividend per share ÷ current price × 100). For fixed-income assets with no paid dividends, the manually entered annual interest/yield % is shown instead.
 - The stock detail **Analysis card** includes a Dividends subsection showing Yahoo Finance data: **annual rate** (`trailingAnnualDividendRate`, hidden when zero/null), **5-year average yield** (`fiveYearAvgDividendYield`, already a percentage), and **estimated annual income** (shares held × current price × 5Y avg yield ÷ 100, in the stock's currency; shown only when shares are held).
 
 ---
@@ -183,7 +185,7 @@ Features confirmed for a future version. Not in scope for the initial release.
 - Upside / downside percentage relative to the current price is shown next to the mean target, colour-coded green (upside) or red (downside).
 - A **consensus breakdown bar** shows the proportion of Strong Buy / Buy / Hold / Sell / Strong Sell ratings visually.
 - **52-week high/low** range bar is shown on the same card.
-- **Valuation metrics** — trailing P/E, forward P/E, EPS (TTM) — are shown in the stock's trading currency.
+- **Valuation metrics** — trailing P/E, forward P/E, EPS (TTM), EV/EBITDA, P/B ratio, PEG ratio, and FCF yield — are shown when available, in the stock's trading currency.
 - All analyst prices are converted from the stock's trading currency to the stock's base currency for display; currency conversion uses the same exchange rate mechanism as portfolio values.
 - A **refresh button** on the analysis card allows the user to force a re-fetch at any time.
 - Data is cached for 10 minutes per stock (no network round-trip on quick navigation away and back).
@@ -235,6 +237,20 @@ Features confirmed for a future version. Not in scope for the initial release.
 
 **Planned for other brokers:** DEGIRO, Trade Republic, Scalable Capital, Comdirect, Interactive Brokers. Each broker needs a named import profile mapping its CSV/XLSX columns to the app's data model. Unrecognised rows are flagged for manual review before import is confirmed.
 
+### 10.9 Dashboard Closed-Position Filter ✓ *(delivered)*
+- The dashboard Holdings list includes a **toggle button** in the AppBar to hide positions where the user currently holds zero shares (fully sold / closed positions).
+- When the filter is active, a count of hidden closed positions is shown next to the "Holdings" section header (e.g. "(3 closed hidden)").
+- When all visible positions are closed and the filter is active, an "All positions are closed." placeholder replaces the empty list.
+- The filter state is local to the session (not persisted); it defaults to showing all positions.
+- The portfolio summary card and allocation chart are unaffected by the filter — they always reflect the full portfolio.
+
+### 10.10 Portfolio Analysis Screen ✓ *(delivered)*
+
+A dedicated **Portfolio Analysis** screen (accessible from the main navigation) combines a historical portfolio chart with analyst buy recommendations:
+
+- **Portfolio history chart** — a stacked area chart showing the evolution of invested capital, unrealised P&L, realised P&L, and dividends across calendar years, with a separate dividends sub-chart below. A two-year linear forecast extrapolation is appended when sufficient history is available. All values are in the user's preferred currency.
+- **Buy recommendations card** — below the chart, shows the top analyst `buy` / `strong_buy` recommendations among current holdings, ranked by strong-buy first then descending upside to analyst mean target. Each entry shows rank, stock name, recommendation badge, number of analysts, upside %, current price, and analyst target price. Only stocks with cached analyst data are shown; the card is hidden when none qualify. Analyst prices and the upside % are computed in the stock's trading currency to avoid cross-currency distortion.
+
 ### 10.8 AI Portfolio Analysis ✓ *(delivered — Claude, Groq, Gemini)*
 - The user can request an **AI-powered analysis of their portfolio** via the Claude API (Anthropic).
 - The feature requires the user to supply their own **Anthropic API key**, stored in the settings table (same pattern as the Finnhub key).
@@ -257,4 +273,5 @@ Features confirmed for a future version. Not in scope for the initial release.
 - All providers stream their responses via SSE; the response is rendered as Markdown in real-time.
 - The LLM is instructed to append `---STOCK_SUGGESTIONS---` followed by a JSON array of `{isin, name, reason}` objects. Suggestions are displayed as "Add stock" chips below the response; tapping one opens the Add Stock screen pre-filled with the ISIN.
 - Prompt caching (`cache_control: ephemeral`) is applied to the system prompt block when using Claude, reducing cost on repeated queries.
+- In the idle state (before any analysis is run), the Analysis screen displays a **Top Buy Recommendations** panel listing currently held stocks that have a `buy` or `strong_buy` analyst consensus rating. Stocks are sorted with `strong_buy` first, then by upside-to-target descending. Each entry shows the stock name, coloured recommendation badge, number of contributing analysts, and upside percentage to the mean target price. Only stocks with cached analyst data are shown; the panel is hidden if there are no qualifying holdings.
 

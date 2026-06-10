@@ -3,6 +3,9 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/models/analyst_data.dart';
+import '../../core/utils/decimal_math.dart';
+import '../dashboard/dashboard_provider.dart';
 import '../settings/settings_provider.dart';
 import 'analysis_provider.dart';
 
@@ -36,7 +39,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
     if (query.trim().isEmpty) return;
     FocusScope.of(context).unfocus();
     await ref.read(analysisProvider.notifier).analyse(query.trim());
-    _scrollToBottom();
+    if (mounted) _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -102,6 +105,7 @@ class _AnalysisScreenState extends ConsumerState<AnalysisScreen> {
                   _NoKeyCard(theme: theme),
                 ] else ...[
                   if (analysisState.status == AnalysisStatus.idle) ...[
+                    const _TopBuysSection(),
                     _PromptsSection(
                       onSelected: (p) {
                         _controller.text = p;
@@ -228,6 +232,118 @@ class _NoKeyCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TopBuysSection extends ConsumerWidget {
+  const _TopBuysSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final buys = ref.watch(topBuysProvider);
+    if (buys.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Buy recommendations in your portfolio',
+          style: theme.textTheme.labelMedium
+              ?.copyWith(color: theme.colorScheme.primary),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          elevation: 0,
+          child: Column(
+            children: [
+              for (int i = 0; i < buys.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                _BuyTile(item: buys[i].item, analyst: buys[i].analyst),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+class _BuyTile extends StatelessWidget {
+  const _BuyTile({required this.item, required this.analyst});
+
+  final StockSummaryItem item;
+  final AnalystData analyst;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isStrongBuy =
+        analyst.recommendationKey?.toLowerCase() == 'strong_buy';
+    final recColor =
+        isStrongBuy ? Colors.green.shade800 : Colors.green.shade600;
+    final recLabel = isStrongBuy ? 'Strong Buy' : 'Buy';
+
+    String? upsideStr;
+    if (item.hasPrice &&
+        item.rawQuotePrice.isPositive &&
+        analyst.targetMeanPrice.isPositive) {
+      final upside =
+          analyst.targetMeanPrice.percentChangeFrom(item.rawQuotePrice);
+      final sign = upside.isNegative ? '' : '+';
+      upsideStr = '$sign${upside.toStringFixed(1)}% to target';
+    }
+
+    final subtitleParts = [
+      item.stock.symbol,
+      if (analyst.numberOfAnalysts != null)
+        '${analyst.numberOfAnalysts} analysts',
+      if (upsideStr != null) upsideStr,
+    ];
+
+    return ListTile(
+      dense: true,
+      onTap: () => context.push('/stocks/${item.stock.id}'),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              item.stock.name,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: recColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                  color: recColor.withValues(alpha: 0.35), width: 0.5),
+            ),
+            child: Text(
+              recLabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: recColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
+      ),
+      subtitle: Text(
+        subtitleParts.join(' · '),
+        style: theme.textTheme.bodySmall
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
       ),
     );
   }

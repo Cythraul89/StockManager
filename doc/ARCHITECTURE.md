@@ -117,6 +117,7 @@ Notable provider files:
 | last_known_consensus | TEXT? | Most recent analyst `recommendationKey`; used by `BackgroundCheckService` to detect rating changes between runs |
 | trailing_stop_pct | TEXT? (DECIMAL) | Drop threshold in percent (e.g. `10` = −10%); null = alert disabled |
 | trailing_stop_high_water | TEXT? (DECIMAL) | Peak price in `stock.currency` recorded since the alert was enabled; null = not yet seeded (set on first background check after enabling) |
+| manual_yield_pct | TEXT? (DECIMAL) | Annual interest/yield override in percent (e.g. `6.36` = 6.36% p.a.); null = not set. Used for fixed-income assets that pay interest instead of dividends, so yield shows in the portfolio even without dividend data (schema v17) |
 
 **transactions**
 | Column | Type | Notes |
@@ -418,12 +419,21 @@ Tapping the sync icon on the Stock Detail screen calls `MarketDataService.fetchD
 
 | Module | Fields extracted |
 |---|---|
-| `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency` |
-| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE`, `fiveYearAvgDividendYield` (already in %, e.g. 3.5 = 3.5%), `trailingAnnualDividendRate` (annual dividend per share in trading currency) |
-| `defaultKeyStatistics` | `trailingEps`, `52WeekChange` (stored as `yearChangePct`, a decimal fraction e.g. `0.157` = +15.7%) |
+| `financialData` | `targetMeanPrice`, `targetLowPrice`, `targetHighPrice`, `recommendationKey`, `numberOfAnalystOpinions`, `financialCurrency`, `freeCashflow` (numerator for FCF yield) |
+| `summaryDetail` | `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `trailingPE`, `forwardPE`, `fiveYearAvgDividendYield` (already in %, e.g. 3.5 = 3.5%), `trailingAnnualDividendRate` (annual dividend per share in trading currency), `marketCap` (denominator for FCF yield) |
+| `defaultKeyStatistics` | `trailingEps`, `52WeekChange` (stored as `yearChangePct`, a decimal fraction e.g. `0.157` = +15.7%), `enterpriseToEbitda` (EV/EBITDA multiple), `priceToBook` (P/B ratio), `pegRatio` (PEG ratio) |
 | `recommendationTrend` | `strongBuy`, `buy`, `hold`, `sell`, `strongSell` counts (most recent period) |
 
-`MarketDataService.fetchAnalystDataFromFinnhub(symbol, apiKey)` fires three parallel requests to Finnhub's v1 API: `/stock/price-target` (mean/low/high targets), `/stock/recommendation` (consensus counts for the most recent period), and `/stock/metric?metric=all` (52-week range, P/E, EPS, 5Y dividend yield, annual dividend per share). A weighted recommendation score `(strongBuy×2 + buy − sell − strongSell×2) / total` is mapped to the same `strong_buy / buy / hold / sell / strong_sell` keys used by Yahoo. Finnhub's `52WeekPriceReturnDaily` is in percent and is divided by 100 to match Yahoo's fraction convention for `yearChangePct`.
+`MarketDataService.fetchAnalystDataFromFinnhub(symbol, apiKey)` fires three parallel requests to Finnhub's v1 API: `/stock/price-target` (mean/low/high targets), `/stock/recommendation` (consensus counts for the most recent period), and `/stock/metric?metric=all` (52-week range, P/E, EPS, 5Y dividend yield, annual dividend per share, plus the additional valuation metrics below). A weighted recommendation score `(strongBuy×2 + buy − sell − strongSell×2) / total` is mapped to the same `strong_buy / buy / hold / sell / strong_sell` keys used by Yahoo. Finnhub's `52WeekPriceReturnDaily` is in percent and is divided by 100 to match Yahoo's fraction convention for `yearChangePct`.
+
+Additional valuation metrics sourced from Finnhub's `metric` map:
+
+| Field | Finnhub metric key(s) | Notes |
+|---|---|---|
+| `evToEbitda` | `enterpriseValue` ÷ `ebitdaTTM` | Both in USD millions; ratio computed client-side; null if either is missing or zero |
+| `priceToBook` | `pbQuarterly` | Direct field |
+| `pegRatio` | `pegNormalizedAnnual` | Direct field |
+| `freeCashFlowYield` | `freeCashFlowTTM` ÷ `marketCapitalization` | Both in USD millions; null if either is missing or zero |
 
 `MarketDataService.fetchAnalystDataFinnhubWithFallback(symbol, apiKey)` runs both Finnhub and Yahoo requests in parallel and merges the results: Finnhub fields take precedence; any null fields (common for non-US stocks, e.g. `fiveYearAvgDividendYield`, `trailingAnnualDividendRate`) are filled from the Yahoo result. If Finnhub returns no data, the full Yahoo result is used. This method is called by `analystDataProvider` when Finnhub is the active provider.
 
@@ -463,8 +473,14 @@ Yahoo Finance returns analyst price targets in the stock's **trading currency** 
 | Target price | Mean target with upside/downside % in matching colour; low–high gradient range bar with current-price marker |
 | 52-Week Range | Same gradient bar widget, same current-price marker |
 | Consensus | Stacked colour bar (proportional to analyst counts) with a text legend |
-| Valuation | Trailing P/E · Forward P/E · EPS (TTM), converted to stock currency |
+| Valuation | Trailing P/E · Forward P/E · EPS (TTM) · EV/EBITDA · P/B ratio · PEG ratio · FCF yield; all converted to stock currency where applicable. FCF yield is displayed as a percentage (fraction × 100). Rows are omitted when the value is null (e.g. EV/EBITDA for stocks not covered by the chosen provider). |
 | Dividends | Annual rate (`trailingAnnualDividendRate`, hidden when zero/null) · 5Y avg yield (`fiveYearAvgDividendYield`, %) · Est. annual income (shares × current price × 5Y yield ÷ 100, in stock currency, shown when shares > 0 and yield is available) |
+
+#### Buy recommendations currency
+
+`analystUpside()` (a top-level helper in `dashboard_provider.dart`) computes the percentage upside from current price to analyst mean target. Both `targetMeanPrice` and `rawQuotePrice` are in `quoteCurrency`, so the ratio is computed as `targetMeanPrice.percentChangeFrom(rawQuotePrice)`. Using `currentPrice` (which is converted to `stock.currency`) would produce a wrong ratio whenever `quoteCurrency ≠ stock.currency`.
+
+`PortfolioAnalysisScreen` (`/analysis`) displays both the current price and the analyst target in `quoteCurrency` to keep both figures in the same unit.
 
 ### 5.10 Price History Chart and Change Badges
 
@@ -519,6 +535,8 @@ Each stock tile on the Dashboard shows a 72×36 px mini line chart (sparkline) t
 
 ### 5.11b Stocks Screen Search and Sort
 
+
+
 `StocksScreen` is a `ConsumerStatefulWidget` that adds search and sort on top of `stocksStreamProvider`:
 
 - **Search** — a persistent `TextField` at the top of the body filters the list in real-time by symbol or name (case-insensitive `contains`). A clear button (✕) appears when the field is non-empty.
@@ -528,7 +546,19 @@ Each stock tile on the Dashboard shows a 72×36 px mini line chart (sparkline) t
   - **Price high → low** — uses the raw `PriceQuote.price`; stocks with no quote sort last. *Note: the price is not normalised to a common currency, so cross-currency comparisons are ordinal only.*
 - The active sort option is marked with a checkmark in the popup. Filtering and sorting are applied together in `_applyFilterAndSort` and produce a new list on every build (O(n log n), negligible for portfolio sizes).
 
-### 5.11c Stock Detail Pull-to-Refresh
+### 5.11c Dashboard Closed-Position Filter
+
+A **visibility toggle** in the Dashboard AppBar (eye icon) lets the user hide positions where `sharesHeld ≤ 0` — i.e. stocks that have been fully sold but whose records still exist in the database. State is local `_hideClosedPositions: bool` in `_DashboardScreenState`.
+
+When the filter is active:
+- `summary.stockItems` is filtered with `.where((i) => i.sharesHeld.isPositive)` before rendering.
+- The "Holdings" header shows a `(N closed hidden)` suffix so the user knows the list is filtered.
+- If all positions are closed and the filter is on, a "All positions are closed." placeholder replaces the card.
+- The icon switches to `visibility_off` while the filter is active.
+
+The filter does **not** affect `PortfolioSummaryCard` or `AllocationChart` — those always aggregate the full `PortfolioSummary`.
+
+### 5.11d Stock Detail Pull-to-Refresh
 
 `StockDetailScreen` wraps its `ListView` in a `RefreshIndicator`. Pulling down calls `_fetchPrice(forceRefresh: true)`, which always fetches a fresh quote regardless of cache staleness (unlike the on-load call which skips when a non-stale quote is already in memory). On network failure during a manual refresh, a `SnackBar` with "Could not refresh price" is shown; silent failure is reserved for the background on-load fetch.
 
@@ -682,7 +712,9 @@ All three use `Dio` with `ResponseType.stream` and a shared line-buffer SSE pars
 
 **ISIN suggestions:** The system prompt instructs the LLM to optionally append a `---STOCK_SUGGESTIONS---` delimiter followed by a JSON array of `{isin, name, reason}` objects. `_parseSuggestions()` splits on this delimiter after streaming completes, decodes the JSON, and exposes suggestions as `List<StockSuggestion>`. Each suggestion is displayed with an "Add" button that routes to `/stocks/add` with the ISIN pre-filled via `state.extra`.
 
-**State machine:** `AnalysisState` cycles through `idle → loading → streaming → done | error`. The UI shows predefined prompt chips in the idle state, a spinner during loading, a streaming `MarkdownBody` during streaming (auto-scrolls via `ScrollController`), and the completed response plus optional suggestion chips when done.
+**Buy recommendations panel:** In the `idle` state, a `_TopBuysSection` card is rendered above the prompt chips. It watches `topBuysProvider` (a shared `Provider` in `dashboard_provider.dart`) which filters held positions with `buy` or `strong_buy` analyst consensus, sorts them (strong_buy first, then descending upside), and caps lookups at `kMaxAnalystLookups = 20`. Tapping a tile navigates to the stock detail screen. The section is invisible when no cached buy/strong_buy data is available yet.
+
+**State machine:** `AnalysisState` cycles through `idle → loading → streaming → done | error`. The UI shows the buy recommendations panel and predefined prompt chips in the idle state, a spinner during loading, a streaming `MarkdownBody` during streaming (auto-scrolls via `ScrollController`), and the completed response plus optional suggestion chips when done.
 
 **Settings screen (`AiAnalysisSettingsScreen`):** Provider radio buttons, a single `TextEditingController` for the API key (reloaded when the provider changes), and a model radio group that updates via `modelsFor(activeProvider)`. Settings are read via a `Future` cached in `_settingsFuture` (initialised in `initState`, refreshed after each write) to avoid showing a loading flash on every `setState`.
 
@@ -746,7 +778,64 @@ Orders that fail (symbol not found, no historical price, no exchange rate) are l
 - A second subtitle line reads "⚠ Price estimated — please verify".
 - `isThreeLine: true` is set on `ListTile` to accommodate the extra line.
 
-### 5.23 Startup Crash Diagnostics
+### 5.23 Portfolio History Chart
+
+
+`PortfolioHistoryChart` is a `ConsumerWidget` rendered below the `PortfolioSummaryCard` on the Dashboard. It visualises the evolution of the portfolio across calendar years using a **stacked area chart** plus a **dividends sub-chart**.
+
+#### Data provider — `portfolioHistoryProvider`
+
+A `FutureProvider<List<PortfolioHistoryPoint>>` that:
+
+1. Collects all stocks and their transactions, splits, and dividends.
+2. Fetches `ChartRange.max` (monthly granularity) price history for every stock via `priceHistoryProvider` — the same keepAlive cache used by the stock detail chart, so no extra API calls when both are open.
+3. Iterates from the earliest transaction year to the current year. For each year:
+   - Computes `investedCapital` (cost basis of open positions) and `realisedPnl` (cumulative) from `PortfolioCalculator` and `PnlCalculator`.
+   - Computes `dividends` (cumulative confirmed paid dividends) from the dividends list.
+   - For the **current year** computes `totalValue` from live quotes in `priceQuotesProvider`.
+   - For **past years** finds the last price point at or before Dec 31 in the fetched history and computes `totalValue` from `sharesHeld × adjustedPrice`. When no price point exists for a year the `totalValue` is `null` for that year.
+4. Skips years with no activity (all three aggregate values are zero).
+
+**`PortfolioHistoryPoint`** model:
+
+| Field | Type | Description |
+|---|---|---|
+| `year` | `int` | Calendar year |
+| `investedCapital` | `Decimal` | Cost basis of open positions at year-end |
+| `realisedPnl` | `Decimal` | Cumulative realised P&L up to year-end |
+| `dividends` | `Decimal` | Cumulative confirmed net dividends up to year-end |
+| `totalValue` | `Decimal?` | Portfolio market value at year-end; null when no price history is available |
+| `currency` | `String` | Preferred display currency |
+| `isProjected` | `bool` | True for extrapolated future data points |
+
+#### Main chart (stacked area)
+
+Uses `fl_chart LineChart` with three series rendered in back-to-front order (later series paints on top of earlier ones, producing correct coloured zones without per-point clipping):
+
+| Series | Fill area | Colour |
+|---|---|---|
+| 0 — Total (investedCapital + unrealised) | from total down | `Color(0xFF4C7CE5)` (blue) + `Color(0xFF2DB87D)` (teal) combined |
+| 1 — Invested + realised | from series 1 down | `Color(0xFF1A8A57)` (dark green) |
+| 2 — Invested capital | from series 2 down | `Color(0xFF4C7CE5)` (blue) |
+
+`isCurved: false` prevents artifacts when data spans only a few years. A single tooltip (anchored to `barIndex == 0`) shows Invested / Unrealised / Realised / Total for the touched year.
+
+#### Dividends sub-chart
+
+A separate 90 dp tall `fl_chart BarChart` below the main chart, showing cumulative dividends per year in amber (`Color(0xFFE5A23C)`). It shares the same X-axis domain (years) as the main chart.
+
+#### Forecast
+
+When `portfolioHistoryProvider` returns at least two data points, `_forecast()` appends two extrapolated future years using linear slope projection:
+
+- `sInvested` = slope of `investedCapital` (first → last point)
+- `sPnl` = slope of `realisedPnl`
+- `sDivs` = slope of `dividends`
+- `sUnrealised` = slope of `_unrealisedFor(p)` where `_unrealisedFor(p)` is `p.totalValue != null ? p.totalValue! − p.investedCapital : Decimal.zero`
+
+Projected `totalValue = clampedInvested + projUnrealised` (both clamped to zero). Forecast points have `isProjected: true` and are rendered with dashed lines.
+
+### 5.24 Startup Crash Diagnostics
 
 `main.dart` maintains a lightweight crash-log file at `<documents>/stockmanager_crash.txt`. All writes are **synchronous** (`File.writeAsStringSync(flush: true)`) so they survive a hard process kill (SIGKILL, OOM kill) that would leave async writes incomplete.
 
@@ -760,6 +849,23 @@ Orders that fail (symbol not found, no historical price, no exchange rate) are l
 **Known gap:** Crashes that occur before `_initCrashLogPath()` completes (i.e. during `WidgetsFlutterBinding.ensureInitialized()` or within the `getApplicationDocumentsDirectory()` call itself) hit the zone error handler when `_crashLogPath` is still null. `_appendCrashLog` silently no-ops in that case; the crash is printed to logcat via `debugPrint` but does not appear in the diagnostic screen on the next launch. Very-early startup failures must still be diagnosed via ADB.
 
 **Crash-report screen (`_CrashReportApp`):** A minimal `MaterialApp` (deep-orange theme) that renders the crash log in a `SelectableText` on a black background. It does not use `ProviderScope` or any production infrastructure — it must be renderable even when the database or plugins are broken.
+
+### 5.25 Top Buy Recommendations
+
+`topBuysProvider` is a synchronous `Provider` in `dashboard_provider.dart` that aggregates analyst buy/strong-buy recommendations across the user's current holdings.
+
+**Algorithm:**
+1. Reads `portfolioSummaryProvider` for all held positions (shares > 0), sorted by `currentValue` descending.
+2. Takes the top `kMaxAnalystLookups = 20` by value to bound concurrent HTTP requests against Yahoo/Finnhub rate limits.
+3. For each, reads the `analystDataProvider(stockId)` keepAlive cache (no new HTTP calls unless the cache is cold).
+4. Filters to `recommendationKey` of `buy` or `strong_buy`.
+5. Sorts: strong_buy first, then descending `analystUpside()` (% to analyst mean target).
+
+`analystUpside(item, analyst)` computes `targetMeanPrice.percentChangeFrom(rawQuotePrice)`. Both are in `quoteCurrency`, ensuring a correct ratio regardless of whether the stock currency differs from the quote currency.
+
+**`PortfolioAnalysisScreen` (`/analysis`)** uses `topBuysProvider` to show the buy recommendations card below the portfolio history chart. The `_TopBuysSection` in `AnalysisScreen` (`/settings/ai-analysis`) also reads the same provider.
+
+**`DividendCalculator.calculate()` — `manualYieldPct` override:** The optional `manualYieldPct` parameter (a `Decimal?`) is used for fixed-income assets (bonds, impact-lending funds) that accrue interest rather than paying dividends. When set and `_annualYield()` returns zero (no confirmed paid dividends in the last 12 months), `manualYieldPct` is used as `annualYieldPct` in the returned `DividendSummary`. The value is stored on the `Stock` model and passed through `portfolioSummaryProvider`.
 
 ---
 
@@ -782,6 +888,7 @@ Orders that fail (symbol not found, no historical price, no exchange rate) are l
 /settings                → Settings
 /settings/ai-analysis    → AI Portfolio Analysis (AnalysisScreen)
 /settings/ai-analysis/key → Provider / API key / model picker (AiAnalysisSettingsScreen)
+/analysis                → Portfolio Analysis (chart + buy recommendations)
 /settings/broker-import         → Import from Broker (broker picker)
 /settings/broker-import/flatex  → FlatexImportScreen (CSV parse → preview → import)
 /settings/backup         → Local backup (export / import ZIP)

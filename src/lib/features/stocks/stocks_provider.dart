@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:decimal/decimal.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -17,6 +18,7 @@ import '../../core/models/news_article.dart';
 import '../../core/models/price_point.dart';
 import '../../core/models/price_quote.dart';
 import '../../core/models/asset_type.dart';
+import '../../core/models/exchange_rate.dart';
 import '../../core/models/stock.dart';
 import '../../core/models/stock_split.dart';
 import '../../core/models/transaction.dart';
@@ -123,7 +125,8 @@ final analystDataProvider =
   // Keep the result alive for 10 minutes so navigating away and back does not
   // trigger a full Yahoo Finance round-trip on every visit.
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 10), link.close);
+  final keepAliveTimer = Timer(const Duration(minutes: 10), link.close);
+  ref.onDispose(keepAliveTimer.cancel);
 
   final stock = await ref.watch(stockByIdProvider(stockId).future);
   if (stock == null) return null;
@@ -151,7 +154,8 @@ final priceHistoryProvider = FutureProvider.family<List<PricePoint>,
   // Cache results for 5 minutes so navigating away and back does not trigger
   // a full refetch, especially important for long-range (5Y / MAX) requests.
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 5), link.close);
+  final keepAliveTimer = Timer(const Duration(minutes: 5), link.close);
+  ref.onDispose(keepAliveTimer.cancel);
 
   final stockAsync = ref.watch(stockByIdProvider(stockId));
   final stock = stockAsync.value;
@@ -169,7 +173,8 @@ final newsProvider =
   if (stock == null) return [];
 
   final link = ref.keepAlive();
-  Timer(const Duration(minutes: 30), link.close);
+  final keepAliveTimer = Timer(const Duration(minutes: 30), link.close);
+  ref.onDispose(keepAliveTimer.cancel);
 
   final settings = await ref.watch(settingsProvider.future);
   String? finnhubKey;
@@ -223,10 +228,14 @@ class StockActions {
   }
 
   Future<void> updateStock(Stock stock) async {
-    await _db.stocksDao.upsert(
+    // Use a partial UPDATE that excludes broker_id. The upsert's
+    // ON CONFLICT DO UPDATE re-checks FK constraints on every column in the
+    // SET clause, which crashes when broker_id is stale (e.g. after a restore
+    // where the referenced broker was absent). The edit-stock screen never
+    // reassigns a stock to a different broker, so broker_id is safe to omit.
+    await _db.stocksDao.updateDetails(
       StocksCompanion(
         id: Value(stock.id),
-        brokerId: Value(stock.brokerId),
         isin: Value(stock.isin),
         symbol: Value(stock.symbol),
         name: Value(stock.name),
@@ -234,6 +243,7 @@ class StockActions {
         currency: Value(stock.currency),
         dripEnabled: Value(stock.dripEnabled),
         assetType: Value(stock.assetType.dbValue),
+        manualYieldPct: Value(stock.manualYieldPct?.toString()),
       ),
     );
     _notifyChange();
@@ -349,16 +359,15 @@ class StockActions {
   Future<void> syncDividends(
     String stockId,
     String isin,
+    String stockCurrency,
     List<FetchedDividend> fetched,
     List<StockTransaction> transactions,
     List<StockSplit> splits, {
     bool isAccumulating = false,
   }) async {
-    if (isAccumulating) {
-      _notifyChange();
-      return;
-    }
+    if (isAccumulating) return;
 
+    final rates = _ref.read(exchangeRatesProvider).value ?? [];
     final taxRate = withholdingTaxRate(isin);
 
     for (final d in fetched) {
@@ -371,6 +380,14 @@ class StockActions {
           PortfolioCalculator.sharesAtDate(transactions, splits, d.date);
       if (sharesHeld <= Decimal.zero) continue;
 
+      // Convert per-share amount into the stock's trading currency so all
+      // figures for this stock are expressed in the same unit.
+      final exchangeRate = ExchangeRate.find(rates, d.currency, stockCurrency);
+      final amountPerShare = exchangeRate != null
+          ? exchangeRate.convert(d.amountPerShare)
+          : d.amountPerShare;
+      final currency = exchangeRate != null ? stockCurrency : d.currency;
+
       final type = d.isPaid ? DividendType.paid : DividendType.expected;
       // Paid auto-fetched dividends need user confirmation; expected do not.
       final needsConfirmation = d.isPaid;
@@ -378,7 +395,7 @@ class StockActions {
       Decimal? totalAmount;
       Decimal? withholdingTax;
       if (d.isPaid) {
-        totalAmount = d.amountPerShare * sharesHeld;
+        totalAmount = amountPerShare * sharesHeld;
         if (taxRate > Decimal.zero) {
           withholdingTax =
               (totalAmount.toRational() * taxRate.toRational())
@@ -391,9 +408,9 @@ class StockActions {
         stockId: stockId,
         type: type.name,
         date: d.date,
-        amountPerShare: d.amountPerShare,
+        amountPerShare: amountPerShare,
         totalAmount: Value(totalAmount),
-        currency: d.currency,
+        currency: currency,
         withholdingTax: Value(withholdingTax),
         source: const Value('auto'),
         confirmed: Value(!needsConfirmation),
@@ -484,23 +501,29 @@ final stockActionsProvider = Provider<StockActions>((ref) {
 Broker _brokerFromRow(BrokerRow r) =>
     Broker(id: r.id, name: r.name, notes: r.notes);
 
-Stock _stockFromRow(StockRow r) => Stock(
-      id: r.id,
-      brokerId: r.brokerId,
-      isin: r.isin,
-      symbol: r.symbol,
-      name: r.name,
-      exchange: r.exchange,
-      currency: r.currency,
-      dripEnabled: r.dripEnabled,
-      assetType: AssetType.fromDb(r.assetType),
-      trailingStopPct: r.trailingStopPct != null
-          ? Decimal.tryParse(r.trailingStopPct!)
-          : null,
-      trailingStopHighWater: r.trailingStopHighWater != null
-          ? Decimal.tryParse(r.trailingStopHighWater!)
-          : null,
-    );
+Stock _stockFromRow(StockRow r) {
+  Decimal? tryDec(String? v, String field) {
+    if (v == null) return null;
+    final d = Decimal.tryParse(v);
+    if (d == null) debugPrint('_stockFromRow[${r.id}]: malformed $field: $v');
+    return d;
+  }
+
+  return Stock(
+    id: r.id,
+    brokerId: r.brokerId,
+    isin: r.isin,
+    symbol: r.symbol,
+    name: r.name,
+    exchange: r.exchange,
+    currency: r.currency,
+    dripEnabled: r.dripEnabled,
+    assetType: AssetType.fromDb(r.assetType),
+    trailingStopPct: tryDec(r.trailingStopPct, 'trailingStopPct'),
+    trailingStopHighWater: tryDec(r.trailingStopHighWater, 'trailingStopHighWater'),
+    manualYieldPct: tryDec(r.manualYieldPct, 'manualYieldPct'),
+  );
+}
 
 StockTransaction _txFromRow(TransactionRow r) => StockTransaction(
       id: r.id,

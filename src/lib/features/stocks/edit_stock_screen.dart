@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +22,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
   final _symbolCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _exchangeCtrl = TextEditingController();
+  final _manualYieldCtrl = TextEditingController();
   final _currencyFieldKey = GlobalKey<FormFieldState<String>>();
   String? _selectedCurrency;
   AssetType _assetType = AssetType.stock;
@@ -35,6 +37,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
     _symbolCtrl.dispose();
     _nameCtrl.dispose();
     _exchangeCtrl.dispose();
+    _manualYieldCtrl.dispose();
     super.dispose();
   }
 
@@ -195,6 +198,8 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
           _selectedCurrency = stock.currency;
           _assetType = stock.assetType;
           _dripEnabled = stock.dripEnabled;
+          _manualYieldCtrl.text =
+              stock.manualYieldPct?.toStringAsFixed(2) ?? '';
           _loaded = true;
         }
 
@@ -312,6 +317,26 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                   onChanged: (v) => setState(() => _dripEnabled = v),
                   contentPadding: EdgeInsets.zero,
                 ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _manualYieldCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Annual interest / yield % (optional)',
+                    helperText:
+                        'Override for fixed-income assets (e.g. 6.36 for 6.36% p.a.)',
+                    suffixText: '%',
+                  ),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return null;
+                    final parsed = double.tryParse(v.trim().replaceAll(',', '.'));
+                    if (parsed == null || parsed < 0) {
+                      return 'Enter a non-negative number';
+                    }
+                    return null;
+                  },
+                ),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _isSaving
@@ -324,6 +349,11 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                             final newSymbol =
                                 _symbolCtrl.text.trim().toUpperCase();
                             final newCurrency = _selectedCurrency!;
+                            final yieldText =
+                                _manualYieldCtrl.text.trim().replaceAll(',', '.');
+                            final newYield = yieldText.isEmpty
+                                ? null
+                                : Decimal.tryParse(yieldText);
                             await ref.read(stockActionsProvider).updateStock(
                                   stock.copyWith(
                                     symbol: newSymbol,
@@ -334,6 +364,7 @@ class _EditStockScreenState extends ConsumerState<EditStockScreen> {
                                     currency: newCurrency,
                                     dripEnabled: _dripEnabled,
                                     assetType: _assetType,
+                                    manualYieldPct: newYield,
                                   ),
                                 );
                             // When symbol or currency changed, the cached price

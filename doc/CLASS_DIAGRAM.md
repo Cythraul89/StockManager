@@ -27,6 +27,7 @@ classDiagram
         +AssetType assetType
         +Decimal? trailingStopPct
         +Decimal? trailingStopHighWater
+        +Decimal? manualYieldPct
         +copyWith() Stock
     }
 
@@ -40,6 +41,7 @@ classDiagram
         +String currency
         +Decimal fees
         +String? notes
+        +String? externalRef
         +totalCost() Decimal
         +copyWith() StockTransaction
     }
@@ -131,6 +133,10 @@ classDiagram
         +Decimal? trailingPE
         +Decimal? forwardPE
         +Decimal? trailingEps
+        +Decimal? evToEbitda
+        +Decimal? priceToBook
+        +Decimal? pegRatio
+        +Decimal? freeCashFlowYield
         +Decimal? yearChangePct
         +Decimal? fiveYearAvgDividendYield
         +Decimal? trailingAnnualDividendRate
@@ -174,9 +180,86 @@ classDiagram
         +ChartRange sparklineRange
         +MarketDataProvider marketDataProvider
         +String? finnhubApiKey
+        +String? claudeApiKey
+        +String claudeModel
+        +String llmProvider
+        +String? groqApiKey
+        +String? geminiApiKey
+        +String groqModel
+        +String geminiModel
         +copyWith() AppSettings
         +defaults AppSettings$
     }
+
+    class LlmProvider {
+        <<enumeration>>
+        claude
+        groq
+        gemini
+    }
+
+    class LlmService {
+        <<abstract>>
+        +streamAnalysis(apiKey, model, systemPrompt, userMessage) Stream~String~
+    }
+
+    class ClaudeService {
+        +streamAnalysis(apiKey, model, systemPrompt, userMessage) Stream~String~
+    }
+
+    class GroqService {
+        +streamAnalysis(apiKey, model, systemPrompt, userMessage) Stream~String~
+    }
+
+    class GeminiService {
+        +streamAnalysis(apiKey, model, systemPrompt, userMessage) Stream~String~
+    }
+
+    class AnalysisState {
+        +AnalysisStatus status
+        +String responseText
+        +String? error
+        +List~StockSuggestion~ suggestions
+        +copyWith() AnalysisState
+    }
+
+    class AnalysisStatus {
+        <<enumeration>>
+        idle
+        loading
+        streaming
+        done
+        error
+    }
+
+    class StockSuggestion {
+        +String isin
+        +String name
+        +String reason
+    }
+
+    class AnalysisNotifier {
+        +analyse(query) Future
+        +reset()
+    }
+
+    class PortfolioHistoryPoint {
+        +int year
+        +Decimal investedCapital
+        +Decimal realisedPnl
+        +Decimal dividends
+        +Decimal? totalValue
+        +String currency
+        +bool isProjected
+    }
+
+    LlmService <|.. ClaudeService : implements
+    LlmService <|.. GroqService : implements
+    LlmService <|.. GeminiService : implements
+    AnalysisNotifier --> AnalysisState : manages
+    AnalysisState --> AnalysisStatus
+    AnalysisState *-- StockSuggestion
+    AppSettings --> LlmProvider
 
     class AppTheme {
         <<enumeration>>
@@ -234,7 +317,7 @@ classDiagram
     }
 
     class DividendCalculator {
-        +calculate(dividends, price, shares) DividendSummary
+        +calculate(dividends, price, shares, manualYieldPct?) DividendSummary
         +convert(summary, rate) DividendSummary
         +estimatedTotal() Decimal
     }
@@ -393,7 +476,7 @@ classDiagram
     %% ─────────────────────────────────────────────────────────
 
     class AppDatabase {
-        +schemaVersion = 10
+        +schemaVersion = 17
         +brokersDao BrokersDao
         +stocksDao StocksDao
         +transactionsDao TransactionsDao
@@ -461,6 +544,13 @@ classDiagram
         +upsertSettings(settings) Future
         +updateLastSyncAt(time) Future
         +updateFinnhubApiKey(key) Future
+        +updateClaudeApiKey(key) Future
+        +updateClaudeModel(model) Future
+        +updateLlmProvider(provider) Future
+        +updateGroqApiKey(key) Future
+        +updateGeminiApiKey(key) Future
+        +updateGroqModel(model) Future
+        +updateGeminiModel(model) Future
         +updateCertFingerprint(fingerprint) Future
         +watchExchangeRates() Stream~List~ExchangeRate~~
         +getExchangeRates() Future~List~ExchangeRate~~
@@ -588,6 +678,42 @@ estimatedAnnualDividendProvider  (Provider — synchronous, no extra API calls)
              ├── totalStocks: int        (held stocks with shares > 0)
              └── currency: String        (preferred display currency)
 
+topBuysProvider  (Provider — synchronous)
+  ├── portfolioSummaryProvider  ← held positions sorted by value
+  └── analystDataProvider(id)   ← reads keepAlive cache; no extra HTTP calls
+       │
+       └── produces List~({StockSummaryItem item, AnalystData analyst})~
+             sorted: strong_buy first, then descending analystUpside()
+             capped at kMaxAnalystLookups = 20 positions
+
+portfolioHistoryProvider (FutureProvider)
+  ├── stocksStreamProvider          (all stocks)
+  ├── settingsProvider              (preferredCurrency)
+  ├── exchangeRatesProvider         (currency conversion)
+  ├── priceQuotesProvider           (current-year portfolio value)
+  ├── transactionsByStockProvider   (per stock)
+  ├── splitsByStockProvider         (per stock)
+  ├── dividendsByStockProvider      (per stock)
+  └── priceHistoryProvider(stockId, ChartRange.max)  (historical year-end prices)
+        │
+        └── produces List~PortfolioHistoryPoint~
+              ├── investedCapital  (PortfolioCalculator)
+              ├── realisedPnl      (PnlCalculator)
+              ├── dividends        (cumulative confirmed paid)
+              └── totalValue?      (market value at year-end; null if no history)
+
+analysisProvider (NotifierProvider — AnalysisNotifier)
+  ├── portfolioSummaryProvider      (portfolio data serialised to JSON)
+  ├── claudeServiceProvider         (ClaudeService — Anthropic SSE)
+  ├── groqServiceProvider           (GroqService — OpenAI-compatible SSE)
+  └── geminiServiceProvider         (GeminiService — Google SSE)
+        │
+        └── produces AnalysisState
+              ├── status: AnalysisStatus
+              ├── responseText: String      (streamed Markdown)
+              ├── error: String?
+              └── suggestions: List~StockSuggestion~
+
 isinLookupServiceProvider  ── IsinLookupService  (must be overridden in ProviderScope)
   └── used by AddStockScreen and EditStockScreen (ISIN lookup / Research button)
 ```
@@ -612,13 +738,23 @@ ShellRoute (AdaptiveShell)
 │
 ├── /dividends                     DividendsScreen
 │
+├── /analysis                      PortfolioAnalysisScreen
+│
 ├── /brokers                       BrokersScreen
 │   ├── /brokers/add               AddBrokerScreen
 │   └── /brokers/:id/edit          EditBrokerScreen
 │
-└── /settings                      SettingsScreen
-    ├── /settings/nextcloud        NextcloudSettingsScreen
-    ├── /settings/currency         CurrencySettingsScreen
-    ├── /settings/notifications    NotificationSettingsScreen
-    └── /settings/market-data      MarketDataSettingsScreen
+└── /settings                                SettingsScreen
+    ├── /settings/ai-analysis                AnalysisScreen
+    │   └── /settings/ai-analysis/key        AiAnalysisSettingsScreen
+    ├── /settings/broker-import              BrokerImportScreen
+    │   └── /settings/broker-import/flatex   FlatexImportScreen
+    ├── /settings/backup                     LocalBackupScreen
+    ├── /settings/nextcloud                  NextcloudSettingsScreen
+    ├── /settings/currency                   CurrencySettingsScreen
+    ├── /settings/notifications              NotificationSettingsScreen
+    ├── /settings/market-data                MarketDataSettingsScreen
+    └── /settings/about                      AboutScreen
+        ├── /settings/about/logs             LogsScreen
+        └── /settings/about/privacy-policy   PrivacyPolicyScreen
 ```

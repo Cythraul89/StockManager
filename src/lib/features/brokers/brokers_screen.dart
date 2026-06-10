@@ -15,7 +15,7 @@ class BrokersScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Brokers')),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push('/brokers/add'),
+        onPressed: () => context.push('/settings/brokers/add'),
         tooltip: 'Add broker',
         child: const Icon(Icons.add),
       ),

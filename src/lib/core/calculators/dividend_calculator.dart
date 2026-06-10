@@ -21,6 +21,7 @@ class DividendCalculator {
     required Decimal currentPrice,
     required Decimal sharesHeld,
     int? forYear,
+    Decimal? manualYieldPct,
   }) {
     final year = forYear ?? DateTime.now().year;
 
@@ -34,11 +35,16 @@ class DividendCalculator {
     }
 
     final annualYield = _annualYield(paidDividends, currentPrice, sharesHeld);
+    // When no paid dividends produce a yield (e.g. fixed-income assets that pay
+    // interest instead of dividends), fall back to the manual override.
+    final effectiveYield = (annualYield == Decimal.zero && manualYieldPct != null)
+        ? manualYieldPct
+        : annualYield;
 
     return DividendSummary(
       allTimeTotal: allTime,
       currentYearTotal: currentYear,
-      annualYieldPct: annualYield,
+      annualYieldPct: effectiveYield,
     );
   }
 

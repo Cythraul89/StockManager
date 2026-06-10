@@ -12,6 +12,7 @@ import 'features/dividends/dividends_screen.dart';
 import 'features/dividends/edit_dividend_screen.dart';
 import 'features/analysis/ai_analysis_settings_screen.dart';
 import 'features/analysis/analysis_screen.dart';
+import 'features/portfolio_analysis/portfolio_analysis_screen.dart';
 import 'features/settings/broker_import_screen.dart';
 import 'features/settings/flatex_import_screen.dart';
 import 'features/settings/about_screen.dart';
@@ -133,24 +134,28 @@ final _router = GoRouter(
           builder: (context, state) => const DividendsScreen(),
         ),
         GoRoute(
-          path: '/brokers',
-          builder: (context, state) => const BrokersScreen(),
-          routes: [
-            GoRoute(
-              path: 'add',
-              builder: (context, state) => const AddBrokerScreen(),
-            ),
-            GoRoute(
-              path: ':id/edit',
-              builder: (context, state) =>
-                  EditBrokerScreen(id: state.pathParameters['id']!),
-            ),
-          ],
+          path: '/analysis',
+          builder: (_, __) => const PortfolioAnalysisScreen(),
         ),
         GoRoute(
           path: '/settings',
           builder: (context, state) => const SettingsScreen(),
           routes: [
+            GoRoute(
+              path: 'brokers',
+              builder: (_, __) => const BrokersScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (_, __) => const AddBrokerScreen(),
+                ),
+                GoRoute(
+                  path: ':id/edit',
+                  builder: (context, state) =>
+                      EditBrokerScreen(id: state.pathParameters['id']!),
+                ),
+              ],
+            ),
             GoRoute(
               path: 'ai-analysis',
               builder: (_, __) => const AnalysisScreen(),

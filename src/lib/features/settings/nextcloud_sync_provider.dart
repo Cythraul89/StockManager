@@ -210,6 +210,12 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
                 'stock references in the backup.'
             : null,
       );
+
+      // Upload the restored snapshot immediately so the remote backup list
+      // gains a file whose date is newer than lastSyncAt.  Without this,
+      // the same backup keeps re-triggering the restore prompt on every
+      // startup because no newer file exists to anchor the comparison.
+      unawaited(syncNow());
     } catch (e) {
       state =
           state.copyWith(status: SyncStatus.error, error: 'Restore failed: $e');
@@ -218,6 +224,9 @@ class NextcloudSyncNotifier extends Notifier<NextcloudSyncState> {
 
   void dismissRestore() {
     state = state.copyWith(clearPendingRestore: true);
+    // Sync local data to the server so lastSyncAt advances past the dismissed
+    // backup's date and the same offer does not reappear on the next startup.
+    _scheduleSync();
   }
 
   Future<void> syncNow() async {

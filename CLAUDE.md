@@ -229,7 +229,7 @@ Providers that **must be overridden** in `ProviderScope` at startup:
 
 ## Testing
 
-The test suite lives in `test/` and has **100 tests** across 8 files:
+The test suite lives in `test/` and has **106 tests** across 9 files:
 
 | File | What it covers |
 |---|---|
@@ -237,9 +237,10 @@ The test suite lives in `test/` and has **100 tests** across 8 files:
 | `test/manual_price_dialog_test.dart` | ManualPriceDialog validation and return values |
 | `test/calculators/portfolio_calculator_test.dart` | `PortfolioCalculator`: single buy, weighted avg, partial/full sell, 4:1 and 1:2 splits, `splitMultiplierAfter`, `sharesAtDate` |
 | `test/calculators/pnl_calculator_test.dart` | `PnlCalculator`: unrealised/realised P&L, fee handling, oversell clamping, `convert` |
-| `test/calculators/dividend_calculator_test.dart` | `DividendCalculator`: `estimatedTotal`, allTime/yearTotal, annualYield 12-month window, zero-division guard, `convert`, `Dividend.netAmount` |
+| `test/calculators/dividend_calculator_test.dart` | `DividendCalculator`: `estimatedTotal`, allTime/yearTotal, annualYield 12-month window, zero-division guard, `convert`, `Dividend.netAmount`, `manualYieldPct` fallback |
 | `test/utils/decimal_math_test.dart` | `DecimalX` predicates, `percentChangeFrom`, `weightedAverage`, `clampMin` |
 | `test/models/exchange_rate_test.dart` | `ExchangeRate.find`, `convert`, `isStale`, Equatable equality |
+| `test/models/stock_test.dart` | `Stock.copyWith` sentinel pattern (`manualYieldPct`, `trailingStopPct`), Equatable equality |
 | `test/database/trailing_stop_test.dart` | `StocksDao.updateTrailingStop` / `updateTrailingStopHighWater` with in-memory Drift DB |
 | `test/parsers/flatex_order_parser_test.dart` | `FlatexOrderParser`: all row types, skip counters, date format variants, ISIN/WKN split, real-world export format |
 

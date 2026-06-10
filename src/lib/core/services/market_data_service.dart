@@ -79,8 +79,8 @@ class MarketDataService {
   }
 
   /// Performs the actual Yahoo Finance GDPR consent flow + crumb fetch.
-  /// Errors are swallowed and logged; callers proceed and will fail gracefully
-  /// on the subsequent API call (where 401/403 triggers session invalidation).
+  /// Throws if the crumb cannot be obtained so _ensureSession can propagate
+  /// the failure to waiting callers via completer.completeError.
   Future<void> _doInitSession() async {
     try {
       // name→value map built from every Set-Cookie header we encounter.
@@ -213,9 +213,12 @@ class MarketDataService {
         _crumb = crumb;
         _sessionInitAt = DateTime.now();
         debugPrint('MarketDataService: session established');
+      } else {
+        throw Exception('Yahoo Finance crumb not obtained (value="$crumb")');
       }
     } catch (e) {
       debugPrint('MarketDataService: Yahoo session init failed: $e');
+      rethrow;
     }
   }
 
@@ -292,8 +295,8 @@ class MarketDataService {
   /// Fetches analyst consensus, 52-week range, valuation, and recommendation
   /// breakdown from Yahoo Finance quoteSummary in a single request.
   Future<AnalystData?> fetchAnalystData(String symbol) async {
-    await _ensureSession();
     try {
+      await _ensureSession();
       final response = await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
         queryParameters: _quoteSummaryParams({
@@ -350,12 +353,21 @@ class MarketDataService {
           ?.cast<Map<String, dynamic>>();
       final trend = trends?.firstOrNull;
 
+      // FCF yield = freeCashflow / marketCap (both from Yahoo, same currency)
+      final freeCashflow = raw(fd, 'freeCashflow');
+      final marketCap = raw(sd, 'marketCap');
+      Decimal? fcfYield;
+      if (freeCashflow != null && marketCap != null && marketCap > Decimal.zero) {
+        fcfYield = (freeCashflow.toRational() / marketCap.toRational())
+            .toDecimal(scaleOnInfinitePrecision: 6);
+      }
+
       return AnalystData(
         targetMeanPrice: meanPrice,
         targetLowPrice: raw(fd, 'targetLowPrice'),
         targetHighPrice: raw(fd, 'targetHighPrice'),
         recommendationKey: recKey?.isNotEmpty == true ? recKey : null,
-        numberOfAnalysts: numRaw is int ? numRaw : null,
+        numberOfAnalysts: numRaw is num ? numRaw.toInt() : null,
         financialCurrency: currency,
         // Consensus breakdown
         strongBuyCount: trend?['strongBuy'] as int?,
@@ -370,6 +382,10 @@ class MarketDataService {
         trailingPE: raw(sd, 'trailingPE'),
         forwardPE: raw(sd, 'forwardPE'),
         trailingEps: raw(dks, 'trailingEps'),
+        evToEbitda: raw(dks, 'enterpriseToEbitda'),
+        priceToBook: raw(dks, 'priceToBook'),
+        pegRatio: raw(dks, 'pegRatio'),
+        freeCashFlowYield: fcfYield,
         // 52-week return as a fraction (e.g. 0.157 = +15.7%)
         yearChangePct: raw(dks, '52WeekChange'),
         // Dividends — fiveYearAvgDividendYield is already in % (e.g. 3.5 = 3.5%)
@@ -439,6 +455,24 @@ class MarketDataService {
               .toDecimal(scaleOnInfinitePrecision: 4)
           : null;
 
+      // Finnhub EV/EBITDA — enterpriseValue (USD millions) / ebitdaTTM (USD millions)
+      final fhEv = _fhDecimal(m, 'enterpriseValue');
+      final fhEbitda = _fhDecimal(m, 'ebitdaTTM');
+      Decimal? fhEvToEbitda;
+      if (fhEv != null && fhEbitda != null && fhEbitda > Decimal.zero) {
+        fhEvToEbitda = (fhEv.toRational() / fhEbitda.toRational())
+            .toDecimal(scaleOnInfinitePrecision: 2);
+      }
+
+      // Finnhub FCF yield — freeCashFlowTTM / marketCapitalization (both USD millions)
+      final fhFcf = _fhDecimal(m, 'freeCashFlowTTM');
+      final fhMktCap = _fhDecimal(m, 'marketCapitalization');
+      Decimal? fhFcfYield;
+      if (fhFcf != null && fhMktCap != null && fhMktCap > Decimal.zero) {
+        fhFcfYield = (fhFcf.toRational() / fhMktCap.toRational())
+            .toDecimal(scaleOnInfinitePrecision: 6);
+      }
+
       return AnalystData(
         targetMeanPrice: targetMean,
         targetLowPrice:  _fhDecimal(pt, 'targetLow'),
@@ -459,6 +493,10 @@ class MarketDataService {
         forwardPE:  _fhDecimal(m, 'forwardPE'),
         trailingEps: _fhDecimal(m, 'epsBasicExclExtraAnnual') ??
             _fhDecimal(m, 'epsNormalizedAnnual'),
+        evToEbitda: fhEvToEbitda,
+        priceToBook: _fhDecimal(m, 'pbQuarterly'),
+        pegRatio: _fhDecimal(m, 'pegNormalizedAnnual'),
+        freeCashFlowYield: fhFcfYield,
         yearChangePct: yearChangePct,
         fiveYearAvgDividendYield:  _fhDecimal(m, 'dividendYield5Y'),
         trailingAnnualDividendRate: _fhDecimal(m, 'dividendPerShareAnnual'),
@@ -497,6 +535,10 @@ class MarketDataService {
       trailingPE: fh.trailingPE ?? yh.trailingPE,
       forwardPE: fh.forwardPE ?? yh.forwardPE,
       trailingEps: fh.trailingEps ?? yh.trailingEps,
+      evToEbitda: fh.evToEbitda ?? yh.evToEbitda,
+      priceToBook: fh.priceToBook ?? yh.priceToBook,
+      pegRatio: fh.pegRatio ?? yh.pegRatio,
+      freeCashFlowYield: fh.freeCashFlowYield ?? yh.freeCashFlowYield,
       yearChangePct: fh.yearChangePct ?? yh.yearChangePct,
       fiveYearAvgDividendYield:
           fh.fiveYearAvgDividendYield ?? yh.fiveYearAvgDividendYield,
@@ -833,6 +875,9 @@ class MarketDataService {
           (chart?['result'] as List?)?.firstOrNull as Map<String, dynamic>?;
       if (result == null) { return null; }
 
+      // An empty currency is tolerated here: this function returns only the
+      // price (currency is discarded), and _normalizeCurrency leaves the value
+      // unchanged for a non-GBp currency, so a valid close is still usable.
       final rawCurrency = (result['meta']?['currency'] as String?) ?? '';
       final quotes = result['indicators']?['quote'] as List?;
       final closes =
@@ -949,8 +994,11 @@ class MarketDataService {
 
   Future<FetchedDividend?> _fetchExpectedDividendFromYahoo(
       String symbol, List<FetchedDividend> recentPaid) async {
-    await _ensureSession();
     try {
+      // Inside the try so a failed session init (which now throws) returns null
+      // instead of propagating through fetchDividends and discarding the
+      // already-fetched paid-dividend list.
+      await _ensureSession();
       final response = await _withYahooRetry(() => _yahooDio.get<Map<String, dynamic>>(
         '$_yahooQuoteSummaryUrl$symbol',
         queryParameters: _quoteSummaryParams({'modules': 'calendarEvents'}),

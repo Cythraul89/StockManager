@@ -33,6 +33,12 @@ class StocksDao extends DatabaseAccessor<AppDatabase> with _$StocksDaoMixin {
   Future<void> upsert(StocksCompanion companion) =>
       into(stocks).insertOnConflictUpdate(companion);
 
+  // Partial UPDATE used by edit-stock — omits broker_id so SQLite does not
+  // re-check the FK constraint when broker_id is stale (e.g. after a restore).
+  Future<void> updateDetails(StocksCompanion companion) =>
+      (update(stocks)..where((t) => t.id.equals(companion.id.value)))
+          .write(companion);
+
   Future<int> deleteById(String id) =>
       (delete(stocks)..where((t) => t.id.equals(id))).go();
 

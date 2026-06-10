@@ -24,6 +24,7 @@ class _AddTransactionScreenState
   final _priceCtrl = TextEditingController();
   final _feesCtrl = TextEditingController(text: '0');
   final _notesCtrl = TextEditingController();
+  final _refCtrl = TextEditingController();
 
   TransactionType _type = TransactionType.buy;
   DateTime _executedAt = DateTime.now();
@@ -46,6 +47,7 @@ class _AddTransactionScreenState
     _priceCtrl.dispose();
     _feesCtrl.dispose();
     _notesCtrl.dispose();
+    _refCtrl.dispose();
     super.dispose();
   }
 
@@ -152,6 +154,7 @@ class _AddTransactionScreenState
       currency: stockRow.currency,
       fees: fees,
       notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      externalRef: _refCtrl.text.trim().isEmpty ? null : _refCtrl.text.trim(),
     );
 
     setState(() => _isSaving = true);
@@ -248,6 +251,14 @@ class _AddTransactionScreenState
                 if (_parseDecimal(v) == null) return 'Invalid number';
                 return null;
               },
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _refCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Transaction / order number (optional)',
+                prefixIcon: Icon(Icons.tag),
+              ),
             ),
             const SizedBox(height: 8),
             TextFormField(

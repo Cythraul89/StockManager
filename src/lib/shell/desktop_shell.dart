@@ -10,7 +10,7 @@ class DesktopShell extends StatelessWidget {
     _NavItem(label: 'Dashboard', icon: Icons.dashboard_outlined, path: '/'),
     _NavItem(label: 'Stocks', icon: Icons.show_chart, path: '/stocks'),
     _NavItem(label: 'Dividends', icon: Icons.payments_outlined, path: '/dividends'),
-    _NavItem(label: 'Brokers', icon: Icons.account_balance_outlined, path: '/brokers'),
+    _NavItem(label: 'Analysis', icon: Icons.analytics_outlined, path: '/analysis'),
     _NavItem(label: 'Settings', icon: Icons.settings_outlined, path: '/settings'),
   ];
 

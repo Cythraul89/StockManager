@@ -28,6 +28,7 @@ class _EditTransactionScreenState
   final _priceCtrl = TextEditingController();
   final _feesCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _refCtrl = TextEditingController();
 
   TransactionType _type = TransactionType.buy;
   DateTime _executedAt = DateTime.now();
@@ -85,6 +86,7 @@ class _EditTransactionScreenState
     _priceCtrl.text = tx.pricePerShare.toString();
     _feesCtrl.text = tx.fees.toString();
     _notesCtrl.text = tx.notes ?? '';
+    _refCtrl.text = tx.externalRef ?? '';
     setState(() {
       _original = tx;
       _loading = false;
@@ -97,6 +99,7 @@ class _EditTransactionScreenState
     _priceCtrl.dispose();
     _feesCtrl.dispose();
     _notesCtrl.dispose();
+    _refCtrl.dispose();
     super.dispose();
   }
 
@@ -184,6 +187,7 @@ class _EditTransactionScreenState
       pricePerShare: price,
       fees: fees,
       notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      externalRef: _refCtrl.text.trim().isEmpty ? null : _refCtrl.text.trim(),
     );
 
     setState(() => _isSaving = true);
@@ -334,6 +338,14 @@ class _EditTransactionScreenState
                 if (_parseDecimal(v) == null) return 'Invalid number';
                 return null;
               },
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _refCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Transaction / order number (optional)',
+                prefixIcon: Icon(Icons.tag),
+              ),
             ),
             const SizedBox(height: 8),
             TextFormField(
