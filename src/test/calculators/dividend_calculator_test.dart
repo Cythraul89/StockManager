@@ -156,6 +156,74 @@ void main() {
     });
   });
 
+  group('DividendCalculator.calculate — manualYieldPct fallback', () {
+    test('used as annualYieldPct when no paid dividends', () {
+      final s = DividendCalculator.calculate(
+        paidDividends: [],
+        currentPrice: Decimal.fromInt(100),
+        sharesHeld: Decimal.fromInt(10),
+        manualYieldPct: Decimal.parse('6.36'),
+      );
+      expect(s.annualYieldPct, Decimal.parse('6.36'));
+    });
+
+    test('used when dividends exist but all are older than 12 months', () {
+      final divs = [
+        _paid(
+          id: '1',
+          date: DateTime.now().subtract(const Duration(days: 400)),
+          total: '50',
+        ),
+      ];
+      final s = DividendCalculator.calculate(
+        paidDividends: divs,
+        currentPrice: Decimal.fromInt(100),
+        sharesHeld: Decimal.fromInt(10),
+        manualYieldPct: Decimal.parse('5'),
+      );
+      expect(s.annualYieldPct, Decimal.parse('5'));
+    });
+
+    test('ignored when recent dividends produce a non-zero yield', () {
+      final divs = [
+        _paid(
+          id: '1',
+          date: DateTime.now().subtract(const Duration(days: 30)),
+          total: '50',
+        ),
+      ];
+      final s = DividendCalculator.calculate(
+        paidDividends: divs,
+        currentPrice: Decimal.fromInt(100),
+        sharesHeld: Decimal.fromInt(10), // position = 1000, yield = 5%
+        manualYieldPct: Decimal.parse('9.99'),
+      );
+      // computed yield wins; manual override is not used
+      expect(s.annualYieldPct, Decimal.fromInt(5));
+    });
+
+    test('null manualYieldPct with no dividends → zero yield', () {
+      final s = DividendCalculator.calculate(
+        paidDividends: [],
+        currentPrice: Decimal.fromInt(100),
+        sharesHeld: Decimal.fromInt(10),
+      );
+      expect(s.annualYieldPct, Decimal.zero);
+    });
+
+    test('allTimeTotal and currentYearTotal are unaffected by manualYieldPct', () {
+      final s = DividendCalculator.calculate(
+        paidDividends: [],
+        currentPrice: Decimal.fromInt(100),
+        sharesHeld: Decimal.fromInt(10),
+        manualYieldPct: Decimal.parse('6'),
+        forYear: 2024,
+      );
+      expect(s.allTimeTotal, Decimal.zero);
+      expect(s.currentYearTotal, Decimal.zero);
+    });
+  });
+
   group('DividendCalculator.convert', () {
     test('scales allTimeTotal and currentYearTotal by exchange rate', () {
       final divs = [
