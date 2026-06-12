@@ -130,10 +130,10 @@ GitHub Actions workflows are included in `.github/workflows/`:
 
 | Secret | Description |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | Base64-encoded Android upload keystore |
+| `ANDROID_RELEASE_KEYSTORE_B64` | Base64-encoded Android upload keystore |
 | `ANDROID_KEY_ALIAS` | Key alias in the keystore |
 | `ANDROID_KEY_PASSWORD` | Key password |
-| `ANDROID_STORE_PASSWORD` | Keystore password |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
 | `MACOS_CERTIFICATE` | Base64-encoded Developer ID `.p12` certificate *(optional)* |
 | `MACOS_CERTIFICATE_PWD` | Password for the `.p12` *(optional)* |
 

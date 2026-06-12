@@ -784,8 +784,11 @@ class MarketDataService {
 
       if (price == null || currency == null) { return null; }
 
-      final (normPrice, normCurrency) = _normalizeCurrency(
-          Decimal.parse(price.toString()), currency);
+      // tryParse: Yahoo can return non-finite values (NaN/Infinity) which would
+      // throw FormatException past the DioException-only catch below.
+      final rawPrice = Decimal.tryParse(price.toString());
+      if (rawPrice == null) { return null; }
+      final (normPrice, normCurrency) = _normalizeCurrency(rawPrice, currency);
 
       final changePct = meta?['regularMarketChangePercent'];
       return PriceQuote(
@@ -885,9 +888,9 @@ class MarketDataService {
       // Use the last non-null close in the window (handles partial trading days).
       final close =
           closes?.reversed.firstWhere((c) => c != null, orElse: () => null);
-      if (close != null) {
-        final (price, _) = _normalizeCurrency(
-            Decimal.parse(close.toString()), rawCurrency);
+      final rawClose = close != null ? Decimal.tryParse(close.toString()) : null;
+      if (rawClose != null) {
+        final (price, _) = _normalizeCurrency(rawClose, rawCurrency);
         return price;
       }
 

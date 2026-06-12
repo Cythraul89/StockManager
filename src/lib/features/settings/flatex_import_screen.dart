@@ -714,8 +714,8 @@ class _SummaryCard extends StatelessWidget {
             if (result.skippedNotExecuted > 0)
               _buildRow('Skipped (not executed)', '${result.skippedNotExecuted}',
                   theme.colorScheme.onSurfaceVariant),
-            if (result.skippedFractional > 0)
-              _buildRow('Skipped (no unit)', '${result.skippedFractional}',
+            if (result.skippedNoUnit > 0)
+              _buildRow('Skipped (no unit)', '${result.skippedNoUnit}',
                   theme.colorScheme.onSurfaceVariant),
             if (result.skippedNoPrice > 0)
               _buildRow('Skipped (no price)', '${result.skippedNoPrice}',

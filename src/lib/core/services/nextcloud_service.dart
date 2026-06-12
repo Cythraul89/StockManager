@@ -39,6 +39,18 @@ class CertificateInfo {
 class NextcloudService {
   const NextcloudService();
 
+  // Resolves a caller-supplied path to a full DAV request path. Paths already
+  // carrying the /remote.php/ prefix (e.g. hrefs returned by PROPFIND) pass
+  // through unchanged; bare paths are prefixed with the user's DAV root. The
+  // username is percent-encoded — Nextcloud allows '@' and spaces in it.
+  static String _davPath(String username, String remotePath) {
+    if (remotePath.startsWith('/remote.php/')) return remotePath;
+    final davBase = '/remote.php/dav/files/${Uri.encodeComponent(username)}';
+    return remotePath.startsWith('/')
+        ? '$davBase$remotePath'
+        : '$davBase/$remotePath';
+  }
+
   Dio _buildClient({
     required String serverUrl,
     required String username,
@@ -112,7 +124,7 @@ class NextcloudService {
     );
     try {
       await client.request<String>(
-        '/remote.php/dav/files/$username/',
+        _davPath(username, '/'),
         options: Options(method: 'PROPFIND', headers: {'Depth': '0'}),
       );
     } on DioException catch (e) {
@@ -139,10 +151,7 @@ class NextcloudService {
       pinnedFingerprint: pinnedFingerprint,
     );
 
-    final davBase = '/remote.php/dav/files/$username';
-    final fullPath = remotePath.startsWith('/')
-        ? '$davBase$remotePath'
-        : '$davBase/$remotePath';
+    final fullPath = _davPath(username, remotePath);
 
     final slash = fullPath.lastIndexOf('/');
     if (slash > 0) {
@@ -188,7 +197,7 @@ class NextcloudService {
     );
 
     final response = await client.put(
-      remotePath,
+      _davPath(username, remotePath),
       data: Stream.fromIterable([bytes]),
       options: Options(
         headers: {
@@ -221,13 +230,8 @@ class NextcloudService {
       pinnedFingerprint: pinnedFingerprint,
     );
 
-    final davBase = '/remote.php/dav/files/$username';
-    final fullPath = remotePath.startsWith('/')
-        ? '$davBase$remotePath'
-        : '$davBase/$remotePath';
-
     final response = await client.request<String>(
-      fullPath,
+      _davPath(username, remotePath),
       options: Options(
         method: 'PROPFIND',
         headers: {'Depth': '1'},
@@ -267,7 +271,7 @@ class NextcloudService {
       password: password,
       pinnedFingerprint: pinnedFingerprint,
     );
-    await client.delete(remotePath);
+    await client.delete(_davPath(username, remotePath));
   }
 
   Future<Uint8List> downloadFile({
@@ -284,7 +288,7 @@ class NextcloudService {
       pinnedFingerprint: pinnedFingerprint,
     );
     final response = await client.get<List<int>>(
-      remotePath,
+      _davPath(username, remotePath),
       options: Options(responseType: ResponseType.bytes),
     );
     if (response.statusCode == null ||
