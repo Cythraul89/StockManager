@@ -8,6 +8,11 @@ import 'llm_service.dart';
 final geminiServiceProvider = Provider<LlmService>((ref) => GeminiService());
 
 class GeminiService implements LlmService {
+  GeminiService([Dio? dio]) : _dio = dio ?? Dio();
+
+  // Shared across calls so the HTTP connection pool is reused between streams.
+  final Dio _dio;
+
   static const _baseUrl =
       'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -19,7 +24,6 @@ class GeminiService implements LlmService {
     required String userMessage,
   }) async* {
     final url = '$_baseUrl/$model:streamGenerateContent?alt=sse&key=$apiKey';
-    final dio = Dio();
 
     final body = {
       'system_instruction': {
@@ -40,7 +44,7 @@ class GeminiService implements LlmService {
 
     late Response<ResponseBody> response;
     try {
-      response = await dio.post<ResponseBody>(
+      response = await _dio.post<ResponseBody>(
         url,
         data: jsonEncode(body),
         options: Options(

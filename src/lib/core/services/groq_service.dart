@@ -8,6 +8,11 @@ import 'llm_service.dart';
 final groqServiceProvider = Provider<LlmService>((ref) => GroqService());
 
 class GroqService implements LlmService {
+  GroqService([Dio? dio]) : _dio = dio ?? Dio();
+
+  // Shared across calls so the HTTP connection pool is reused between streams.
+  final Dio _dio;
+
   static const _endpoint =
       'https://api.groq.com/openai/v1/chat/completions';
 
@@ -18,8 +23,6 @@ class GroqService implements LlmService {
     required String systemPrompt,
     required String userMessage,
   }) async* {
-    final dio = Dio();
-
     final body = {
       'model': model,
       'max_tokens': 4096,
@@ -32,7 +35,7 @@ class GroqService implements LlmService {
 
     late Response<ResponseBody> response;
     try {
-      response = await dio.post<ResponseBody>(
+      response = await _dio.post<ResponseBody>(
         _endpoint,
         data: jsonEncode(body),
         options: Options(

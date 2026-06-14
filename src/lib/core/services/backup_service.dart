@@ -72,6 +72,11 @@ class BackupService {
           'exchange': s.exchange,
           'currency': s.currency,
           'dripEnabled': s.dripEnabled,
+          'assetType': s.assetType,
+          'lastKnownConsensus': s.lastKnownConsensus,
+          'trailingStopPct': s.trailingStopPct,
+          'trailingStopHighWater': s.trailingStopHighWater,
+          'manualYieldPct': s.manualYieldPct,
         },
     ]);
 
@@ -103,6 +108,8 @@ class BackupService {
           'currency': d.currency,
           'withholdingTax': d.withholdingTax?.toString(),
           'notes': d.notes,
+          'source': d.source,
+          'confirmed': d.confirmed,
         },
     ]);
 
@@ -156,12 +163,16 @@ class BackupService {
     content.write('</table:table>');
 
     content.write('<table:table table:name="stocks">');
-    content.write(_odsRow(
-        ['id', 'brokerId', 'isin', 'symbol', 'name', 'exchange', 'currency', 'dripEnabled']));
+    content.write(_odsRow([
+      'id', 'brokerId', 'isin', 'symbol', 'name', 'exchange', 'currency',
+      'dripEnabled', 'assetType', 'lastKnownConsensus', 'trailingStopPct',
+      'trailingStopHighWater', 'manualYieldPct',
+    ]));
     for (final s in stocks) {
       content.write(_odsRow([
         s.id, s.brokerId, s.isin, s.symbol, s.name, s.exchange, s.currency,
-        s.dripEnabled.toString(),
+        s.dripEnabled.toString(), s.assetType, s.lastKnownConsensus,
+        s.trailingStopPct, s.trailingStopHighWater, s.manualYieldPct,
       ]));
     }
     content.write('</table:table>');
@@ -183,7 +194,7 @@ class BackupService {
     content.write('<table:table table:name="dividends">');
     content.write(_odsRow([
       'id', 'stockId', 'type', 'date', 'amountPerShare', 'totalAmount', 'currency',
-      'withholdingTax', 'notes',
+      'withholdingTax', 'notes', 'source', 'confirmed',
     ]));
     for (final d in dividends) {
       content.write(_odsRow([
@@ -191,6 +202,7 @@ class BackupService {
         d.date.toUtc().toIso8601String(),
         d.amountPerShare.toString(), d.totalAmount?.toString(),
         d.currency, d.withholdingTax?.toString(), d.notes,
+        d.source, d.confirmed.toString(),
       ]));
     }
     content.write('</table:table>');
@@ -348,6 +360,12 @@ class BackupService {
           'exchange': col(r, 5),
           'currency': col(r, 6),
           'dripEnabled': col(r, 7) == 'true',
+          // Columns added after the original format — absent in old exports.
+          'assetType': optCol(r, 8),
+          'lastKnownConsensus': optCol(r, 9),
+          'trailingStopPct': optCol(r, 10),
+          'trailingStopHighWater': optCol(r, 11),
+          'manualYieldPct': optCol(r, 12),
         },
     ];
     final txData = [
@@ -377,6 +395,9 @@ class BackupService {
           'currency': col(r, 6),
           'withholdingTax': optCol(r, 7),
           'notes': optCol(r, 8),
+          // Columns added after the original format — absent in old exports.
+          'source': optCol(r, 9),
+          'confirmed': optCol(r, 10) == null ? null : col(r, 10) == 'true',
         },
     ];
     final splitsData = [
@@ -429,6 +450,12 @@ class BackupService {
           exchange: s['exchange'] as String,
           currency: s['currency'] as String,
           dripEnabled: Value(s['dripEnabled'] as bool? ?? false),
+          // Fields absent from pre-fix backups fall back to table defaults.
+          assetType: Value(s['assetType'] as String? ?? 'stock'),
+          lastKnownConsensus: Value(s['lastKnownConsensus'] as String?),
+          trailingStopPct: Value(s['trailingStopPct'] as String?),
+          trailingStopHighWater: Value(s['trailingStopHighWater'] as String?),
+          manualYieldPct: Value(s['manualYieldPct'] as String?),
         ));
       }
 
@@ -481,6 +508,10 @@ class BackupService {
               ? Decimal.parse(d['withholdingTax'] as String)
               : null),
           notes: Value(d['notes'] as String?),
+          // Old backups lack these; default to a manual, confirmed dividend so
+          // restored rows do not re-enter the pending-confirmation flow.
+          source: Value(d['source'] as String? ?? 'manual'),
+          confirmed: Value(d['confirmed'] as bool? ?? true),
         ));
       }
 

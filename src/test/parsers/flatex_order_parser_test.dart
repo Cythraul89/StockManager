@@ -112,12 +112,12 @@ void main() {
       expect(result.importable, isEmpty);
     });
 
-    test('empty-unit rows increment skippedFractional', () {
+    test('empty-unit rows increment skippedNoUnit', () {
       final result = FlatexOrderParser.parse(csv([
         'Aktie;Allianz SE;DE0008404005;Kauf;XETRA;OR007;'
             '15.01.2024 / 10:00:00;Ausgeführt;10;;EUR;EUR;200,00;EUR;',
       ]));
-      expect(result.skippedFractional, 1);
+      expect(result.skippedNoUnit, 1);
     });
 
     test('rows with no price increment skippedNoPrice', () {

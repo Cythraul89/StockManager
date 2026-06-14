@@ -94,6 +94,8 @@ src/
 │       │   ├── analysis_screen.dart        # Prompt chips, streaming response, ISIN suggestions
 │       │   ├── analysis_provider.dart      # AnalysisNotifier, StockSuggestion, _parseSuggestions
 │       │   └── ai_analysis_settings_screen.dart  # Provider/key/model picker
+│       ├── portfolio_analysis/         # Portfolio Analysis tab (/analysis)
+│       │   └── portfolio_analysis_screen.dart  # History chart + buy recommendations
 │       └── settings/                   # settingsProvider, settingsActionsProvider
 │           ├── about_screen.dart           # Version, GPL-3 notice, privacy policy, app logs
 │           ├── broker_import_screen.dart   # Broker import entry-point (picker)
@@ -324,7 +326,7 @@ versions. It is not committed to the repository — it is regenerated from
 | Service | Endpoint | Auth | Notes |
 |---|---|---|---|
 | Yahoo Finance | `query2.finance.yahoo.com/v8/finance/chart/{symbol}` | None | Unofficial; rate-limited |
-| Open Exchange Rates | `openexchangerates.org/api/latest.json` | App ID (free tier) | USD base only on free tier |
+| Frankfurter | `api.frankfurter.app/latest` | None | Free, no API key; ECB data; 1-hour TTL |
 | OpenFIGI | `api.openfigi.com/v3/mapping` | None (basic) | ISIN → ticker/name/exchange/currency |
 | Nextcloud | WebDAV (`/remote.php/dav/files/…`) | Basic auth | Self-signed cert support via fingerprint pinning |
 | Anthropic Claude | `api.anthropic.com/v1/messages` | `x-api-key` header | SSE streaming; prompt caching on system block; stored in `settings.claude_api_key` |

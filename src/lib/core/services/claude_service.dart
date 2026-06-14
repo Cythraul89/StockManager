@@ -8,6 +8,11 @@ import 'llm_service.dart';
 final claudeServiceProvider = Provider<LlmService>((ref) => ClaudeService());
 
 class ClaudeService implements LlmService {
+  ClaudeService([Dio? dio]) : _dio = dio ?? Dio();
+
+  // Shared across calls so the HTTP connection pool is reused between streams.
+  final Dio _dio;
+
   static const _endpoint = 'https://api.anthropic.com/v1/messages';
   static const _apiVersion = '2023-06-01';
 
@@ -18,8 +23,6 @@ class ClaudeService implements LlmService {
     required String systemPrompt,
     required String userMessage,
   }) async* {
-    final dio = Dio();
-
     final body = {
       'model': model,
       'max_tokens': 4096,
@@ -38,7 +41,7 @@ class ClaudeService implements LlmService {
 
     late Response<ResponseBody> response;
     try {
-      response = await dio.post<ResponseBody>(
+      response = await _dio.post<ResponseBody>(
         _endpoint,
         data: jsonEncode(body),
         options: Options(

@@ -60,7 +60,7 @@ class FlatexParseResult {
     required this.importable,
     required this.unpricedOrders,
     required this.skippedNotExecuted,
-    required this.skippedFractional,
+    required this.skippedNoUnit,
     required this.skippedNoPrice,
     this.skippedOther = 0,
   });
@@ -70,7 +70,7 @@ class FlatexParseResult {
   /// estimated from the historic closing price on the order date.
   final List<FlatexUnpricedOrder> unpricedOrders;
   final int skippedNotExecuted;
-  final int skippedFractional;
+  final int skippedNoUnit;
   final int skippedNoPrice;
   /// Rows dropped for other reasons: bad ISIN format, unparseable date,
   /// zero/missing quantity, or fewer than 10 columns.
@@ -80,7 +80,7 @@ class FlatexParseResult {
       importable.length +
       unpricedOrders.length +
       skippedNotExecuted +
-      skippedFractional +
+      skippedNoUnit +
       skippedNoPrice +
       skippedOther;
 }
@@ -139,7 +139,7 @@ static const _colOrderNr = 5;
         importable: [],
         unpricedOrders: [],
         skippedNotExecuted: 0,
-        skippedFractional: 0,
+        skippedNoUnit: 0,
         skippedNoPrice: 0,
       );
     }
@@ -147,7 +147,7 @@ static const _colOrderNr = 5;
     final importable = <FlatexParsedOrder>[];
     final unpricedOrders = <FlatexUnpricedOrder>[];
     var skippedNotExecuted = 0;
-    var skippedFractional = 0;
+    var skippedNoUnit = 0;
     var skippedNoPrice = 0;
     var skippedOther = 0;
 
@@ -164,8 +164,8 @@ static const _colOrderNr = 5;
 
       final unit = cols[_colUnit].trim();
 
-      if (_isFractional(unit)) {
-        skippedFractional++;
+      if (_hasNoUnit(unit)) {
+        skippedNoUnit++;
         continue;
       }
 
@@ -275,7 +275,7 @@ static const _colOrderNr = 5;
       importable: importable,
       unpricedOrders: unpricedOrders,
       skippedNotExecuted: skippedNotExecuted,
-      skippedFractional: skippedFractional,
+      skippedNoUnit: skippedNoUnit,
       skippedNoPrice: skippedNoPrice,
       skippedOther: skippedOther,
     );
@@ -287,7 +287,7 @@ static const _colOrderNr = 5;
 
   // Skip rows with an empty unit — no share count and no EUR amount to derive one from.
   // EUR-unit rows (KVG, Bruchstücke) are handled separately in the main loop.
-  static bool _isFractional(String unit) => unit.isEmpty;
+  static bool _hasNoUnit(String unit) => unit.isEmpty;
 
   // Returns true only for strings that look like ISO 4217 currency codes
   // (exactly 3 uppercase ASCII letters). This guards against Flatex rows where
