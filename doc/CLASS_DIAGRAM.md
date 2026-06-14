@@ -740,11 +740,10 @@ ShellRoute (AdaptiveShell)
 │
 ├── /analysis                      PortfolioAnalysisScreen
 │
-├── /brokers                       BrokersScreen
-│   ├── /brokers/add               AddBrokerScreen
-│   └── /brokers/:id/edit          EditBrokerScreen
-│
 └── /settings                                SettingsScreen
+    ├── /settings/brokers                    BrokersScreen
+    │   ├── /settings/brokers/add            AddBrokerScreen
+    │   └── /settings/brokers/:id/edit       EditBrokerScreen
     ├── /settings/ai-analysis                AnalysisScreen
     │   └── /settings/ai-analysis/key        AiAnalysisSettingsScreen
     ├── /settings/broker-import              BrokerImportScreen

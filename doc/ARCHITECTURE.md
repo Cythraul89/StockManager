@@ -59,6 +59,8 @@ lib/
 │   │   ├── analysis_screen.dart        # Prompt chips, streaming response, ISIN suggestions
 │   │   ├── analysis_provider.dart      # AnalysisNotifier, StockSuggestion, portfolio serialisation
 │   │   └── ai_analysis_settings_screen.dart  # Provider / key / model picker
+│   ├── portfolio_analysis/             # Portfolio Analysis tab (/analysis)
+│   │   └── portfolio_analysis_screen.dart  # History chart + buy recommendations card
 │   └── settings/
 │       ├── about_screen.dart           # Version, GPL-3, privacy policy, app logs links
 │       ├── broker_import_screen.dart   # Broker import entry-point (scaffold)
@@ -742,7 +744,7 @@ Parses the semicolon-delimited, Latin-1-encoded "Orders" CSV exported from the F
 | EUR-unit rows **without** execution price (KVG market) | invested EUR amount only | `FlatexUnpricedOrder` — offered for estimation |
 | Stück-unit with no price anywhere | — | `skippedNoPrice` |
 | Non-executed orders | — | `skippedNotExecuted` |
-| Empty-unit rows | — | `skippedFractional` |
+| Empty-unit rows | — | `skippedNoUnit` |
 | Bad ISIN, bad date, zero menge | — | `skippedOther` |
 
 **Col 11 guard:** Flatex sometimes puts the order-type keyword (`"Limit"`, `"Market"`, `"Stop"`) in col 11 (Ausführungswährung) instead of a currency code. `_isCurrencyCode()` accepts only exactly-3-uppercase-ASCII-letter strings, so keywords are silently rejected and the currency defaults to `'EUR'`.
@@ -882,13 +884,13 @@ Projected `totalValue = clampedInvested + projUnrealised` (both clamped to zero)
 /stocks/:id/dividends/add                 → Add dividend (paid or expected)
 /stocks/:id/dividends/:divId/edit         → Edit / delete dividend
 /dividends               → Dividend overview
-/brokers                 → Broker list
-/brokers/add             → Add broker
-/brokers/:id/edit        → Edit broker
+/analysis                → Portfolio Analysis (history chart + buy recommendations)
 /settings                → Settings
+/settings/brokers         → Broker list
+/settings/brokers/add     → Add broker
+/settings/brokers/:id/edit → Edit broker
 /settings/ai-analysis    → AI Portfolio Analysis (AnalysisScreen)
 /settings/ai-analysis/key → Provider / API key / model picker (AiAnalysisSettingsScreen)
-/analysis                → Portfolio Analysis (chart + buy recommendations)
 /settings/broker-import         → Import from Broker (broker picker)
 /settings/broker-import/flatex  → FlatexImportScreen (CSV parse → preview → import)
 /settings/backup         → Local backup (export / import ZIP)

@@ -10,7 +10,7 @@ All screens exist in two layout variants selected automatically by the adaptive 
 
 **Mobile — bottom bar tabs**
 ```
-[ Dashboard ]  [ Stocks ]  [ Dividends ]  [ Brokers ]  [ Settings ]
+[ Dashboard ]  [ Stocks ]  [ Dividends ]  [ Analysis ]  [ Settings ]
 ```
 
 **Desktop — left sidebar**
@@ -21,13 +21,12 @@ All screens exist in two layout variants selected automatically by the adaptive 
 │  Dashboard         │
 │  Stocks            │
 │  Dividends         │
-│  Brokers           │
-│  ────────────────── │
+│  Analysis          │
 │  Settings          │
-│  Sync  [●]        │
 └────────────────────┘
 ```
-The sync status indicator (●) shows last sync time and triggers a manual sync on tap.
+
+The `Brokers` section is accessible via **Settings → Portfolio → Brokers** (`/settings/brokers`), not as a top-level nav item. The `/analysis` tab shows the Portfolio Analysis screen (history chart + buy recommendations).
 
 ---
 
@@ -446,7 +445,53 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 9. Broker List
+## 9. Portfolio Analysis
+
+**Purpose:** Overview of portfolio performance over time and analyst buy recommendations for current holdings. Accessible from the **Analysis** tab in the main navigation.
+
+### Mobile (scrollable)
+```
+┌─────────────────────────────┐
+│  Analysis                   │
+│                             │
+│  Portfolio History          │  ← PortfolioHistoryChart (stacked area)
+│  ┌─────────────────────────┐│
+│  │   ████████████████░░░░  ││  ← invested (blue) + unrealised (teal)
+│  │   ░░░░░░░░░░░░░░░░░░░░  ││    + realised (dark green)
+│  │  2022  2023  2024  2025 ││
+│  │  Dividends sub-chart    ││  ← amber bar chart below main chart
+│  └─────────────────────────┘│
+│                             │
+│  Buy recommendations        │  ← shown when analyst data is cached
+│  ┌─────────────────────────┐│
+│  │ Based on analyst        ││
+│  │ consensus for your      ││
+│  │ current holdings.       ││
+│  ├─────────────────────────┤│
+│  │ #1 Apple Inc.           ││
+│  │    [Strong Buy] ·14 an. ││
+│  │    +21.3% to target     ││
+│  │    $ 189.40 → $ 230.00  ││  ← current price & target (quoteCurrency)
+│  ├─────────────────────────┤│
+│  │ #2 Volkswagen VZ        ││
+│  │    [Buy] · 8 analysts   ││
+│  │    +12.0% to target     ││
+│  └─────────────────────────┘│
+└─────────────────────────────┘
+```
+
+**Empty state:** When no transactions exist yet, "No data yet. Add transactions to see your portfolio history." replaces the chart. The buy recommendations card is hidden when no analyst data is cached (`buy` or `strong_buy` ratings not yet loaded).
+
+**Data sources:**
+- Chart: `portfolioHistoryProvider` (fetches `ChartRange.max` price history for all stocks)
+- Recommendations: `topBuysProvider` (reads `analystDataProvider` keepAlive cache — no extra HTTP calls)
+
+### Desktop
+Same content, wider layout; chart occupies the full width.
+
+---
+
+## 10. Broker List
 
 ```
 ┌─────────────────────────────┐
@@ -466,7 +511,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 10. Add / Edit Broker
+## 11. Add / Edit Broker
 
 ```
 ┌─────────────────────────────┐
@@ -484,7 +529,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 11. Settings
+## 12. Settings
 
 ```
 ┌─────────────────────────────┐
@@ -493,25 +538,38 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 │  Display                    │
 │  Preferred currency  EUR ▾  │
 │  Theme          System ▾    │
-│  Sparkline period     1M ▾  │  ← opens SimpleDialog with all 7 ranges
-│  Market Data       Yahoo ▶  │  ← or "Finnhub ▶"
+│  Sparkline period     1M ▾  │  ← SimpleDialog with all 7 ranges
 │                             │
-│  Nextcloud Sync         [▶] │
-│  Last sync: 12 May 14:30    │
+│  Portfolio                  │
+│  Brokers                [▶] │  ← /settings/brokers
+│  Manage your broker accounts│
 │                             │
-│  Notifications          [▶] │
-│  Price alerts, dividends    │
+│  Market Data                │
+│  Data Provider      Yahoo ▶ │  ← /settings/market-data
 │                             │
-│  Currency Overrides     [▶] │
-│  Manual exchange rates      │
+│  AI                         │
+│  AI Portfolio Analysis  [▶] │  ← /settings/ai-analysis
+│  Claude-powered insights    │
 │                             │
-│  About                  [▶] │
+│  Synchronisation            │
+│  Import from Broker     [▶] │  ← /settings/broker-import
+│  Local Backup           [▶] │  ← /settings/backup
+│  Nextcloud Sync         [▶] │  ← /settings/nextcloud
+│                             │
+│  Notifications              │
+│  Enable notifications   [ ] │  ← inline toggle
+│  Notification preferences[▶]│  ← /settings/notifications
+│                             │
+│  About                      │
+│  StockManager       v1.0 [▶]│  ← /settings/about
 └─────────────────────────────┘
 ```
 
+**Currency overrides** are accessible from the Preferred currency tile (a chevron leads to `/settings/currency`).
+
 ---
 
-## 12. Nextcloud Configuration
+## 13. Nextcloud Configuration
 
 ```
 ┌─────────────────────────────┐
@@ -549,7 +607,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 13. Notification Preferences
+## 14. Notification Preferences
 
 ```
 ┌─────────────────────────────┐
@@ -574,7 +632,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 14. Currency Overrides
+## 15. Currency Overrides
 
 ```
 ┌─────────────────────────────┐
@@ -594,7 +652,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 15. Market Data Settings
+## 16. Market Data Settings
 
 **Purpose:** Select the market data provider for analyst consensus data and configure the Finnhub API key.
 
@@ -637,7 +695,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 16. AI Portfolio Analysis
+## 17. AI Portfolio Analysis
 
 **Purpose:** Conversational analysis of the user's portfolio via a user-supplied LLM API key.
 
@@ -709,7 +767,7 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 
 ---
 
-## 17. AI Analysis Settings
+## 18. AI Analysis Settings
 
 ```
 ┌─────────────────────────────┐
@@ -736,28 +794,39 @@ Received history and upcoming calendar shown side by side. Upcoming panel includ
 ## Screen Flow Summary
 
 ```
-Dashboard
-  └─→ Stock detail (tap a top mover)
-        └─→ Add transaction
-        └─→ Add dividend
+Dashboard                          (/  — tab 1)
+  └─→ Stock detail (tap a tile)
+        └─→ Add / edit transaction
+        └─→ Add / edit dividend
         └─→ Record split
         └─→ Edit stock
 
-Stocks
+Stocks                             (/stocks  — tab 2)
   ├─→ Add stock
   └─→ Stock detail
-        └─→ (same as above)
+        └─→ (same as Dashboard → Stock detail)
 
-Dividends
+Dividends                          (/dividends  — tab 3)
   └─→ Stock detail (tap a dividend row)
 
-Brokers
-  ├─→ Add broker
-  └─→ Edit broker
+Analysis                           (/analysis  — tab 4)
+  (portfolio history chart + buy recommendations — no sub-routes)
 
-Settings
-  ├─→ Market Data settings
-  ├─→ Nextcloud configuration
-  ├─→ Notification preferences
-  └─→ Currency overrides
+Settings                           (/settings  — tab 5)
+  ├─→ Portfolio
+  │     └─→ Brokers (/settings/brokers)
+  │           ├─→ Add broker
+  │           └─→ Edit broker
+  ├─→ Market Data  (/settings/market-data)
+  ├─→ AI Portfolio Analysis (/settings/ai-analysis)
+  │     └─→ Provider / key / model (/settings/ai-analysis/key)
+  ├─→ Import from Broker (/settings/broker-import)
+  │     └─→ Flatex import (/settings/broker-import/flatex)
+  ├─→ Local Backup (/settings/backup)
+  ├─→ Nextcloud Sync (/settings/nextcloud)
+  ├─→ Notification preferences (/settings/notifications)
+  ├─→ Currency overrides (/settings/currency)
+  └─→ About (/settings/about)
+        ├─→ Privacy policy (/settings/about/privacy-policy)
+        └─→ App logs (/settings/about/logs)
 ```
