@@ -274,14 +274,31 @@ jobs:
                   signing_config + '    buildTypes {' + debug_block,
                   1,
               )
-              gradle = gradle.replace(
-                  'signingConfig = signingConfigs.getByName("debug")',
+              # Flutter templates vary across versions:
+              #   older: signingConfig = signingConfigs.getByName("debug")
+              #   newer: signingConfig = signingConfigs.debug
+              #   some:  no signingConfig line at all in the release block
+              replaced = re.sub(
+                  r'signingConfig\s*=\s*signingConfigs(?:\.getByName\(["\']debug["\']\)|\.debug\b)',
                   'signingConfig = signingConfigs.getByName("release")',
-                  1,
+                  gradle,
+                  count=1,
               )
+              if replaced != gradle:
+                  gradle = replaced
+                  print('Replaced debug signingConfig with release in build.gradle.kts')
+              else:
+                  # No debug signing line found — inject directly into release block
+                  gradle = re.sub(
+                      r'(release\s*\{)',
+                      r'\1\n            signingConfig = signingConfigs.getByName("release")',
+                      gradle,
+                      count=1,
+                  )
+                  print('Injected signingConfig into release block (no debug line found)')
               with open(app_gradle, 'w') as f:
                   f.write(gradle)
-              print('Injected release signing config into build.gradle.kts')
+              print('Patched build.gradle.kts for release signing')
 
       - name: Build debug APK
         run: |
