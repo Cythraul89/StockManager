@@ -225,9 +225,13 @@ jobs:
       - name: Build release APK
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          VERSION_CODE=$((MAJOR * 1000000 + MINOR * 10000 + PATCH * 100))
           flutter build apk --release \
             --build-name="$VERSION" \
-            --build-number=${{ github.run_number }}
+            --build-number="$VERSION_CODE"
           cp build/app/outputs/flutter-apk/app-release.apk \
             "StockManager-${VERSION}-android.apk"
 
@@ -266,9 +270,13 @@ jobs:
       - name: Build Linux
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          VERSION_CODE=$((MAJOR * 1000000 + MINOR * 10000 + PATCH * 100))
           flutter build linux --release \
             --build-name="$VERSION" \
-            --build-number=${{ github.run_number }}
+            --build-number="$VERSION_CODE"
 
       - name: Package as .deb
         run: |
@@ -336,9 +344,11 @@ jobs:
       - name: Build Windows
         run: |
           $VERSION = "${{ github.ref_name }}".TrimStart('v')
+          $parts = $VERSION -split '\.'
+          $VERSION_CODE = [int]$parts[0] * 1000000 + [int]$parts[1] * 10000 + [int]$parts[2] * 100
           flutter build windows --release `
             --build-name="$VERSION" `
-            --build-number=${{ github.run_number }}
+            --build-number="$VERSION_CODE"
           Compress-Archive -Path build\windows\x64\runner\Release\* `
             -DestinationPath "StockManager-$VERSION-windows-x64.zip"
 
@@ -392,9 +402,13 @@ jobs:
       - name: Build macOS
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          VERSION_CODE=$((MAJOR * 1000000 + MINOR * 10000 + PATCH * 100))
           flutter build macos --release \
             --build-name="$VERSION" \
-            --build-number=${{ github.run_number }}
+            --build-number="$VERSION_CODE"
 
       - name: Re-sign macOS app (ad-hoc, no sandbox)
         working-directory: src/build/macos/Build/Products/Release

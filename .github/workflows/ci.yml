@@ -303,9 +303,10 @@ jobs:
       - name: Build debug APK
         run: |
           BASE=$(grep '^version:' pubspec.yaml | sed 's/version: *//;s/+.*//')
+          COMMIT_COUNT=$(git rev-list --count HEAD)
           flutter build apk --debug \
             --build-name="${BASE}-dev" \
-            --build-number=${{ github.run_number }}
+            --build-number="$COMMIT_COUNT"
           cp build/app/outputs/flutter-apk/app-debug.apk \
             "StockManager-${BASE}-dev-android.apk"
 
